@@ -1,6 +1,6 @@
 # LivePage (working title)
 
-> Private idea exploration — vetting with collaborators before any build.
+> Private idea exploration — now in a **lived self-lab**, not more theory.
 
 ## One-liner
 
@@ -8,12 +8,18 @@ A **research browser** for action-driven web annotation: treat any live webpage 
 
 ## Status
 
-Early concept / intention mapping only. No code yet.
+**Week 1 self-lab in progress** (2026-07-10 → 2026-07-17). Intention map is frozen. Progress = spark log + one habitat rule + thin wedge.
 
-## Docs
+## Do this week
 
-- [`docs/intention.md`](docs/intention.md) — core intention exploration (PKM, rabbit-holing, bracketing, future mirror)
-- [`docs/horse-vision-research.md`](docs/horse-vision-research.md) — how [Horse Browser](https://browser.horse/) invented Trails, and what a next niche layer could look like
+1. Read [`docs/week1-self-lab.md`](docs/week1-self-lab.md) — protocol, habitat rule, review questions.
+2. Log sparks in [`logs/spark-log.md`](logs/spark-log.md).
+3. Optional board: open [`wedge/index.html`](wedge/index.html) (four acts: note / question / park / release).
+
+## Docs (reference only)
+
+- [`docs/intention.md`](docs/intention.md) — **frozen** intention map
+- [`docs/horse-vision-research.md`](docs/horse-vision-research.md) — Horse invention case study (on ice this week)
 
 ## Working hypothesis
 

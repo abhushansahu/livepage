@@ -1,11 +1,13 @@
 ---
 name: PKM Annotation Intention
-overview: A deep conceptual exploration of the intention behind action-driven web annotation as a learning practice—not product picks or implementation. Maps cognitive, emotional, knowledge-lifecycle, brain-inspired, reading-phenomenology, tool-as-prosthetic, and identity tensions—especially rejecting “second brain” in favor of a future mirror that learns you and helps you learn yourself.
+overview: A deep conceptual exploration of the intention behind action-driven web annotation as a learning practice—not product picks or implementation. Maps cognitive, emotional, knowledge-lifecycle, brain-inspired, reading-phenomenology, tool-as-prosthetic, and identity tensions—especially rejecting “second brain” in favor of a future mirror that learns you and helps you learn yourself, including self-instrumentation with a blank owner metric until the mirror discovers what actually matters.
 todos: []
 isProject: false
 ---
 
 # Exploring the Intention: Action-Driven Web Annotation as Learning Practice
+
+> **FROZEN (2026-07-10).** Do not extend this map with new sections or philosophy. Progress happens in [`week1-self-lab.md`](week1-self-lab.md) and the [`../wedge/`](../wedge/) prototype. Reopen only if a lived session contradicts something here.
 
 This is an idea exploration, not a solution brief. The goal is to understand what you are actually reaching for when you describe “Google Doc on any live page + smart dashboard + Obsidian,” and why that desire keeps failing against existing tool categories.
 
@@ -444,7 +446,7 @@ This is the same fun/agency thesis from earlier, applied to the micro-scale of a
 13. **Fidelity vs flattening** — Keep visual/situational cues that guided attention; still export clean Markdown into Obsidian without dragging the whole web’s CSS into the vault.
 14. **Help vs interruption** — Support stumble-words and dense regions without becoming a popup tutor that breaks flow and coupling.
 15. **Honest fog vs forced understanding** — Not every unknown must be resolved now; inventing a temporary meaning can be legitimate if the fog is marked.
-16. **Engagement truth vs surveillance feeling** — Knowing whether you really read something is valuable; feeling watched or graded kills play.
+16. **Engagement truth vs surveillance feeling** — Knowing whether you really read something is valuable; feeling watched or graded kills play. (Same family as the self-lab vs judge tension in §19.)
 17. **Terrain navigation vs completeness fetish** — Skipping flats can be wise; the system must not equate “finished the page” with “learned the page.”
 
 ---
@@ -595,7 +597,7 @@ A mirror from the future means: the system accumulates enough honest signal that
 - which topics are living desire vs costume desire
 - where fun and learning actually stick for *you*
 
-That is not surveillance for its own sake. It is **self-knowledge as the product**, with web annotation and Obsidian compost as the medium.
+That is not surveillance for its own sake. It is **self-knowledge as the product**, with web annotation and Obsidian compost as the medium. §19 sharpens this further: you run the company analytics loop on yourself — track, infer intent, discover patterns, experiment — with the owner metric left blank until the mirror discovers what should fill it.
 
 ### 15.3 It learns you — good and bad
 
@@ -749,11 +751,11 @@ That is training-by-habitat, not a personality transplant.
 
 ## 17. A sharper statement of the intention (revised again)
 
-> I want a future mirror over my live web learning — not a second brain — that can face my current patterns without prosecuting them: I consume more than I produce; I drift off-goal; I tire when things get hard; my curiosity often fails to become a trail; I am easily distracted. The tool should learn those goods and bads, show them clearly, and change the cost structure so sparks become first descents, tiny production becomes natural beside intake, challenge gets a human-scale first meter, and abandoned intent can be caught, parked, or released — while I learn myself and what I actually want, and cooled truths compost into Obsidian.
+> I want a future mirror over my live web learning — not a second brain — that can face my current patterns without prosecuting them: I consume more than I produce; I drift off-goal; I tire when things get hard; my curiosity often fails to become a trail; I am easily distracted. The tool should learn those goods and bads, show them clearly, and change the cost structure so sparks become first descents, tiny production becomes natural beside intake, challenge gets a human-scale first meter, and abandoned intent can be caught, parked, or released — while I learn myself and what I actually want, and cooled truths compost into Obsidian. I am both subject and owner of that loop: self-instrumentation and n-of-1 experiments, with the metric that matters left blank (`___`) until the mirror discovers it from honest traces — not from a pre-chosen KPI menu.
 
 Or even shorter:
 
-> Mirror my real patterns — consume, drift, flinch, spark-without-trail, distract — and help me tilt the habitat until curiosity starts leading somewhere.
+> Mirror my real patterns — consume, drift, flinch, spark-without-trail, distract — help me tilt the habitat until curiosity starts leading somewhere, and leave `___` blank until the mirror earns the right to name it.
 
 ---
 
@@ -780,5 +782,72 @@ When you want to go one level deeper—still without jumping to products or arch
 - **Coupling partners:** Is the dialogue mainly with the author, with future-you, with an AI margin voice, or with your existing vault?
 - **Composting cadence:** How soon must something reach Obsidian to still feel alive—and what should deliberately *not* go there yet?
 - **Zen-specific texture:** How do split tabs, workspaces, and vertical tabs already act as crude bracketing—and where do they fail as associative memory?
+- **Metric discovery:** What would count as evidence that `___` has been found — a number you would actually care to move, not a dashboard vanity?
+- **Blind experiment:** What is one reversible self-experiment you could run this week without naming the metric yet (change one habitat condition; watch precursor signals)?
+- **Self-lab vs judge:** When does self-tracking tip from curious mirror into graded surveillance — and what feeling marks the line for you?
 
 Those answers would turn this intention map into a requirements compass—still before choosing or building anything.
+
+---
+
+## 19. Self-tracking: you are the analytics company
+
+### 19.1 The company loop — inverted
+
+Every company, product, website, and app tracks users. They record activity to identify intent, store and analyse it, then infer how to make the underlying experience more “___” for the user — thereby moving the metric that matters to the *owners*, by slightly deflecting behaviour in the direction they want.
+
+The thought experiment: **run that same loop on yourself.**
+
+You track your own activity. You analyse and identify your own intent. You discover patterns about yourself. You see how you are doing on the metric — the good and the bad. You run experiments on yourself. You watch the numbers change.
+
+```mermaid
+flowchart LR
+  company[CompanyLoop]
+  self[SelfLoop]
+
+  company -->|"track activity"| cIntent[InferIntent]
+  cIntent --> cAnalyze[AnalyzePatterns]
+  cAnalyze --> cNudge[NudgeTowardOwnerMetric]
+  cNudge --> cMetric[OwnerMetricRises]
+
+  self -->|"track own activity"| sIntent[IdentifyOwnIntent]
+  sIntent --> sAnalyze[DiscoverOwnPatterns]
+  sAnalyze --> sSee[SeeGoodAndBad]
+  sSee --> sExp[RunNOf1Experiments]
+  sExp --> sMetric["Metric ___ moves"]
+```
+
+In the company loop, subject and owner are different people. In the self loop, **you are both**. That is the whole point — and the whole danger (see tension 16: engagement truth vs surveillance feeling).
+
+### 19.2 Why `___` stays blank
+
+Companies fill the blank early: engagement, retention, conversion, time-on-site. Pre-choosing the metric is how dashboards get built and how behaviour gets steered.
+
+For the future mirror (§15), filling `___` too early recreates the same trap: second-brain scoreboards, streak theater, highlight counts that congratulate consumption. The mirror’s first job is not to optimize a known KPI. It is **discovery of what the number should be**, from honest traces — open / park / flee / return / produce / fog — not from a menu of productivity metrics.
+
+Until that discovery, the blank is a feature. It refuses to let the tool become another owner with a hidden agenda — because the only legitimate owner is you, and you do not yet know what “more ___” means for your own life.
+
+### 19.3 The five patterns are signals, not the metric
+
+§16’s baseline (consume > produce, off-goal drift, challenge fatigue, spark-without-trail, easy distractibility) are **candidate signals and attractors** — evidence the mirror might use while `___` is still unknown. They are not the metric itself.
+
+Treating them as the scoreboard freezes diagnosis into identity (tension 28). Treating them as weather the instrument can read keeps the blank honest: the patterns may point toward what matters, or they may dissolve once a truer `___` appears.
+
+### 19.4 N-of-1 experiments — habitat, not sermons
+
+“Run experiments on himself” does not mean willpower theater. It means: change **one** habitat condition, then watch whether precursor signals move — and later, whether `___` (once named) moves.
+
+That is the same hammer/prosthetic logic as §14: the tool changes the cost structure of agency; repeated successful acts also train you. The company nudges you toward *their* metric. The self-lab nudges the environment toward *yours* — once yours is known — or toward clearer seeing while it is not.
+
+### 19.5 Self-lab, not judge
+
+Instrumentation must feel like a **curious self-lab**, not being graded. The moment self-tracking becomes prosecution, play dies and the five patterns worsen (especially challenge fatigue feeding on itself).
+
+Same stance as §15.3: clear-eyed companionship — goods and bads without trophy case or confessional court. The inversion of the company loop only stays ethical if the subject who is tracked is also the one who consents to the experiment, can stop it, and can refuse a metric that flatters or shames without teaching.
+
+### 19.6 More productive tensions
+
+33. **Blank metric vs premature KPI** — Leaving `___` open protects discovery; leaving it open forever avoids commitment and never lets you see a number move.
+34. **Self-lab vs self-surveillance** — Honest traces enable recognition; feeling watched or graded kills the play the whole intention requires.
+35. **Owner-as-subject vs split self** — Being both tracker and tracked can clarify desire; it can also create a managerial inner voice that treats living as a dashboard to optimize.
+36. **Experiment vs identity** — A failed n-of-1 trial is data; treating it as proof of who you are permanently is how the mirror becomes a prison.

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LivePage wedge — open loops</title>
+  <style>
+    :root {
+      --bg: #f3efe6;
+      --ink: #1c1a16;
+      --muted: #5c564c;
+      --line: #c9c0b0;
+      --panel: #fffdf8;
+      --note: #2f5d50;
+      --question: #6b4c2a;
+      --park: #3d4f6f;
+      --release: #6e3b3b;
+      --focus: #1c1a16;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse 80% 50% at 10% 0%, #e7dcc8 0%, transparent 55%),
+        radial-gradient(ellipse 60% 40% at 100% 100%, #d9e2d6 0%, transparent 50%),
+        var(--bg);
+    }
+    main {
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 4rem;
+    }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.35rem;
+    }
+    .lede {
+      color: var(--muted);
+      margin: 0 0 1.5rem;
+      line-height: 1.45;
+      max-width: 36rem;
+    }
+    form {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 1rem;
+      display: grid;
+      gap: 0.65rem;
+      margin-bottom: 1.5rem;
+    }
+    label {
+      display: grid;
+      gap: 0.25rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    input, textarea, select, button {
+      font: inherit;
+      color: var(--ink);
+    }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 0.45rem 0.55rem;
+    }
+    textarea { min-height: 4rem; resize: vertical; }
+    .acts {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.4rem;
+    }
+    @media (max-width: 560px) {
+      .acts { grid-template-columns: 1fr 1fr; }
+    }
+    .acts button {
+      border: 1px solid var(--line);
+      background: #fff;
+      padding: 0.55rem 0.35rem;
+      cursor: pointer;
+    }
+    .acts button:hover { border-color: var(--focus); }
+    .acts button[data-act="note"] { color: var(--note); }
+    .acts button[data-act="question"] { color: var(--question); }
+    .acts button[data-act="park"] { color: var(--park); }
+    .acts button[data-act="release"] { color: var(--release); }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .toolbar button {
+      border: 1px solid var(--line);
+      background: transparent;
+      padding: 0.35rem 0.6rem;
+      cursor: pointer;
+    }
+    .loop {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-left-width: 4px;
+      padding: 0.85rem 1rem;
+      margin-bottom: 0.65rem;
+    }
+    .loop[data-act="note"] { border-left-color: var(--note); }
+    .loop[data-act="question"] { border-left-color: var(--question); }
+    .loop[data-act="park"] { border-left-color: var(--park); }
+    .loop[data-act="release"] { border-left-color: var(--release); opacity: 0.72; }
+    .loop header {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      align-items: baseline;
+      margin-bottom: 0.35rem;
+    }
+    .loop .act {
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+    .loop a { color: var(--ink); }
+    .loop .why { margin: 0.35rem 0; line-height: 1.4; }
+    .loop .sel {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      border-left: 2px solid var(--line);
+      padding-left: 0.6rem;
+    }
+    .loop .meta {
+      margin-top: 0.55rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .empty {
+      color: var(--muted);
+      font-style: italic;
+    }
+    details {
+      margin-top: 2rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    details pre {
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 0.75rem;
+      font-size: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Open loops</h1>
+    <p class="lede">
+      Four cheap acts on a live page: <strong>note</strong>, <strong>question</strong>,
+      <strong>park</strong> (with why), <strong>release</strong>. No mirror, no score, no Obsidian.
+      Data stays in this browser’s localStorage.
+    </p>
+
+    <form id="capture">
+      <label>Page title
+        <input id="title" name="title" required placeholder="Document title" />
+      </label>
+      <label>URL
+        <input id="url" name="url" type="url" required placeholder="https://…" />
+      </label>
+      <label>Why / intent
+        <input id="why" name="why" required placeholder="Half sentence — why this page" />
+      </label>
+      <label>Selection (optional)
+        <textarea id="selection" name="selection" placeholder="Paste the span you reacted to"></textarea>
+      </label>
+      <label>Body (optional — the note or question text)
+        <textarea id="body" name="body" placeholder="One sentence is enough"></textarea>
+      </label>
+      <div class="acts" role="group" aria-label="Act">
+        <button type="submit" data-act="note" value="note">Note</button>
+        <button type="submit" data-act="question" value="question">Question</button>
+        <button type="submit" data-act="park" value="park">Park</button>
+        <button type="submit" data-act="release" value="release">Release</button>
+      </div>
+    </form>
+
+    <div class="toolbar">
+      <span id="count"></span>
+      <button type="button" id="export">Copy as markdown</button>
+      <button type="button" id="clear-released">Clear released</button>
+    </div>
+
+    <section id="list" aria-live="polite"></section>
+
+    <details>
+      <summary>Bookmarklet — copy spark line to clipboard</summary>
+      <p>Drag this link to your bookmarks bar. On any page, it copies a spark-log block you can paste into <code>logs/spark-log.md</code>.</p>
+      <p><a id="bookmarklet" href="#">Copy spark line</a></p>
+      <pre id="bookmarklet-src"></pre>
+    </details>
+  </main>
+  <script>
+    const STORAGE_KEY = "livepage-wedge-loops-v1";
+    const form = document.getElementById("capture");
+    const list = document.getElementById("list");
+    const countEl = document.getElementById("count");
+    let pendingAct = "note";
+
+    form.querySelectorAll(".acts button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        pendingAct = btn.dataset.act;
+      });
+    });
+
+    function load() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      } catch {
+        return [];
+      }
+    }
+
+    function save(loops) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(loops));
+    }
+
+    function render() {
+      const loops = load().slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const open = loops.filter((l) => l.act !== "release").length;
+      countEl.textContent = `${open} open · ${loops.length} total`;
+      if (!loops.length) {
+        list.innerHTML = `<p class="empty">No loops yet. Capture one act from a live page.</p>`;
+        return;
+      }
+      list.innerHTML = loops
+        .map((loop) => {
+          const title = escapeHtml(loop.title || "(untitled)");
+          const href = escapeAttr(loop.url || "#");
+          const why = escapeHtml(loop.why || "");
+          const sel = loop.selection
+            ? `<p class="sel">${escapeHtml(loop.selection)}</p>`
+            : "";
+          const body = loop.body
+            ? `<p class="why">${escapeHtml(loop.body)}</p>`
+            : "";
+          return `<article class="loop" data-act="${escapeAttr(loop.act)}" data-id="${escapeAttr(loop.id)}">
+            <header>
+              <a href="${href}" target="_blank" rel="noopener">${title}</a>
+              <span class="act">${escapeHtml(loop.act)}</span>
+            </header>
+            <p class="why"><strong>Why:</strong> ${why}</p>
+            ${sel}${body}
+            <div class="meta">
+              <span>${escapeHtml(loop.createdAt.slice(0, 16).replace("T", " "))}</span>
+              <button type="button" data-release="${escapeAttr(loop.id)}">Release</button>
+              <button type="button" data-delete="${escapeAttr(loop.id)}">Delete</button>
+            </div>
+          </article>`;
+        })
+        .join("");
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function escapeAttr(s) {
+      return escapeHtml(s).replace(/'/g, "&#39;");
+    }
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const loops = load();
+      loops.push({
+        id: crypto.randomUUID(),
+        act: pendingAct,
+        title: form.title.value.trim(),
+        url: form.url.value.trim(),
+        why: form.why.value.trim(),
+        selection: form.selection.value.trim(),
+        body: form.body.value.trim(),
+        createdAt: new Date().toISOString(),
+      });
+      save(loops);
+      form.reset();
+      pendingAct = "note";
+      render();
+    });
+
+    list.addEventListener("click", (e) => {
+      const t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      const releaseId = t.getAttribute("data-release");
+      const deleteId = t.getAttribute("data-delete");
+      if (releaseId) {
+        const loops = load().map((l) =>
+          l.id === releaseId ? { ...l, act: "release" } : l
+        );
+        save(loops);
+        render();
+      }
+      if (deleteId) {
+        save(load().filter((l) => l.id !== deleteId));
+        render();
+      }
+    });
+
+    document.getElementById("export").addEventListener("click", async () => {
+      const loops = load();
+      const md = loops
+        .map(
+          (l) =>
+            `### ${l.act} — ${l.title}\n- url: ${l.url}\n- why: ${l.why}\n` +
+            (l.selection ? `- selection: ${l.selection}\n` : "") +
+            (l.body ? `- body: ${l.body}\n` : "") +
+            `- at: ${l.createdAt}\n`
+        )
+        .join("\n");
+      await navigator.clipboard.writeText(md || "(empty)");
+      countEl.textContent = "Copied markdown";
+      setTimeout(render, 800);
+    });
+
+    document.getElementById("clear-released").addEventListener("click", () => {
+      save(load().filter((l) => l.act !== "release"));
+      render();
+    });
+
+    const bookmarkletCode =
+      "javascript:(()=>{const s=(getSelection()+'').trim().slice(0,240);const t=new Date();const hh=String(t.getHours()).padStart(2,'0');const mm=String(t.getMinutes()).padStart(2,'0');const block=`### Spark\\n\\n- time: ${hh}:${mm}\\n- title: ${document.title}\\n- url: ${location.href}\\n- why: \\n- outcome: \\n- note (optional): ${s?s:''}\\n`;navigator.clipboard.writeText(block).then(()=>alert('Spark block copied — paste into logs/spark-log.md')).catch(()=>prompt('Copy this:',block));})();";
+
+    const bm = document.getElementById("bookmarklet");
+    bm.href = bookmarkletCode;
+    document.getElementById("bookmarklet-src").textContent = bookmarkletCode;
+
+    // Prefill from query string (optional handoff)
+    const params = new URLSearchParams(location.search);
+    if (params.get("title")) form.title.value = params.get("title");
+    if (params.get("url")) form.url.value = params.get("url");
+    if (params.get("why")) form.why.value = params.get("why");
+    if (params.get("selection")) form.selection.value = params.get("selection");
+
+    render();
+  </script>
+</body>
+</html>
