@@ -21,5 +21,8 @@ mark.lp-hl.is-active {
 }
 
 html.lp-rail-on {
-  scroll-padding-right: 48px;
+  position: relative;
+  box-sizing: border-box;
+  padding-right: var(--lp-gutter, 328px) !important;
+  scroll-padding-right: var(--lp-gutter, 328px);
 }

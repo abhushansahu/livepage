@@ -154,21 +154,16 @@ async function createFromSelection({ color, comment = false }) {
       page = await call("PATCH_PAGE", { id: page.id, patch: { why } });
     }
   }
-  let note = "";
-  if (comment) {
-    note = prompt("Margin note") || "";
-  }
   const result = await call("ADD_HIGHLIGHT", {
     pageId: page.id,
-    highlight: { color, text: quote.exact, prefix: quote.prefix, suffix: quote.suffix },
-    comment: note
+    highlight: { color, text: quote.exact, prefix: quote.prefix, suffix: quote.suffix }
   });
   page = result.page;
   applyRangeHighlight(range, result.highlight);
   window.getSelection()?.removeAllRanges();
   savedRange = null;
   overlay.setPage(page);
-  if (result.thread) overlay.openThread(result.thread.id);
+  if (comment && result.thread) overlay.openThread(result.thread.id);
 }
 
 function watchMarks() {

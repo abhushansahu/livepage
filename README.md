@@ -21,7 +21,7 @@ Then open `http://127.0.0.1:4173/demo/article.html` and `http://127.0.0.1:4173/d
 
 ## What it does
 
-**On the page.** Select a span. A quiet toolbar offers six highlight colors and a comment. Highlights restore when you return. Comments sit in a right-edge rail, aligned to the span, and open a slim thread panel.
+**On the page.** Select a span. A quiet toolbar offers six highlight colors and a comment. Highlights restore when you return. Comments live **inline in a reserved right margin**, aligned to the span — Google Docs / Notion style — not a floating overlay. Click a highlight or its margin card to expand the thread in place.
 
 **Threads can fork.** Any message can branch. You and an agent can take different readings of the same span without overwriting each other.
 
