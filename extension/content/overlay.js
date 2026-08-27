@@ -2,7 +2,6 @@ import { COLORS, COLOR_IDS } from "../shared/colors.js";
 import { formatRelative } from "../shared/time.js";
 import { highlightRect } from "./highlights.js";
 
-const STATUSES = ["open", "parked", "todo", "fog", "resolved"];
 const GUTTER = 328;
 const CARD_GAP = 10;
 
@@ -17,6 +16,8 @@ export class Overlay {
     this.locked = false;
     this.snapshotTexts = null;
     this.handlers = {};
+    this.sendMode = "comment";
+    this.awaitingAgent = null;
     this.ready = this.render();
   }
 
@@ -67,7 +68,18 @@ export class Overlay {
   bind() {
     window.addEventListener("resize", () => this.layoutCards(), { passive: true });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") this.closePanel();
+      if (event.key !== "Escape") return;
+      const menu = this.els?.gutter?.querySelector(".send-menu:not([hidden])");
+      if (menu) {
+        menu.hidden = true;
+        return;
+      }
+      if (this.awaitingAgent) {
+        this.awaitingAgent = null;
+        this.renderCards();
+        return;
+      }
+      this.closePanel();
     });
     document.addEventListener("mousedown", (event) => {
       if (!this.activeThreadId) return;
@@ -171,14 +183,7 @@ export class Overlay {
     return `
       <article class="card is-open" data-highlight="${highlight.id}" data-thread="${thread.id}" style="--lp-mark:${color}">
         <button class="close" title="Collapse">×</button>
-        <p class="kicker">${escapeHtml(thread.branchLabel || "main")} · ${escapeHtml(thread.status)}</p>
         <p class="quote">${escapeHtml(clip(highlight.text, 180))}</p>
-        <div class="statuses">
-          ${STATUSES.map(
-            (s) =>
-              `<button class="chip ${s === thread.status ? "is-on" : ""}" data-status="${s}">${s}</button>`
-          ).join("")}
-        </div>
         ${
           branches.length > 1
             ? `<div class="branch-list">${branches
@@ -196,24 +201,21 @@ export class Overlay {
             <article class="msg ${m.role === "agent" ? "agent" : ""}" data-msg="${m.id}">
               <div class="meta"><span>${escapeHtml(labelOf(m))}</span><span>${formatRelative(m.createdAt)}</span></div>
               <p>${escapeHtml(m.content)}</p>
-              <button class="fork" data-fork="${m.id}">Fork from here</button>
+              <button class="fork" data-fork="${m.id}">Fork</button>
             </article>`
             )
             .join("")}
         </div>
         <div class="composer">
-          <textarea placeholder="Write in the margin…"></textarea>
-          <div class="row">
-            <select data-agent>
-              <option value="cursor">Cursor Agent</option>
-              <option value="claude-code">Claude Code</option>
-            </select>
-            <button class="ghost" data-act="save">Save</button>
-            <button class="solid" data-act="agent">Send to agent</button>
-          </div>
-          <div class="row">
-            <button class="ghost" data-act="paste">Paste agent reply</button>
-            <button class="ghost" data-act="obsidian">Dump to Obsidian</button>
+          <textarea placeholder="${escapeHtml(this.composerPlaceholder())}"></textarea>
+          <div class="send">
+            <button type="button" class="solid send-main" data-act="send">${escapeHtml(this.sendLabel())}</button>
+            <button type="button" class="solid send-caret" data-act="menu" aria-label="Send options">▾</button>
+            <div class="send-menu" hidden>
+              <button type="button" data-mode="comment" class="${this.sendMode === "comment" ? "is-on" : ""}">Comment</button>
+              <button type="button" data-mode="cursor" class="${this.sendMode === "cursor" ? "is-on" : ""}">Ask Cursor</button>
+              <button type="button" data-mode="claude-code" class="${this.sendMode === "claude-code" ? "is-on" : ""}">Ask Claude Code</button>
+            </div>
           </div>
         </div>
       </article>`;
@@ -223,7 +225,7 @@ export class Overlay {
     const highlightId = card.dataset.highlight;
     const threadId = card.dataset.thread;
     card.onclick = (event) => {
-      if (event.target.closest("button, textarea, select, a")) return;
+      if (event.target.closest("button, textarea, select, a, .composer")) return;
       if (threadId) this.openThread(threadId);
       else this.handlers.onOpenHighlight?.(highlightId);
     };
@@ -232,12 +234,6 @@ export class Overlay {
       event.stopPropagation();
       this.closePanel();
     };
-    card.querySelectorAll("[data-status]").forEach((btn) => {
-      btn.onclick = (event) => {
-        event.stopPropagation();
-        this.handlers.onStatus?.(threadId, btn.dataset.status);
-      };
-    });
     card.querySelectorAll("[data-branch]").forEach((btn) => {
       btn.onclick = (event) => {
         event.stopPropagation();
@@ -252,47 +248,78 @@ export class Overlay {
       };
     });
     const textarea = card.querySelector("textarea");
-    const save = card.querySelector("[data-act='save']");
-    if (save) {
-      save.onclick = (event) => {
+    const menu = card.querySelector(".send-menu");
+    const sendBtn = card.querySelector("[data-act='send']");
+    const caret = card.querySelector("[data-act='menu']");
+    if (caret && menu) {
+      caret.onclick = (event) => {
         event.stopPropagation();
-        const content = textarea.value.trim();
-        if (!content) return;
-        this.handlers.onNote?.(threadId, content);
-        textarea.value = "";
+        menu.hidden = !menu.hidden;
       };
     }
-    const agentBtn = card.querySelector("[data-act='agent']");
-    if (agentBtn) {
-      agentBtn.onclick = (event) => {
+    card.querySelectorAll("[data-mode]").forEach((btn) => {
+      btn.onclick = (event) => {
         event.stopPropagation();
-        const ask = textarea.value.trim();
-        if (!ask) {
-          this.toast("Write the ask first. Agents only get that ask.");
-          return;
+        this.sendMode = btn.dataset.mode;
+        this.awaitingAgent = null;
+        if (menu) menu.hidden = true;
+        if (sendBtn) sendBtn.textContent = this.sendLabel();
+        if (textarea) textarea.placeholder = this.composerPlaceholder();
+      };
+    });
+    const send = () => {
+      if (menu) menu.hidden = true;
+      const content = textarea?.value.trim();
+      if (!content) return;
+      this.dispatchSend(threadId, content);
+      textarea.value = "";
+    };
+    if (sendBtn) {
+      sendBtn.onclick = (event) => {
+        event.stopPropagation();
+        send();
+      };
+    }
+    if (textarea) {
+      textarea.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          send();
         }
-        const agent = card.querySelector("[data-agent]").value;
-        this.handlers.onAgent?.(threadId, ask, agent);
-        textarea.value = "";
-      };
+      });
     }
-    const paste = card.querySelector("[data-act='paste']");
-    if (paste) {
-      paste.onclick = (event) => {
-        event.stopPropagation();
-        const content = prompt("Paste the agent reply");
-        if (!content) return;
-        const agent = card.querySelector("[data-agent]").value;
-        this.handlers.onAgentReply?.(threadId, content, agent);
-      };
+  }
+
+  sendLabel() {
+    if (this.awaitingAgent) return "Add reply";
+    if (this.sendMode === "cursor") return "Ask Cursor";
+    if (this.sendMode === "claude-code") return "Ask Claude";
+    return "Comment";
+  }
+
+  composerPlaceholder() {
+    if (this.awaitingAgent) {
+      const name = this.awaitingAgent.agent === "claude-code" ? "Claude Code" : "Cursor";
+      return `Paste ${name}’s reply…`;
     }
-    const obsidian = card.querySelector("[data-act='obsidian']");
-    if (obsidian) {
-      obsidian.onclick = (event) => {
-        event.stopPropagation();
-        this.handlers.onObsidian?.();
-      };
+    if (this.sendMode === "comment") return "Write a comment…";
+    return "Ask, then send to the agent…";
+  }
+
+  dispatchSend(threadId, content) {
+    if (this.awaitingAgent?.threadId === threadId) {
+      const agent = this.awaitingAgent.agent;
+      this.awaitingAgent = null;
+      this.handlers.onAgentReply?.(threadId, content, agent);
+      return;
     }
+    if (this.sendMode === "comment") {
+      this.handlers.onNote?.(threadId, content);
+      return;
+    }
+    const agent = this.sendMode === "claude-code" ? "claude-code" : "cursor";
+    this.awaitingAgent = { threadId, agent };
+    this.handlers.onAgent?.(threadId, content, agent);
   }
 
   layoutCards() {

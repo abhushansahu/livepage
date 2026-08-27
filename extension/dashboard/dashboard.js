@@ -143,7 +143,7 @@ async function openDrawer(id) {
       return `
         <section class="thread">
           <q style="border-left: 3px solid ${color}; padding-left: 8px">${escapeHtml(highlight?.text || "")}</q>
-          <p>${escapeHtml(thread.branchLabel)} · ${escapeHtml(thread.status)}${thread.parentId ? " · forked" : ""}</p>
+          <p>${escapeHtml(thread.branchLabel)}${thread.parentId ? " · forked" : ""}</p>
           ${(thread.messages || [])
             .map(
               (m) =>

@@ -12,7 +12,6 @@ import {
 } from "./highlights.js";
 import { Overlay } from "./overlay.js";
 import { COLOR_IDS } from "../shared/colors.js";
-import { downloadMarkdown } from "../export/download.js";
 
 const overlay = new Overlay();
 let page = null;
@@ -36,10 +35,7 @@ overlay.handlers = {
   onFork: (threadId, messageId, branchLabel) =>
     mutate("FORK_THREAD", { pageId: page.id, threadId, messageId, branchLabel }).then((data) => {
       overlay.openThread(data.thread.id);
-    }),
-  onStatus: (threadId, status) =>
-    mutate("SET_THREAD_STATUS", { pageId: page.id, threadId, status }),
-  onObsidian: () => dumpObsidian()
+    })
 };
 
 boot().catch((error) => console.warn("LivePage failed to start", error));
@@ -195,24 +191,12 @@ async function sendToAgent(threadId, ask, agent) {
     await navigator.clipboard.writeText(result.packet.markdown);
     overlay.toast(
       agent === "claude-code"
-        ? "Packet copied. Paste into Claude Code."
-        : "Packet copied. Paste into Cursor Agent."
+        ? "Packet copied. Paste Claude’s reply here and send."
+        : "Packet copied. Paste Cursor’s reply here and send."
     );
   } catch {
     overlay.toast("Could not copy automatically. Packet is in the dashboard export.");
   }
-}
-
-async function dumpObsidian() {
-  const result = await call("EXPORT_OBSIDIAN", { id: page.id });
-  try {
-    await navigator.clipboard.writeText(result.markdown);
-  } catch {
-    /* ignore */
-  }
-  downloadMarkdown(result.filename, result.markdown);
-  window.open(result.uri, "_blank");
-  overlay.toast("Obsidian note ready. Markdown downloaded and copied.");
 }
 
 async function mutate(type, payload) {

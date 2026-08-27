@@ -187,7 +187,6 @@ button.solid:hover {
   margin: 0 0 6px;
 }
 
-.statuses,
 .branch-list {
   display: flex;
   flex-wrap: wrap;
@@ -252,6 +251,12 @@ button.solid:hover {
   border: 0;
   cursor: pointer;
   padding: 0;
+  opacity: 0;
+}
+
+.msg:hover .fork,
+.msg:focus-within .fork {
+  opacity: 1;
 }
 
 .composer {
@@ -273,19 +278,57 @@ textarea {
   color: inherit;
 }
 
-.row {
+.send {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: center;
+  justify-content: flex-end;
+  position: relative;
+  align-self: flex-end;
 }
 
-select {
+.send-main {
+  border-radius: 999px 0 0 999px;
+  padding: 7px 12px;
+}
+
+.send-caret {
+  border-radius: 0 999px 999px 0;
+  padding: 7px 9px;
+  border-left: 1px solid rgba(255, 252, 247, 0.28);
+}
+
+.send-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  min-width: 188px;
+  background: #fffcf7;
+  border: 1px solid rgba(28, 23, 18, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(28, 23, 18, 0.14);
+  padding: 4px;
+  z-index: 3;
+}
+
+.send-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
   font: inherit;
-  border-radius: 999px;
-  border: 1px solid rgba(28, 23, 18, 0.12);
-  background: transparent;
-  padding: 6px 8px;
+  cursor: pointer;
+  color: #1c1712;
+}
+
+.send-menu button:hover,
+.send-menu button.is-on {
+  background: rgba(28, 23, 18, 0.06);
+}
+
+.send-menu button.is-on {
+  font-weight: 600;
 }
 
 .toast {

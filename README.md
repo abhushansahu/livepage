@@ -31,7 +31,7 @@ Then open `http://127.0.0.1:4173/demo/article.html` and `http://127.0.0.1:4173/d
 - includes only **new unique content blocks** (already-sent blocks are omitted)
 - includes the anchored quote and the thread so far
 
-Paste that packet into Cursor Agent or Claude Code. Paste the reply back onto the thread.
+Paste that packet into Cursor Agent or Claude Code. Paste the reply into the same composer and send — it is stored as the agent’s turn.
 
 **Infinite-scroll pages are locked.** Feeds (or pages that keep growing) cannot keep stable anchors. LivePage blocks highlighting until you **snapshot** the current view. Known hosts include X, Reddit, LinkedIn, Instagram, TikTok, YouTube, Facebook, and HN.
 
