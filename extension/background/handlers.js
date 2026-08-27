@@ -14,7 +14,11 @@ import {
   searchPages,
   unreadPages,
   upsertImportedPages,
-  upsertPageFromVisit
+  upsertPageFromVisit,
+  getMind,
+  saveMind,
+  recordEvent,
+  listEvents
 } from "../storage/store.js";
 import { buildAgentPacket, nextLedger } from "../agent/packet.js";
 import { obsidianNewUri, pageToMarkdown, suggestedFilename } from "../export/obsidian.js";
@@ -22,6 +26,7 @@ import { canonicalizeUrl, pageIdFromUrl } from "../shared/url.js";
 import { applyProgress } from "../shared/progress.js";
 import { uniqueItems } from "../import/normalize.js";
 import { syncSaves } from "../import/sync.js";
+import { applyTweetReaction } from "../feed/local-tweets.js";
 
 export async function handleMessage(message) {
   const type = message?.type;
@@ -31,8 +36,11 @@ export async function handleMessage(message) {
       return getSettings();
     case "SAVE_SETTINGS":
       return saveSettings(payload);
-    case "VISIT_PAGE":
-      return upsertPageFromVisit(payload.url, payload);
+    case "VISIT_PAGE": {
+      const page = await upsertPageFromVisit(payload.url, payload);
+      await note("open", { pageId: page.id, source: page.importMeta?.source });
+      return page;
+    }
     case "GET_PAGE":
       return payload.id ? getPage(payload.id) : getPageByUrl(payload.url);
     case "LIST_PAGES":
@@ -85,10 +93,21 @@ export async function handleMessage(message) {
         openTabs: Boolean(payload.openTabs),
         importItems: upsertImportedPages
       });
-    case "SNOOZE_PAGE":
-      return patchPage(payload.id, {
+    case "SNOOZE_PAGE": {
+      const page = await patchPage(payload.id, {
         snoozedUntil: Date.now() + (payload.hours || 48) * 60 * 60 * 1000
       });
+      await note("snooze", { pageId: page.id, source: page.importMeta?.source });
+      return page;
+    }
+    case "GET_MIND":
+      return getMind();
+    case "LIST_EVENTS":
+      return listEvents();
+    case "RECORD_EVENT":
+      return recordEvent(payload);
+    case "REACT_TWEET":
+      return reactTweet(payload);
     default:
       throw new Error(`Unknown message: ${type}`);
   }
@@ -243,8 +262,54 @@ async function snapshotPage(payload) {
 
 async function reportProgress(payload) {
   const page = await loadPage(payload);
+  const before = page.progress?.maxPercent || 0;
   applyProgress(page, payload.percent, payload.scrollY || 0);
-  return putPage(page);
+  const after = page.progress.maxPercent;
+  const saved = await putPage(page);
+  const mind = await getMind();
+  if (mind.lastAct?.pageId === page.id && after > before + 7) {
+    const next = applyTweetReaction(mind, {
+      signal: mind.lastAct.signal,
+      reaction: "conversion"
+    });
+    next.lastAct = { ...mind.lastAct, converted: true };
+    await saveMind(next);
+    await note("conversion", { pageId: page.id, signal: mind.lastAct.signal });
+  }
+  if (after >= 90 && before < 90) {
+    await note("read_through", { pageId: page.id });
+  }
+  return saved;
+}
+
+async function reactTweet(payload) {
+  const mind = await getMind();
+  const next = applyTweetReaction(mind, {
+    signal: payload.signal,
+    reaction: payload.reaction,
+    now: Date.now()
+  });
+  if (payload.reaction === "act") {
+    next.lastAct = {
+      signal: payload.signal,
+      pageId: payload.pageId || null,
+      at: Date.now()
+    };
+  }
+  await saveMind(next);
+  await note(`tweet_${payload.reaction}`, {
+    pageId: payload.pageId,
+    signal: payload.signal
+  });
+  return next;
+}
+
+async function note(kind, extra = {}) {
+  try {
+    await recordEvent({ kind, ...extra });
+  } catch {
+    /* first-run stores */
+  }
 }
 
 async function loadPage(payload) {

@@ -1,4 +1,5 @@
 import { isWaiting, needsReview, progressOf, progressLabel, reviewItems } from "./progress.js";
+import { composeLocalTweets, weaveFeed } from "../feed/local-tweets.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -97,6 +98,13 @@ export function feedItems(pages, now = Date.now()) {
 
   items.sort((a, b) => b.score - a.score || (b.page.updatedAt || 0) - (a.page.updatedAt || 0));
   return diversify(items);
+}
+
+export function composeFeed(pages, { mind, events, now = Date.now() } = {}) {
+  const pagesFeed = feedItems(pages, now);
+  if (mind?.enabled === false) return pagesFeed;
+  const tweets = composeLocalTweets(pages, mind, events, now);
+  return weaveFeed(pagesFeed, tweets, 2);
 }
 
 function kindOf(page) {

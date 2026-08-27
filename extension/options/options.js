@@ -21,7 +21,8 @@ form.addEventListener("submit", async (event) => {
     remindersEnabled: form.elements.remindersEnabled.checked,
     reminderHour: Number(form.elements.reminderHour.value || 9),
     lockInfiniteScroll: form.elements.lockInfiniteScroll.checked,
-    importSavesEnabled: form.elements.importSavesEnabled.checked
+    importSavesEnabled: form.elements.importSavesEnabled.checked,
+    localTweetsEnabled: form.elements.localTweetsEnabled.checked
   };
   await call("SAVE_SETTINGS", patch);
   chrome.runtime.sendMessage({ type: "RESCHEDULE_REMINDER" });

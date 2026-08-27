@@ -246,6 +246,39 @@ nav {
 .avatar.src-youtube { background: #c4302b; color: #fff; }
 .avatar.src-pocket { background: #ef4056; color: #fff; }
 .avatar.src-hn { background: #ff6600; color: #fff; }
+.avatar.src-ai {
+  background: var(--sage);
+  color: var(--paper);
+  font-size: 18px;
+}
+
+.tweet.local-tweet {
+  background: rgba(63, 107, 82, 0.06);
+}
+
+.tweet-text {
+  margin: 0 0 10px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.related {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  margin: 0 0 10px;
+  background: var(--paper);
+}
+
+.related p { margin: 0 0 6px; }
+
+.tweet-actions .cta {
+  color: var(--paper) !important;
+  background: var(--sage) !important;
+  border-radius: 999px;
+  padding: 4px 12px !important;
+  text-decoration: none !important;
+}
 
 .tweet-top {
   margin: 0 0 4px;

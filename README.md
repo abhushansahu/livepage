@@ -35,7 +35,7 @@ Paste that packet into Cursor Agent or Claude Code. Paste the reply into the sam
 
 **Infinite-scroll pages are locked.** Feeds (or pages that keep growing) cannot keep stable anchors. LivePage blocks highlighting until you **snapshot** the current view. Known hosts include X, Reddit, LinkedIn, Instagram, TikTok, YouTube, Facebook, and HN.
 
-**Dashboard.** Home is a **For you** feed — scroll it like a timeline. Untouched YouTube Watch Later, X bookmarks, Reddit saves, half-read pages, and comments still waiting keep coming back, ranked by how long they have been sitting and whether you ever opened them. Reading status is still **scroll depth**. Lists (reading / bookmarks / saves / review) are still there when you want a pile.
+**Dashboard.** Home is a **For you** feed — scroll it like a timeline. Untouched YouTube Watch Later, X bookmarks, Reddit saves, half-read pages, and comments still waiting keep coming back, ranked by how long they have been sitting and whether you ever opened them. Reading status is still **scroll depth**. **Local tweets** from LivePage sit in the feed: short observations learned from what you save, snooze, open, and actually scroll — aimed at one real pass, not a guilt score. Lists (reading / bookmarks / saves / review) are still there when you want a pile.
 
 **Pulled saves.** While you are logged in, LivePage harvests X bookmarks, Reddit saved, YouTube Watch Later, Pocket, and HN favorites. It tries Reddit and YouTube on a timer; X bookmarks are pulled when you open that page (or tap **Pull saves**, which opens the lists in the background). They land as unread bookmarks until you actually open the live page.
 

@@ -3,7 +3,7 @@ import { isWaiting } from "../shared/progress.js";
 import { canonicalizeUrl, hostnameOf, pageIdFromUrl } from "../shared/url.js";
 
 const DB_NAME = "livepage";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const DEFAULT_SETTINGS = {
   defaultColor: "lemon",
@@ -15,7 +15,8 @@ export const DEFAULT_SETTINGS = {
   agentDefault: "cursor",
   allowInfiniteSnapshot: true,
   lockInfiniteScroll: true,
-  importSavesEnabled: true
+  importSavesEnabled: true,
+  localTweetsEnabled: true
 };
 
 let dbPromise = null;
@@ -37,6 +38,14 @@ function openDb() {
       }
       if (!db.objectStoreNames.contains("ledger")) {
         db.createObjectStore("ledger", { keyPath: "pageId" });
+      }
+      if (!db.objectStoreNames.contains("events")) {
+        const events = db.createObjectStore("events", { keyPath: "id" });
+        events.createIndex("at", "at");
+        events.createIndex("kind", "kind");
+      }
+      if (!db.objectStoreNames.contains("mind")) {
+        db.createObjectStore("mind", { keyPath: "key" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -320,4 +329,58 @@ export function newMessage(partial) {
     content: String(partial.content || "").trim(),
     createdAt: Date.now()
   };
+}
+
+export const EMPTY_MIND = { key: "app", signals: {}, lastAct: null };
+
+export async function getMind() {
+  const row = await withStore("mind", "readonly", (store) => reqOf(store.get("app")));
+  return { ...EMPTY_MIND, ...(row || {}) };
+}
+
+export async function saveMind(mind) {
+  const next = { ...EMPTY_MIND, ...mind, key: "app" };
+  await withStore("mind", "readwrite", (store) => {
+    store.put(next);
+  });
+  return next;
+}
+
+export async function recordEvent(partial = {}) {
+  const event = {
+    id: uid("ev"),
+    at: partial.at || Date.now(),
+    kind: partial.kind || "note",
+    pageId: partial.pageId || null,
+    signal: partial.signal || null,
+    source: partial.source || null,
+    meta: partial.meta || {}
+  };
+  await withStore("events", "readwrite", (store) => {
+    store.put(event);
+  });
+  await trimEvents();
+  return event;
+}
+
+export async function listEvents(limit = 250) {
+  const db = await openDb();
+  const tx = db.transaction("events", "readonly");
+  const rows = await reqOf(tx.objectStore("events").getAll());
+  rows.sort((a, b) => (b.at || 0) - (a.at || 0));
+  return rows.slice(0, limit);
+}
+
+async function trimEvents(keep = 400) {
+  const db = await openDb();
+  const tx = db.transaction("events", "readwrite");
+  const store = tx.objectStore("events");
+  const rows = await reqOf(store.getAll());
+  if (rows.length <= keep) {
+    await txDone(tx);
+    return;
+  }
+  rows.sort((a, b) => (a.at || 0) - (b.at || 0));
+  for (const row of rows.slice(0, rows.length - keep)) store.delete(row.id);
+  await txDone(tx);
 }

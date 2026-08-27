@@ -4,7 +4,7 @@ import { COLORS } from "../shared/colors.js";
 import { downloadMarkdown } from "../export/download.js";
 import { ensureDemoHabitat } from "./demo-seed.js";
 import { isWaiting, progressLabel, progressOf, reviewItems } from "../shared/progress.js";
-import { feedItems, sourceGlyph, sourceLabel } from "../shared/feed.js";
+import { composeFeed, sourceGlyph, sourceLabel } from "../shared/feed.js";
 
 if (!globalThis.chrome?.runtime?.id && !globalThis.__LP_BRIDGE) {
   const { handleMessage } = await import("../background/handlers.js");
@@ -25,7 +25,10 @@ const state = {
   query: "",
   activeId: null,
   feedLimit: 8,
-  syncNote: ""
+  syncNote: "",
+  mind: { signals: {} },
+  events: [],
+  shownTweets: new Set()
 };
 
 const els = {
@@ -150,14 +153,14 @@ function setNavCount(filter, n) {
 }
 
 function homeHtml(pages, awaiting) {
-  const feed = feedItems(pages);
+  const feed = composeFeed(pages, { mind: state.mind, events: state.events });
   const shown = feed.slice(0, state.feedLimit);
   return `
     <div class="feed-wrap">
       <header class="feed-head">
         <div>
           <h2>For you</h2>
-          <p class="hint">Scroll it like a timeline. Untouched Watch Later, X bookmarks, Reddit saves, half-read pages, and asks still waiting keep coming back.</p>
+          <p class="hint">Scroll it like a timeline. Local observations sit between the pages — they watch how you save, snooze, and actually scroll, then ask for one real pass.</p>
         </div>
       </header>
       ${state.syncNote ? `<p class="sync-note">${escapeHtml(state.syncNote)}</p>` : ""}
@@ -187,6 +190,7 @@ function reviewHtml(items) {
 }
 
 function feedPost(item) {
+  if (item.kind === "local_tweet") return localTweetHtml(item);
   const page = item.page;
   const p = progressOf(page);
   const review = item.review;
@@ -216,6 +220,40 @@ function feedPost(item) {
           <a href="${page.url}" target="_blank" rel="noreferrer" data-live="${page.id}">Open</a>
           <button type="button" data-snooze="${page.id}">Not now</button>
           <button type="button" class="star" data-star="${page.id}">${page.bookmarked ? "★" : "☆"}</button>
+        </div>
+      </div>
+    </article>`;
+}
+
+function localTweetHtml(item) {
+  const page = item.page;
+  const p = page ? progressOf(page) : 0;
+  return `
+    <article class="tweet local-tweet" data-tweet="${item.id}" data-signal="${item.signal}" data-page="${page?.id || ""}">
+      <div class="avatar src-ai">✦</div>
+      <div class="tweet-body">
+        <p class="tweet-top">
+          <strong>LivePage</strong>
+          <span>@local</span>
+          <span>· observation</span>
+        </p>
+        <p class="tweet-text">${escapeHtml(item.text)}</p>
+        ${
+          page
+            ? `<div class="related">
+                <p class="kicker">${escapeHtml(sourceLabel(page))}</p>
+                <p>${escapeHtml(page.title || page.url)}</p>
+                <div class="bar-row">
+                  <div class="bar"><span style="width:${p}%"></span></div>
+                  <span class="pct">${p}%</span>
+                </div>
+              </div>`
+            : ""
+        }
+        <div class="tweet-actions">
+          ${page ? `<button type="button" class="cta" data-cta="${page.id}" data-signal="${item.signal}">${escapeHtml(item.cta || "Open")}</button>` : ""}
+          <button type="button" data-like="${item.signal}">♡ Learned</button>
+          <button type="button" data-dismiss="${item.signal}">Not this</button>
         </div>
       </div>
     </article>`;
@@ -252,7 +290,8 @@ function reviewCard(item) {
 function bindView() {
   els.view.querySelectorAll("[data-open], .card, .review-card, .tweet").forEach((el) => {
     el.onclick = (event) => {
-      if (event.target.closest("[data-star], [data-snooze], [data-live], a")) return;
+      if (el.classList.contains("local-tweet")) return;
+      if (event.target.closest("[data-star], [data-snooze], [data-live], a, [data-cta], [data-like], [data-dismiss]")) return;
       openDrawer(el.dataset.open || el.dataset.id);
     };
   });
@@ -269,6 +308,36 @@ function bindView() {
       event.preventDefault();
       event.stopPropagation();
       await call("SNOOZE_PAGE", { id: btn.dataset.snooze, hours: 48 });
+      await reload();
+    };
+  });
+  els.view.querySelectorAll("[data-cta]").forEach((btn) => {
+    btn.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await call("REACT_TWEET", {
+        signal: btn.dataset.signal,
+        reaction: "act",
+        pageId: btn.dataset.cta
+      });
+      const page = state.pages.find((p) => p.id === btn.dataset.cta);
+      if (page?.url) window.open(page.url, "_blank", "noreferrer");
+      openDrawer(btn.dataset.cta);
+    };
+  });
+  els.view.querySelectorAll("[data-like]").forEach((btn) => {
+    btn.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await call("REACT_TWEET", { signal: btn.dataset.like, reaction: "like" });
+      btn.textContent = "♡ Got it";
+    };
+  });
+  els.view.querySelectorAll("[data-dismiss]").forEach((btn) => {
+    btn.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await call("REACT_TWEET", { signal: btn.dataset.dismiss, reaction: "dismiss" });
       await reload();
     };
   });
@@ -374,7 +443,31 @@ async function openDrawer(id) {
 
 async function reload() {
   state.pages = (await call("LIST_PAGES")) || [];
+  try {
+    const settings = await call("GET_SETTINGS");
+    state.mind = (await call("GET_MIND")) || { signals: {} };
+    if (settings?.localTweetsEnabled === false) state.mind.enabled = false;
+    state.events = (await call("LIST_EVENTS")) || [];
+  } catch {
+    state.mind = { signals: {} };
+    state.events = [];
+  }
   render();
+  markTweetsShown();
+}
+
+async function markTweetsShown() {
+  const nodes = [...els.view.querySelectorAll(".local-tweet[data-signal]")];
+  for (const el of nodes) {
+    const signal = el.dataset.signal;
+    if (!signal || state.shownTweets.has(signal)) continue;
+    state.shownTweets.add(signal);
+    try {
+      await call("REACT_TWEET", { signal, reaction: "shown" });
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 function clip(text, n) {
