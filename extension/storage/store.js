@@ -3,7 +3,7 @@ import { isWaiting } from "../shared/progress.js";
 import { canonicalizeUrl, hostnameOf, pageIdFromUrl } from "../shared/url.js";
 
 const DB_NAME = "livepage";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export const DEFAULT_SETTINGS = {
   defaultColor: "lemon",
@@ -48,21 +48,9 @@ function openDb() {
         db.createObjectStore("mind", { keyPath: "key" });
       }
     };
-    req.onsuccess = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains("pages")) {
-        db.close();
-        const del = indexedDB.deleteDatabase(DB_NAME);
-        del.onsuccess = () => {
-          dbPromise = null;
-          openDb().then(resolve, reject);
-        };
-        del.onerror = () => reject(del.error || new Error("LivePage database is empty"));
-        return;
-      }
-      resolve(db);
-    };
+    req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error("LivePage database blocked"));
   });
   return dbPromise;
 }

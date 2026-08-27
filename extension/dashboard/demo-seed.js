@@ -16,6 +16,8 @@ export async function ensureDemoHabitat(call) {
     if (!page.importMeta && found?.threads?.length && found.progress?.maxPercent) continue;
     await call("SAVE_PAGE", { page: found ? { ...page, ...found, ...enrich(found, page) } : page });
   }
+  const check = (await call("LIST_PAGES")) || [];
+  if (!check.length) throw new Error("Demo seed wrote no pages");
 }
 
 function enrich(found, seed) {
