@@ -125,3 +125,53 @@ test("obsidian dump keeps anchor, voice, branch, and state", () => {
   assert.match(md, /Agent \(cursor\)/);
   assert.match(suggestedFilename(page), /example-com/);
 });
+
+test("scroll depth derives reading status", async () => {
+  const { applyProgress, deriveReadState, isWaiting, progressLabel } = await import(
+    "../extension/shared/progress.js"
+  );
+  assert.equal(deriveReadState(0), "unread");
+  assert.equal(deriveReadState(42), "in_progress");
+  assert.equal(deriveReadState(95), "read");
+  const page = { readState: "unread", progress: { maxPercent: 0 } };
+  applyProgress(page, 40, 800);
+  assert.equal(page.readState, "in_progress");
+  assert.equal(page.progress.maxPercent, 40);
+  assert.equal(progressLabel(page), "40% through");
+  assert.equal(isWaiting(page), true);
+  page.readState = "parked";
+  applyProgress(page, 99, 2000);
+  assert.equal(page.readState, "parked");
+  assert.equal(page.progress.maxPercent, 99);
+});
+
+test("review items flag threads whose last voice is the user", async () => {
+  const { reviewItems } = await import("../extension/shared/progress.js");
+  const pages = [
+    {
+      id: "p1",
+      title: "Essay",
+      threads: [
+        {
+          id: "t1",
+          highlightId: "h1",
+          messages: [
+            { role: "user", content: "ask", createdAt: 2 },
+            { role: "agent", content: "reply", createdAt: 3 }
+          ]
+        },
+        {
+          id: "t2",
+          highlightId: "h2",
+          messages: [{ role: "user", content: "still mine", createdAt: 4 }]
+        }
+      ],
+      highlights: [{ id: "h2", text: "quote" }]
+    }
+  ];
+  const items = reviewItems(pages);
+  assert.equal(items.length, 2);
+  assert.equal(items[0].awaiting, true);
+  assert.equal(items[0].last.content, "still mine");
+  assert.equal(items[1].awaiting, false);
+});

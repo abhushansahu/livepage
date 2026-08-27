@@ -139,7 +139,8 @@ function shouldRefreshBadge(type) {
     "SET_READ_STATE",
     "DELETE_PAGE",
     "ADD_HIGHLIGHT",
-    "SAVE_PAGE"
+    "SAVE_PAGE",
+    "REPORT_PROGRESS"
   ].includes(type);
 }
 

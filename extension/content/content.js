@@ -12,6 +12,7 @@ import {
 } from "./highlights.js";
 import { Overlay } from "./overlay.js";
 import { COLOR_IDS } from "../shared/colors.js";
+import { measureScrollProgress } from "../shared/progress.js";
 
 const overlay = new Overlay();
 let page = null;
@@ -59,6 +60,7 @@ async function boot() {
   watchSelection();
   watchMarks();
   watchInfinite();
+  watchScroll();
   onBroadcast((message) => {
     if (message.kind === "CONTEXT_ACTION") handleContext(message.action);
   });
@@ -99,6 +101,32 @@ async function snapshot() {
   overlay.setPage(page);
   applyLock();
   overlay.toast("Snapshot taken. You can annotate this view.");
+}
+
+function watchScroll() {
+  let lastSent = 0;
+  const report = () => {
+    if (!page?.id) return;
+    const percent = measureScrollProgress();
+    call("REPORT_PROGRESS", {
+      pageId: page.id,
+      percent,
+      scrollY: window.scrollY
+    }).then((next) => {
+      if (next) page = next;
+    });
+  };
+  window.addEventListener(
+    "scroll",
+    () => {
+      const now = Date.now();
+      if (now - lastSent < 800) return;
+      lastSent = now;
+      report();
+    },
+    { passive: true }
+  );
+  report();
 }
 
 function watchSelection() {

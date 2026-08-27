@@ -1,4 +1,5 @@
 import { uid } from "../shared/id.js";
+import { isWaiting } from "../shared/progress.js";
 import { canonicalizeUrl, hostnameOf, pageIdFromUrl } from "../shared/url.js";
 
 const DB_NAME = "livepage";
@@ -93,7 +94,13 @@ export function emptyPage(url, extras = {}) {
       blocks: []
     },
     highlights: [],
-    threads: []
+    threads: [],
+    progress: {
+      percent: 0,
+      maxPercent: 0,
+      scrollY: 0,
+      updatedAt: ts
+    }
   };
 }
 
@@ -229,7 +236,7 @@ export function pageMatches(page, q) {
 
 export async function unreadPages() {
   const pages = await listPages();
-  return pages.filter((p) => p.readState === "unread" || p.readState === "in_progress");
+  return pages.filter(isWaiting);
 }
 
 export function newHighlight(partial) {

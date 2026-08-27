@@ -35,7 +35,7 @@ Paste that packet into Cursor Agent or Claude Code. Paste the reply into the sam
 
 **Infinite-scroll pages are locked.** Feeds (or pages that keep growing) cannot keep stable anchors. LivePage blocks highlighting until you **snapshot** the current view. Known hosts include X, Reddit, LinkedIn, Instagram, TikTok, YouTube, Facebook, and HN.
 
-**Dashboard.** Waiting pages, bookmarks, and parsed blocks, searchable. The toolbar badge and a daily notification nudge pages that still have not been read through — reactivation, not a guilt scoreboard.
+**Dashboard.** A homepage for the trail: reading list, bookmarks, and review. Reading status is **scroll depth** (not started / % through / read through), not a clip checkbox. Comments whose last voice is still yours sit in Review. The toolbar badge and a daily notification nudge pages that still have not been read through — reactivation, not a guilt scoreboard.
 
 **Obsidian.** Dump a page plus its conversations to `obsidian://new` and a downloaded `.md` file. The note keeps URL, why-opened, parsed excerpt, highlight anchors, branch labels, and agent/user voice.
 

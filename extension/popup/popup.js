@@ -20,7 +20,7 @@ if (!unread.length) {
     .slice(0, 6)
     .map(
       (page) =>
-        `<button class="item" data-url="${page.url}"><strong>${escapeHtml(page.title)}</strong><br/><small>${escapeHtml(page.domain)} · ${formatRelative(page.lastVisitedAt)}</small></button>`
+        `<button class="item" data-url="${page.url}"><strong>${escapeHtml(page.title)}</strong><br/><small>${escapeHtml(page.domain)} · ${page.progress?.maxPercent || 0}% · ${formatRelative(page.lastVisitedAt)}</small></button>`
     )
     .join("");
   list.querySelectorAll(".item").forEach((btn) => {

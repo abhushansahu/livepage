@@ -28,7 +28,7 @@ body {
 
 .app {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 300px 1fr;
   min-height: 100vh;
 }
 
@@ -65,7 +65,7 @@ nav {
   gap: 6px;
 }
 
-.nav, .ghost, button.solid {
+.nav, .ghost, button.solid, .icon-btn {
   appearance: none;
   font: inherit;
   cursor: pointer;
@@ -84,6 +84,83 @@ nav {
 .nav.is-on, .nav:hover, .ghost:hover {
   background: rgba(255, 252, 247, 0.7);
   border-color: var(--line);
+}
+
+.nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.nav .count {
+  color: var(--sage);
+  font-size: 12px;
+  min-width: 1.2em;
+  text-align: right;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 8px 0 8px;
+}
+
+.stat {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat strong {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--sage);
+}
+
+.stat span {
+  font-size: 13px;
+}
+
+.stat em {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bar-row .bar { flex: 1; }
+
+.pct {
+  font-size: 12px;
+  color: var(--sage);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.4em;
+  text-align: right;
+}
+
+.progress-hero {
+  margin: 12px 0 8px;
+  padding: 12px 14px;
+  background: rgba(63, 107, 82, 0.08);
+  border-radius: 14px;
+}
+
+.progress-hero p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .side-actions {
@@ -118,8 +195,21 @@ input[type="search"] {
   white-space: nowrap;
 }
 
-.push {
-  margin: 22px 0;
+.section {
+  margin: 28px 0 8px;
+}
+
+.section h2 {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-weight: 500;
+  font-size: 22px;
+  margin: 0 0 6px;
+}
+
+.section p.hint {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .push-card {
@@ -132,9 +222,10 @@ input[type="search"] {
 
 .push-card h2 {
   margin: 0 0 8px;
-  font-size: 20px;
+  font-size: 22px;
   font-family: "Iowan Old Style", Palatino, Georgia, serif;
   font-weight: 500;
+  color: var(--paper);
 }
 
 .push-card p { margin: 0 0 14px; color: rgba(255, 252, 247, 0.78); }
@@ -167,48 +258,83 @@ input[type="search"] {
   gap: 16px;
 }
 
-.card {
+.card, .review-card {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 16px;
   cursor: pointer;
-  min-height: 170px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  width: 100%;
 }
 
-.card:hover {
+.card:hover, .review-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow);
 }
 
-.card .domain {
+.card .domain, .kicker {
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--sage);
 }
 
-.card h3 {
+.card h3, .review-card h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
   line-height: 1.25;
 }
 
-.card .excerpt {
+.card .excerpt, .review-card .excerpt {
   color: var(--muted);
   font-size: 13px;
   flex: 1;
 }
 
+.bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(28, 23, 18, 0.08);
+  overflow: hidden;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  background: var(--sage);
+  border-radius: inherit;
+}
+
 .meta {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   color: var(--muted);
   font-size: 12px;
+  gap: 8px;
+}
+
+.star {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--sage);
+  padding: 0 2px;
+}
+
+.review-card q {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  color: var(--ink);
+  margin: 0;
 }
 
 .drawer {
@@ -272,4 +398,5 @@ input[type="search"] {
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
   .side { border-right: 0; border-bottom: 1px solid var(--line); }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

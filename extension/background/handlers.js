@@ -18,6 +18,7 @@ import {
 import { buildAgentPacket, nextLedger } from "../agent/packet.js";
 import { obsidianNewUri, pageToMarkdown, suggestedFilename } from "../export/obsidian.js";
 import { canonicalizeUrl, pageIdFromUrl } from "../shared/url.js";
+import { applyProgress } from "../shared/progress.js";
 
 export async function handleMessage(message) {
   const type = message?.type;
@@ -72,6 +73,8 @@ export async function handleMessage(message) {
       return exportObsidian(payload.id);
     case "SNAPSHOT_PAGE":
       return snapshotPage(payload);
+    case "REPORT_PROGRESS":
+      return reportProgress(payload);
     default:
       throw new Error(`Unknown message: ${type}`);
   }
@@ -222,6 +225,12 @@ async function snapshotPage(payload) {
   page.infiniteScroll = true;
   await putPage(page);
   return page;
+}
+
+async function reportProgress(payload) {
+  const page = await loadPage(payload);
+  applyProgress(page, payload.percent, payload.scrollY || 0);
+  return putPage(page);
 }
 
 async function loadPage(payload) {
