@@ -92,8 +92,14 @@ export function createInfiniteScrollDetector(options = {}) {
 }
 
 export function evaluateInfiniteScroll(url, doc, extras = {}) {
-  if (hostLooksInfinite(url)) return { infinite: true, reason: "known-host" };
-  if (domLooksInfinite(doc)) return { infinite: true, reason: "dom-hint" };
-  if (extras.heuristic) return { infinite: true, reason: "growth" };
+  if (hostLooksInfinite(url)) {
+    return { infinite: true, reason: "This looks like a feed that keeps growing." };
+  }
+  if (domLooksInfinite(doc)) {
+    return { infinite: true, reason: "This page is an infinite feed." };
+  }
+  if (extras.heuristic) {
+    return { infinite: true, reason: "This page grew while you were reading." };
+  }
   return { infinite: false, reason: null };
 }

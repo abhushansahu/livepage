@@ -17,7 +17,7 @@ Demo pages (optional):
 npm run demo
 ```
 
-Then open `http://127.0.0.1:4173/article.html` and `http://127.0.0.1:4173/feed.html`.
+Then open `http://127.0.0.1:4173/demo/article.html` and `http://127.0.0.1:4173/demo/feed.html`. The demo pages can run LivePage without installing the extension, so you can try the habitat immediately. Load unpacked from `extension/` to use it on the real web.
 
 ## What it does
 

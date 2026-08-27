@@ -38,7 +38,7 @@ test("infinite hosts and feed roles are detected", () => {
   const fakeDoc = { querySelector: (s) => (s.includes("feed") ? {} : null) };
   const result = evaluateInfiniteScroll("https://example.com/x", fakeDoc);
   assert.equal(result.infinite, true);
-  assert.equal(result.reason, "dom-hint");
+  assert.match(result.reason, /infinite feed/);
 });
 
 test("agent packet includes only new blocks and the strict ask", () => {

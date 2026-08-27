@@ -6,6 +6,6 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "icons": "python3 scripts/make-icons.py",
-    "demo": "python3 -m http.server 4173 --directory demo"
+    "demo": "python3 -m http.server 4173 --directory ."
   }
 }

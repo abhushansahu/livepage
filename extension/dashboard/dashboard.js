@@ -3,6 +3,11 @@ import { formatRelative } from "../shared/time.js";
 import { COLORS } from "../shared/colors.js";
 import { downloadMarkdown } from "../export/download.js";
 
+if (!globalThis.chrome?.runtime?.id && !globalThis.__LP_BRIDGE) {
+  const { handleMessage } = await import("../background/handlers.js");
+  globalThis.__LP_BRIDGE = (type, payload) => handleMessage({ type, payload });
+}
+
 const state = {
   pages: [],
   filter: "waiting",
