@@ -1,26 +1,67 @@
-# LivePage (working title)
+# LivePage
 
-> Private idea exploration — now in a **lived self-lab**, not more theory.
+A Chrome extension that turns any live webpage into a writable thinking surface: colored highlights, margin conversations, forked threads with Cursor Agent or Claude Code, a dashboard of waiting pages, and an Obsidian dump.
 
-## One-liner
+The philosophy lives in [`docs/intention.md`](docs/intention.md). This folder is the first build.
 
-A **research browser** for action-driven web annotation: treat any live webpage like a writable thinking surface (highlights, margin notes, threads), with a dashboard for open cognitive loops — not a read-it-later pile or a second brain.
+## Install (unpacked)
 
-## Status
+1. Open `chrome://extensions`
+2. Enable **Developer mode**
+3. **Load unpacked** → select the `extension/` directory
+4. Pin LivePage. Visit any article. Select text.
 
-**Week 1 self-lab in progress** (2026-07-10 → 2026-07-17). Intention map is frozen. Progress = spark log + one habitat rule + thin wedge.
+Demo pages (optional):
 
-## Do this week
+```bash
+npm run demo
+```
 
-1. Read [`docs/week1-self-lab.md`](docs/week1-self-lab.md) — protocol, habitat rule, review questions.
-2. Log sparks in [`logs/spark-log.md`](logs/spark-log.md).
-3. Optional board: open [`wedge/index.html`](wedge/index.html) (four acts: note / question / park / release).
+Then open `http://127.0.0.1:4173/article.html` and `http://127.0.0.1:4173/feed.html`.
 
-## Docs (reference only)
+## What it does
 
-- [`docs/intention.md`](docs/intention.md) — **frozen** intention map
-- [`docs/horse-vision-research.md`](docs/horse-vision-research.md) — Horse invention case study (on ice this week)
+**On the page.** Select a span. A quiet toolbar offers six highlight colors and a comment. Highlights restore when you return. Comments sit in a right-edge rail, aligned to the span, and open a slim thread panel.
 
-## Working hypothesis
+**Threads can fork.** Any message can branch. You and an agent can take different readings of the same span without overwriting each other.
 
-Horse solved **navigation / working-memory** (Trails). This idea targets the second half: **thinking-in-place on the live page** — anchored notes, open questions, todos, and honest reactivation — with Obsidian export as compost, not the primary home.
+**Agents get a parsed packet, not a second copy of the page.** “Send to Cursor” / “Send to Claude Code” copies a markdown packet that:
+
+- states a contract: answer **strictly** the user’s ask
+- includes only **new unique content blocks** (already-sent blocks are omitted)
+- includes the anchored quote and the thread so far
+
+Paste that packet into Cursor Agent or Claude Code. Paste the reply back onto the thread.
+
+**Infinite-scroll pages are locked.** Feeds (or pages that keep growing) cannot keep stable anchors. LivePage blocks highlighting until you **snapshot** the current view. Known hosts include X, Reddit, LinkedIn, Instagram, TikTok, YouTube, Facebook, and HN.
+
+**Dashboard.** Waiting pages, bookmarks, and parsed blocks, searchable. The toolbar badge and a daily notification nudge pages that still have not been read through — reactivation, not a guilt scoreboard.
+
+**Obsidian.** Dump a page plus its conversations to `obsidian://new` and a downloaded `.md` file. The note keeps URL, why-opened, parsed excerpt, highlight anchors, branch labels, and agent/user voice.
+
+## Shortcuts
+
+| Action | Default |
+| --- | --- |
+| Highlight selection | `Alt+H` |
+| Comment on selection | `Alt+M` |
+| Open dashboard | `Alt+Shift+L` |
+
+Right-click a selection for the same actions.
+
+## Settings
+
+Obsidian vault name and folder, default color, default agent, daily reminder hour, and whether infinite pages stay locked until snapshot.
+
+## Tests
+
+```bash
+npm test
+```
+
+## Limits (honest)
+
+- This is an extension, not a research browser. It cannot rewrite navigation the way Horse Trails does.
+- Agent connection is a **strict context packet** plus paste-back, not a live API into Cursor or Claude Code.
+- Highlights use text-quote selectors. If a page rewrites the paragraph, the mark may not restore.
+- Very large Obsidian URIs can fail; the downloaded markdown is the reliable copy.

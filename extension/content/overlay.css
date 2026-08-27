@@ -1,0 +1,362 @@
+:host {
+  all: initial;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2147483645;
+}
+
+.lp-root {
+  font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #1c1712;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.lp-root * {
+  box-sizing: border-box;
+}
+
+.banner,
+.toolbar,
+.panel,
+.toast,
+.marker {
+  pointer-events: auto;
+}
+
+.banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483646;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  max-width: min(640px, calc(100vw - 80px));
+  padding: 10px 12px;
+  background: rgba(255, 252, 247, 0.92);
+  border: 1px solid rgba(28, 23, 18, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 10px 40px rgba(28, 23, 18, 0.12);
+  backdrop-filter: blur(16px);
+}
+
+.banner[hidden],
+.toolbar[hidden],
+.panel[hidden],
+.toast[hidden] {
+  display: none !important;
+}
+
+.banner p {
+  margin: 0;
+  color: #5c5348;
+}
+
+.banner strong {
+  color: #1c1712;
+  font-weight: 600;
+}
+
+.rail {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 44px;
+  height: 100vh;
+  z-index: 2147483645;
+  pointer-events: none;
+}
+
+.rail-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 21px;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(63, 107, 82, 0.28) 12%,
+    rgba(63, 107, 82, 0.28) 88%,
+    transparent
+  );
+}
+
+.marker {
+  pointer-events: auto;
+  position: absolute;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--lp-mark, #F6E27A);
+  box-shadow: 0 0 0 1px rgba(28, 23, 18, 0.12), 0 6px 16px rgba(28, 23, 18, 0.12);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.marker:hover,
+.marker.is-active {
+  width: auto;
+  max-width: 180px;
+  padding: 0 8px 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.marker span {
+  display: none;
+  font-size: 11px;
+  color: #1c1712;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.marker:hover span,
+.marker.is-active span {
+  display: block;
+}
+
+.connectors {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2147483644;
+}
+
+.toolbar {
+  position: fixed;
+  z-index: 2147483646;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 6px;
+  background: rgba(255, 252, 247, 0.96);
+  border: 1px solid rgba(28, 23, 18, 0.1);
+  border-radius: 999px;
+  box-shadow: 0 14px 40px rgba(28, 23, 18, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(28, 23, 18, 0.18);
+  cursor: pointer;
+  background: var(--lp-mark);
+}
+
+.swatch:hover {
+  transform: scale(1.08);
+}
+
+button.ghost,
+button.solid {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  border-radius: 999px;
+}
+
+button.ghost {
+  background: transparent;
+  color: #1c1712;
+  padding: 6px 9px;
+}
+
+button.ghost:hover {
+  background: rgba(28, 23, 18, 0.06);
+}
+
+button.solid {
+  background: #3f6b52;
+  color: #f6f1e8;
+  padding: 6px 10px;
+  font-weight: 600;
+}
+
+button.solid:hover {
+  background: #2f5240;
+}
+
+.panel {
+  position: fixed;
+  top: 16px;
+  right: 54px;
+  width: min(360px, calc(100vw - 72px));
+  max-height: calc(100vh - 32px);
+  z-index: 2147483646;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 252, 247, 0.97);
+  border: 1px solid rgba(28, 23, 18, 0.1);
+  border-radius: 18px;
+  box-shadow: 0 24px 80px rgba(28, 23, 18, 0.18);
+  overflow: hidden;
+}
+
+.panel header {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid rgba(28, 23, 18, 0.08);
+}
+
+.kicker {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a7168;
+  margin: 0 0 6px;
+}
+
+.quote {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-size: 15px;
+  margin: 0;
+  color: #1c1712;
+}
+
+.statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.chip {
+  border: 1px solid rgba(28, 23, 18, 0.12);
+  background: transparent;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #5c5348;
+}
+
+.chip.is-on {
+  background: #1c1712;
+  color: #f6f1e8;
+  border-color: #1c1712;
+}
+
+.messages {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.msg {
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(28, 23, 18, 0.04);
+}
+
+.msg.agent {
+  background: rgba(63, 107, 82, 0.1);
+}
+
+.msg .meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: #7a7168;
+  margin-bottom: 4px;
+}
+
+.msg p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.fork {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #3f6b52;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.composer {
+  padding: 12px;
+  border-top: 1px solid rgba(28, 23, 18, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  border: 1px solid rgba(28, 23, 18, 0.12);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font: inherit;
+  background: #fffcf7;
+  color: inherit;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+select {
+  font: inherit;
+  border-radius: 999px;
+  border: 1px solid rgba(28, 23, 18, 0.12);
+  background: transparent;
+  padding: 6px 8px;
+}
+
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  background: #1c1712;
+  color: #f6f1e8;
+  padding: 8px 12px;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(28, 23, 18, 0.24);
+}
+
+.branch-list {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: #7a7168;
+  font-size: 18px;
+}

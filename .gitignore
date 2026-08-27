@@ -1,2 +1,5 @@
 .cursor/
 .DS_Store
+node_modules/
+.chrome-profile/
+

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Infinite feed fixture</title>
+    <style>
+      body { margin: 0; font-family: sans-serif; background: #111; color: #eee; }
+      article { max-width: 640px; margin: 0 auto; padding: 24px; border-bottom: 1px solid #333; }
+    </style>
+  </head>
+  <body>
+    <div id="feed" role="feed"></div>
+    <script>
+      const feed = document.getElementById("feed");
+      let n = 0;
+      function more() {
+        for (let i = 0; i < 8; i += 1) {
+          n += 1;
+          const article = document.createElement("article");
+          article.innerHTML = `<h2>Card ${n}</h2><p>This feed keeps growing. A highlight here would not survive a reload with a stable anchor. LivePage should lock annotation until you snapshot.</p>`;
+          feed.appendChild(article);
+        }
+      }
+      more();
+      window.addEventListener("scroll", () => {
+        if (window.scrollY + window.innerHeight > document.body.scrollHeight - 400) more();
+      });
+    </script>
+  </body>
+</html>

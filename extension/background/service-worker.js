@@ -1,0 +1,145 @@
+import { handleMessage } from "./handlers.js";
+import { getSettings, unreadPages } from "../storage/store.js";
+
+const DASHBOARD_PATH = "dashboard/index.html";
+const ALARM = "livepage-unread-reminder";
+
+chrome.runtime.onInstalled.addListener(async () => {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: "lp-highlight",
+      title: "LivePage: highlight",
+      contexts: ["selection"]
+    });
+    chrome.contextMenus.create({
+      id: "lp-comment",
+      title: "LivePage: comment",
+      contexts: ["selection"]
+    });
+    chrome.contextMenus.create({
+      id: "lp-dashboard",
+      title: "Open LivePage dashboard",
+      contexts: ["action", "page"]
+    });
+  });
+  await refreshBadge();
+  await scheduleReminder();
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  await refreshBadge();
+  await scheduleReminder();
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "OPEN_DASHBOARD") {
+    openDashboard();
+    sendResponse({ ok: true, data: true });
+    return true;
+  }
+  if (message?.type === "RESCHEDULE_REMINDER") {
+    scheduleReminder().then(() => sendResponse({ ok: true, data: true }));
+    return true;
+  }
+  handleMessage(message)
+    .then((data) => {
+      sendResponse({ ok: true, data });
+      if (shouldRefreshBadge(message.type)) refreshBadge();
+    })
+    .catch((error) => {
+      sendResponse({ ok: false, error: error.message || String(error) });
+    });
+  return true;
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === "lp-dashboard") {
+    await openDashboard();
+    return;
+  }
+  if (!tab?.id) return;
+  const action = info.menuItemId === "lp-comment" ? "comment" : "highlight";
+  chrome.tabs.sendMessage(tab.id, { broadcast: true, kind: "CONTEXT_ACTION", action });
+});
+
+chrome.commands.onCommand.addListener(async (command, tab) => {
+  if (command === "open-dashboard") {
+    await openDashboard();
+    return;
+  }
+  if (!tab?.id) return;
+  const action = command === "comment-selection" ? "comment" : "highlight";
+  chrome.tabs.sendMessage(tab.id, { broadcast: true, kind: "CONTEXT_ACTION", action });
+});
+
+chrome.action.onClicked.addListener(() => {
+  /* popup handles click */
+});
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== ALARM) return;
+  const settings = await getSettings();
+  if (!settings.remindersEnabled) return;
+  const unread = await unreadPages();
+  if (!unread.length) return;
+  const titles = unread.slice(0, 3).map((p) => p.title || p.domain);
+  const more = unread.length > 3 ? ` and ${unread.length - 3} more` : "";
+  chrome.notifications.create(`lp-unread-${Date.now()}`, {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+    title: "LivePage · still waiting",
+    message: `${unread.length} page${unread.length === 1 ? "" : "s"} still want a first real pass: ${titles.join(" · ")}${more}`,
+    priority: 1
+  });
+});
+
+chrome.notifications.onClicked.addListener(() => {
+  openDashboard();
+});
+
+async function openDashboard() {
+  const url = chrome.runtime.getURL(DASHBOARD_PATH);
+  const tabs = await chrome.tabs.query({ url });
+  if (tabs[0]) {
+    await chrome.tabs.update(tabs[0].id, { active: true });
+    if (tabs[0].windowId) await chrome.windows.update(tabs[0].windowId, { focused: true });
+    return;
+  }
+  await chrome.tabs.create({ url });
+}
+
+async function refreshBadge() {
+  const unread = await unreadPages();
+  const count = unread.length;
+  await chrome.action.setBadgeBackgroundColor({ color: "#3F6B52" });
+  await chrome.action.setBadgeText({ text: count ? String(count) : "" });
+}
+
+async function scheduleReminder() {
+  const settings = await getSettings();
+  const hour = Number(settings.reminderHour ?? 9);
+  const minute = Number(settings.reminderMinute ?? 0);
+  const when = nextTime(hour, minute);
+  await chrome.alarms.clear(ALARM);
+  if (!settings.remindersEnabled) return;
+  chrome.alarms.create(ALARM, { when, periodInMinutes: 24 * 60 });
+}
+
+function nextTime(hour, minute) {
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  if (date.getTime() <= Date.now()) date.setDate(date.getDate() + 1);
+  return date.getTime();
+}
+
+function shouldRefreshBadge(type) {
+  return [
+    "VISIT_PAGE",
+    "PATCH_PAGE",
+    "SET_READ_STATE",
+    "DELETE_PAGE",
+    "ADD_HIGHLIGHT",
+    "SAVE_PAGE"
+  ].includes(type);
+}
+

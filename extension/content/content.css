@@ -1,0 +1,25 @@
+mark.lp-hl {
+  color: inherit;
+  border-radius: 0.12em;
+  padding: 0.02em 0.08em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--lp-mark, #F6E27A) 82%, transparent);
+}
+
+mark.lp-hl[data-lp-color="lemon"] { --lp-mark: #F6E27A; }
+mark.lp-hl[data-lp-color="moss"] { --lp-mark: #A8D5A2; }
+mark.lp-hl[data-lp-color="sky"] { --lp-mark: #A8D4F0; }
+mark.lp-hl[data-lp-color="rose"] { --lp-mark: #F3B6C4; }
+mark.lp-hl[data-lp-color="iris"] { --lp-mark: #C9B7F2; }
+mark.lp-hl[data-lp-color="sand"] { --lp-mark: #E7C899; }
+
+mark.lp-hl.is-active {
+  outline: 1px solid color-mix(in srgb, var(--lp-mark) 70%, #1c1712);
+  outline-offset: 1px;
+}
+
+html.lp-rail-on {
+  scroll-padding-right: 48px;
+}

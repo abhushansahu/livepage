@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LivePage</title>
+    <link rel="stylesheet" href="./dashboard.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="side">
+        <p class="mark">LivePage</p>
+        <h1>What still wants you.</h1>
+        <p class="lede">
+          Not a reading list mausoleum. Unread pages, parked questions, and parsed trails — waiting to be re-entered or honestly released.
+        </p>
+        <nav>
+          <button class="nav is-on" data-filter="waiting">Waiting</button>
+          <button class="nav" data-filter="all">All pages</button>
+          <button class="nav" data-filter="bookmarked">Bookmarks</button>
+          <button class="nav" data-filter="parsed">Parsed</button>
+        </nav>
+        <div class="side-actions">
+          <button class="ghost" id="export-waiting">Dump waiting to Obsidian</button>
+          <a class="ghost" href="../options/options.html">Settings</a>
+        </div>
+      </aside>
+      <main>
+        <header class="top">
+          <input id="search" type="search" placeholder="Search titles, comments, parsed blocks…" />
+          <div class="counts" id="counts"></div>
+        </header>
+        <section id="waiting-push" class="push"></section>
+        <section id="grid" class="grid"></section>
+      </main>
+    </div>
+    <article id="drawer" class="drawer" hidden></article>
+    <script type="module" src="./dashboard.js"></script>
+  </body>
+</html>

@@ -1,0 +1,54 @@
+html, body {
+  margin: 0;
+  background: #f4efe6;
+  color: #1c1712;
+  font-family: ui-sans-serif, "Segoe UI", system-ui, sans-serif;
+}
+
+main {
+  max-width: 520px;
+  margin: 48px auto;
+  padding: 0 20px;
+}
+
+.mark {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: #3f6b52;
+}
+
+h1 {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-weight: 500;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+label.check {
+  flex-direction: row;
+  align-items: center;
+}
+
+input, select {
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(28,23,18,0.12);
+  background: #fffcf7;
+}
+
+button {
+  background: #3f6b52;
+  color: #f4efe6;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font: inherit;
+  cursor: pointer;
+}

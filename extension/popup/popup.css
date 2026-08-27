@@ -1,0 +1,62 @@
+html, body {
+  margin: 0;
+  width: 320px;
+  background: #f4efe6;
+  color: #1c1712;
+  font-family: ui-sans-serif, "Segoe UI", system-ui, sans-serif;
+}
+
+body { padding: 14px; }
+
+.mark {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: #3f6b52;
+  margin: 0 0 8px;
+}
+
+h1 {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-size: 22px;
+  font-weight: 500;
+  margin: 0 0 12px;
+}
+
+.item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: #fffcf7;
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.item small { color: #6b6258; }
+
+footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+button {
+  font: inherit;
+  border-radius: 999px;
+  border: 1px solid rgba(28,23,18,0.12);
+  background: transparent;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+#dashboard {
+  background: #3f6b52;
+  color: #f4efe6;
+  border: 0;
+}
+
+.empty { color: #6b6258; font-size: 13px; }
