@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LivePage</title>
+    <link rel="stylesheet" href="./dashboard.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="side">
+        <p class="mark">LivePage</p>
+        <h1 id="heading">For you</h1>
+        <p class="lede">
+          A feed of what you meant to come back to — plus local observations that learn how you actually read.
+        </p>
+        <nav>
+          <button class="nav is-on" data-filter="home">For you</button>
+          <button class="nav" data-filter="reading">Reading list <span class="count"></span></button>
+          <button class="nav" data-filter="bookmarked">Bookmarks <span class="count"></span></button>
+          <button class="nav" data-filter="saves">Saves <span class="count"></span></button>
+          <button class="nav" data-filter="review">Review <span class="count"></span></button>
+        </nav>
+        <div class="side-actions">
+          <button class="solid" id="sync-saves">Pull saves</button>
+          <button class="ghost" id="export-waiting">Dump waiting to Obsidian</button>
+          <a class="ghost" href="../options/options.html">Settings</a>
+        </div>
+      </aside>
+      <main>
+        <header class="top">
+          <input id="search" type="search" placeholder="Search titles, comments, parsed blocks…" />
+          <div class="counts" id="counts"></div>
+        </header>
+        <div id="view"></div>
+      </main>
+    </div>
+    <article id="drawer" class="drawer" hidden></article>
+    <script type="module" src="./dashboard.js"></script>
+  </body>
+</html>

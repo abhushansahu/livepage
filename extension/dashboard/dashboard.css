@@ -1,0 +1,587 @@
+:root {
+  --bg: #f4efe6;
+  --paper: #fffcf7;
+  --ink: #1c1712;
+  --muted: #6b6258;
+  --line: rgba(28, 23, 18, 0.1);
+  --sage: #3f6b52;
+  --sage-2: #2f5240;
+  --leaf: #7c9a6d;
+  --shadow: 0 24px 70px rgba(28, 23, 18, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+body {
+  background-image:
+    radial-gradient(1000px 500px at 10% -10%, rgba(124, 154, 109, 0.16), transparent 60%),
+    radial-gradient(800px 400px at 100% 0%, rgba(231, 200, 153, 0.2), transparent 50%);
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  min-height: 100vh;
+}
+
+.side {
+  padding: 36px 28px;
+  border-right: 1px solid var(--line);
+}
+
+.mark {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: var(--sage);
+  margin: 0 0 28px;
+}
+
+h1 {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-weight: 500;
+  font-size: 34px;
+  line-height: 1.15;
+  margin: 0 0 12px;
+}
+
+.lede {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0 0 28px;
+}
+
+nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nav, .ghost, button.solid, .icon-btn {
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 999px;
+}
+
+.nav, .ghost {
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  padding: 8px 12px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.nav.is-on, .nav:hover, .ghost:hover {
+  background: rgba(255, 252, 247, 0.7);
+  border-color: var(--line);
+}
+
+.nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.nav .count {
+  color: var(--sage);
+  font-size: 12px;
+  min-width: 1.2em;
+  text-align: right;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 8px 0 8px;
+}
+
+.stat {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat strong {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--sage);
+}
+
+.stat span {
+  font-size: 13px;
+}
+
+.stat em {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bar-row .bar { flex: 1; }
+
+.pct {
+  font-size: 12px;
+  color: var(--sage);
+  font-variant-numeric: tabular-nums;
+  min-width: 2.4em;
+  text-align: right;
+}
+
+.progress-hero {
+  margin: 12px 0 8px;
+  padding: 12px 14px;
+  background: rgba(63, 107, 82, 0.08);
+  border-radius: 14px;
+}
+
+.progress-hero p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.side-actions {
+  margin-top: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.side-actions .solid {
+  text-align: center;
+}
+
+.feed-wrap {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.feed-head h2 {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-weight: 500;
+  font-size: 26px;
+  margin: 4px 0 6px;
+}
+
+.feed-head .hint {
+  color: var(--muted);
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+
+.feed-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.feed-stats span {
+  font-size: 12px;
+  color: var(--sage);
+  background: rgba(63, 107, 82, 0.1);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.sync-note {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.feed {
+  border-top: 1px solid var(--line);
+}
+
+.tweet {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 12px;
+  padding: 16px 4px 18px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.tweet:hover {
+  background: rgba(255, 252, 247, 0.55);
+}
+
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  font-weight: 600;
+  background: rgba(63, 107, 82, 0.14);
+  color: var(--sage-2);
+}
+
+.avatar.src-twitter { background: #111; color: #fff; }
+.avatar.src-reddit { background: #ff4500; color: #fff; font-size: 13px; }
+.avatar.src-youtube { background: #c4302b; color: #fff; }
+.avatar.src-pocket { background: #ef4056; color: #fff; }
+.avatar.src-hn { background: #ff6600; color: #fff; }
+.avatar.src-ai {
+  background: var(--sage);
+  color: var(--paper);
+  font-size: 18px;
+}
+
+.tweet.local-tweet {
+  background: rgba(63, 107, 82, 0.06);
+}
+
+.tweet-text {
+  margin: 0 0 10px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.related {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  margin: 0 0 10px;
+  background: var(--paper);
+}
+
+.related p { margin: 0 0 6px; }
+
+.tweet-actions .cta {
+  color: var(--paper) !important;
+  background: var(--sage) !important;
+  border-radius: 999px;
+  padding: 4px 12px !important;
+  text-decoration: none !important;
+}
+
+.tweet-top {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tweet-top strong { color: var(--ink); }
+
+.reason {
+  margin: 0 0 8px;
+  color: var(--sage-2);
+  font-size: 13px;
+}
+
+.tweet h3 {
+  margin: 0 0 6px;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-weight: 500;
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+.tweet q {
+  display: block;
+  margin: 0 0 8px;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+}
+
+.tweet .excerpt { margin: 0 0 10px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+
+.meta-line {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tweet-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.tweet-actions a, .tweet-actions button:not(.star) {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--sage);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 2px 0;
+}
+
+.tweet-actions a:hover, .tweet-actions button:hover { text-decoration: underline; }
+
+.more {
+  display: block;
+  width: 100%;
+  margin: 16px 0 0;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: 999px;
+  padding: 12px;
+  font: inherit;
+  cursor: pointer;
+  color: var(--sage-2);
+}
+
+.more:hover { background: rgba(255, 252, 247, 0.9); }
+
+main {
+  padding: 28px 32px 64px;
+}
+
+.top {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+input[type="search"] {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: 999px;
+  padding: 12px 16px;
+  font: inherit;
+}
+
+.counts {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.section {
+  margin: 28px 0 8px;
+}
+
+.section h2 {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-weight: 500;
+  font-size: 22px;
+  margin: 0 0 6px;
+}
+
+.section p.hint {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.push-card {
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 22px;
+  padding: 22px 24px;
+  box-shadow: var(--shadow);
+}
+
+.push-card h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-weight: 500;
+  color: var(--paper);
+}
+
+.push-card p { margin: 0 0 14px; color: rgba(255, 252, 247, 0.78); }
+
+.push-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.push-list button {
+  appearance: none;
+  border: 0;
+  background: rgba(255, 252, 247, 0.08);
+  color: inherit;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.push-list button:hover {
+  background: rgba(255, 252, 247, 0.14);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.card, .review-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+}
+
+.card:hover, .review-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.card .domain, .kicker {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sage);
+}
+
+.card h3, .review-card h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.card .excerpt, .review-card .excerpt {
+  color: var(--muted);
+  font-size: 13px;
+  flex: 1;
+}
+
+.bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(28, 23, 18, 0.08);
+  overflow: hidden;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  background: var(--sage);
+  border-radius: inherit;
+}
+
+.meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  gap: 8px;
+}
+
+.star {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--sage);
+  padding: 0 2px;
+}
+
+.review-card q {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  color: var(--ink);
+  margin: 0;
+}
+
+.drawer {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: min(460px, calc(100vw - 32px));
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+  overflow: auto;
+  padding: 22px;
+  z-index: 5;
+}
+
+.drawer h2 {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-weight: 500;
+  margin: 8px 0 8px;
+}
+
+.drawer .why, .drawer .excerpt, .thread {
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 18px;
+}
+
+.solid {
+  background: var(--sage);
+  color: var(--paper);
+  border: 0;
+  padding: 8px 12px;
+}
+
+.solid:hover { background: var(--sage-2); }
+
+.thread {
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+.thread q {
+  display: block;
+  color: var(--ink);
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  margin-bottom: 8px;
+}
+
+.empty {
+  color: var(--muted);
+  padding: 40px 8px;
+}
+
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; }
+  .side { border-right: 0; border-bottom: 1px solid var(--line); }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

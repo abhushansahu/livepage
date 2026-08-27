@@ -1,26 +1,125 @@
-# LivePage (working title)
+# LivePage
 
-> Private idea exploration — now in a **lived self-lab**, not more theory.
+A Chrome extension that turns any live webpage into a writable thinking surface: colored highlights, margin conversations, forked threads with Cursor Agent or Claude Code, a dashboard of waiting pages, and an Obsidian dump.
 
-## One-liner
+The philosophy lives in [`docs/intention.md`](docs/intention.md). This folder is the first build.
 
-A **research browser** for action-driven web annotation: treat any live webpage like a writable thinking surface (highlights, margin notes, threads), with a dashboard for open cognitive loops — not a read-it-later pile or a second brain.
+## Install (one command)
 
-## Status
+LivePage is a Chrome extension, so Homebrew cannot inject it into the Chrome you already use. The installer puts a `livepage` command on your PATH. That command starts a dedicated Chrome profile **with the extension always loaded**.
 
-**Week 1 self-lab in progress** (2026-07-10 → 2026-07-17). Intention map is frozen. Progress = spark log + one habitat rule + thin wedge.
+### Homebrew
 
-## Do this week
+```bash
+brew tap abhushansahu/livepage https://github.com/abhushansahu/livepage-exploration
+brew install livepage
+livepage
+```
 
-1. Read [`docs/week1-self-lab.md`](docs/week1-self-lab.md) — protocol, habitat rule, review questions.
-2. Log sparks in [`logs/spark-log.md`](logs/spark-log.md).
-3. Optional board: open [`wedge/index.html`](wedge/index.html) (four acts: note / question / park / release).
+### curl (macOS or Linux, no Homebrew)
 
-## Docs (reference only)
+```bash
+curl -fsSL https://raw.githubusercontent.com/abhushansahu/livepage-exploration/main/scripts/install.sh | bash
+```
 
-- [`docs/intention.md`](docs/intention.md) — **frozen** intention map
-- [`docs/horse-vision-research.md`](docs/horse-vision-research.md) — Horse invention case study (on ice this week)
+That clones into `~/.livepage/src`, symlinks `~/.local/bin/livepage`, and launches.
 
-## Working hypothesis
+If `livepage` is not found, add `~/.local/bin` to your PATH:
 
-Horse solved **navigation / working-memory** (Trails). This idea targets the second half: **thinking-in-place on the live page** — anchored notes, open questions, todos, and honest reactivation — with Obsidian export as compost, not the primary home.
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### First launch
+
+`livepage` opens:
+
+1. A **LivePage Chrome profile** (not your daily profile) with the extension loaded
+2. The **For you** dashboard
+3. The demo article
+
+Sign into **X, Reddit, and YouTube once** in that window so **Pull saves** can harvest bookmarks / saved / Watch Later. After that, the daily habit is:
+
+```bash
+livepage
+```
+
+Other commands:
+
+```bash
+livepage dashboard   # For you feed only
+livepage demo        # demo article + dashboard
+livepage stop        # stop the local server
+livepage update      # git pull (curl install)
+livepage where       # print paths
+```
+
+### Load it into your everyday Chrome instead
+
+If you would rather keep one browser profile:
+
+1. Open `chrome://extensions`
+2. Enable **Developer mode**
+3. **Load unpacked** → select the `extension/` folder inside the install (`livepage where` prints it)
+4. Pin LivePage
+
+Then you do not need the LivePage Chrome profile. `livepage dashboard` still serves the For you feed locally.
+
+## Try for a few days
+
+1. Run `livepage` each morning (or whenever you browse).
+2. Read as usual in that Chrome window. Highlight and comment on the live page.
+3. Scroll articles — reading status is how far you actually got, not a clip checkbox.
+4. Open X bookmarks, Reddit saved, or YouTube Watch Later once (or tap **Pull saves** on the dashboard).
+5. Use **For you** like a timeline. Local observations will start to fit how you snooze, open, and finish.
+6. **♡ Learned** on a nudge that helped. **Not this** on one that did not. Take **Give it a real pass** when you have twelve minutes.
+
+## What it does
+
+**On the page.** Select a span. A quiet toolbar offers six highlight colors and a comment. Highlights restore when you return. Comments live **inline in a reserved right margin**, aligned to the span — Google Docs / Notion style — not a floating overlay. Click a highlight or its margin card to expand the thread in place.
+
+**Threads can fork.** Any message can branch. You and an agent can take different readings of the same span without overwriting each other.
+
+**Agents get a parsed packet, not a second copy of the page.** “Send to Cursor” / “Send to Claude Code” copies a markdown packet that:
+
+- states a contract: answer **strictly** the user’s ask
+- includes only **new unique content blocks** (already-sent blocks are omitted)
+- includes the anchored quote and the thread so far
+
+Paste that packet into Cursor Agent or Claude Code. Paste the reply into the same composer and send — it is stored as the agent’s turn.
+
+**Infinite-scroll pages are locked.** Feeds (or pages that keep growing) cannot keep stable anchors. LivePage blocks highlighting until you **snapshot** the current view. Known hosts include X, Reddit, LinkedIn, Instagram, TikTok, YouTube, Facebook, and HN.
+
+**Dashboard.** Home is a **For you** feed — scroll it like a timeline. Untouched YouTube Watch Later, X bookmarks, Reddit saves, half-read pages, and comments still waiting keep coming back, ranked by how long they have been sitting and whether you ever opened them. Reading status is still **scroll depth**. **Local tweets** from LivePage sit in the feed: short observations learned from what you save, snooze, open, and actually scroll — aimed at one real pass, not a guilt score. Lists (reading / bookmarks / saves / review) are still there when you want a pile.
+
+**Pulled saves.** While you are logged in, LivePage harvests X bookmarks, Reddit saved, YouTube Watch Later, Pocket, and HN favorites. It tries Reddit and YouTube on a timer; X bookmarks are pulled when you open that page (or tap **Pull saves**, which opens the lists in the background). They land as unread bookmarks until you actually open the live page.
+
+**Obsidian.** Dump a page plus its conversations to `obsidian://new` and a downloaded `.md` file. The note keeps URL, why-opened, parsed excerpt, highlight anchors, branch labels, and agent/user voice.
+
+## Shortcuts
+
+| Action | Default |
+| --- | --- |
+| Highlight selection | `Alt+H` |
+| Comment on selection | `Alt+M` |
+| Open dashboard | `Alt+Shift+L` |
+
+Right-click a selection for the same actions.
+
+## Settings
+
+Obsidian vault name and folder, default color, default agent, daily reminder hour, whether infinite pages stay locked until snapshot, save importing, and local observations.
+
+## Tests
+
+```bash
+npm test
+```
+
+## Limits (honest)
+
+- This is an extension, not a research browser. It cannot rewrite navigation the way Horse Trails does.
+- Agent connection is a **strict context packet** plus paste-back, not a live API into Cursor or Claude Code.
+- Highlights use text-quote selectors. If a page rewrites the paragraph, the mark may not restore.
+- Very large Obsidian URIs can fail; the downloaded markdown is the reliable copy.
+- Homebrew cannot silently install into your existing Chrome profile; `livepage` uses its own profile so the extension is guaranteed to load.
