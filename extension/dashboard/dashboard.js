@@ -6,7 +6,7 @@ import { ensureDemoHabitat } from "./demo-seed.js";
 import { isWaiting, progressLabel, progressOf, reviewItems } from "../shared/progress.js";
 import { composeFeed, sourceGlyph, sourceLabel } from "../shared/feed.js";
 
-if (!globalThis.chrome?.runtime?.id && !globalThis.__LP_BRIDGE) {
+if (location.protocol !== "chrome-extension:" && !globalThis.__LP_BRIDGE) {
   const { handleMessage } = await import("../background/handlers.js");
   globalThis.__LP_BRIDGE = (type, payload) => handleMessage({ type, payload });
 }
