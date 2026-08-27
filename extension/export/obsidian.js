@@ -1,5 +1,7 @@
+import { contentTags } from "../shared/tags.js";
+
 export function pageToMarkdown(page) {
-  const tags = ["livepage", ...(page.tags || [])];
+  const tags = contentTags({ ...page, tags: ["livepage", ...(page.tags || [])] });
   const threadsByHighlight = new Map();
   for (const thread of page.threads || []) {
     const list = threadsByHighlight.get(thread.highlightId) || [];
@@ -13,6 +15,8 @@ export function pageToMarkdown(page) {
     `url: ${page.canonicalUrl || page.url}`,
     `domain: ${page.domain || ""}`,
     `status: ${page.readState || "unread"}`,
+    `source: ${page.importMeta?.source || "live"}`,
+    `progress: ${page.progress?.maxPercent || 0}`,
     `bookmarked: ${page.bookmarked ? "true" : "false"}`,
     `tags: [${tags.map(yamlEscape).join(", ")}]`,
     `livepage_id: ${page.id}`,

@@ -12,26 +12,39 @@
         <p class="mark">LivePage</p>
         <h1 id="heading">For you</h1>
         <p class="lede">
-          A feed of what you meant to come back to — plus local observations that learn how you actually read.
+          What you meant to come back to, tagged so you can find it later. Surfaces you do not want can stay off.
         </p>
+        <p class="experiment" id="experiment-note"></p>
         <nav>
-          <button class="nav is-on" data-filter="home">For you</button>
-          <button class="nav" data-filter="reading">Reading list <span class="count"></span></button>
-          <button class="nav" data-filter="bookmarked">Bookmarks <span class="count"></span></button>
-          <button class="nav" data-filter="saves">Saves <span class="count"></span></button>
-          <button class="nav" data-filter="review">Review <span class="count"></span></button>
+          <button class="nav is-on" data-filter="home" data-flag="forYouFeed">For you</button>
+          <button class="nav" data-filter="reading" data-flag="readingList">Reading list <span class="count"></span></button>
+          <button class="nav" data-filter="bookmarked" data-flag="bookmarks">Bookmarks <span class="count"></span></button>
+          <button class="nav" data-filter="saves" data-flag="saves">Saves <span class="count"></span></button>
+          <button class="nav" data-filter="rss" data-flag="rss">RSS <span class="count"></span></button>
+          <button class="nav" data-filter="review" data-flag="review">Review <span class="count"></span></button>
         </nav>
         <div class="side-actions">
-          <button class="solid" id="sync-saves">Pull saves</button>
-          <button class="ghost" id="export-waiting">Dump waiting to Obsidian</button>
+          <button class="solid" id="sync-saves">Refresh from this Chrome</button>
+          <button class="ghost" id="sync-rss">Sync RSS</button>
+          <button class="ghost" id="bind-vault">Bind vault folder</button>
+          <button class="ghost" id="write-vault">Write vault</button>
+          <button class="ghost" id="export-waiting">Dump waiting</button>
           <a class="ghost" href="../options/options.html">Settings</a>
         </div>
       </aside>
       <main>
         <header class="top">
-          <input id="search" type="search" placeholder="Search titles, comments, parsed blocks…" />
+          <input id="search" type="search" placeholder="Search, or #tag" />
+          <select id="sort" aria-label="Sort">
+            <option value="recent">Recent</option>
+            <option value="oldest-unread">Oldest unread</option>
+            <option value="never-opened">Never opened</option>
+            <option value="bookmarked">Bookmarked first</option>
+            <option value="title">Title</option>
+          </select>
           <div class="counts" id="counts"></div>
         </header>
+        <div class="tag-bar" id="tag-bar"></div>
         <div id="view"></div>
       </main>
     </div>

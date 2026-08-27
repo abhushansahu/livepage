@@ -16,6 +16,9 @@ import { measureScrollProgress } from "../shared/progress.js";
 import { harvestDocument, classifyLibraryUrl, sourceForHost } from "../import/harvest.js";
 import { fetchRedditSaved, fetchYoutubeWatchLater } from "../import/fetchers.js";
 import { uniqueItems } from "../import/normalize.js";
+import { detectFeeds } from "../import/rss.js";
+import { parseTagInput } from "../shared/tags.js";
+import { resolveFlags } from "../shared/flags.js";
 
 const overlay = new Overlay();
 let page = null;
@@ -47,9 +50,10 @@ listenForHarvest();
 
 async function boot() {
   settings = (await call("GET_SETTINGS")) || settings;
+  const { flags } = resolveFlags(settings);
   const library = classifyLibraryUrl(location.href);
   const source = sourceForHost(location.href);
-  if (settings.importSavesEnabled !== false && (library || source?.id === "reddit" || source?.id === "youtube")) {
+  if (flags.importSaves && (library || source?.id === "reddit" || source?.id === "youtube")) {
     pushSaves().catch(() => {});
     if (library) watchLibraryGrowth();
   }
@@ -77,6 +81,7 @@ async function boot() {
     if (message.kind === "CONTEXT_ACTION") handleContext(message.action);
   });
   document.documentElement.classList.add("lp-rail-on");
+  if (flags.rss) offerRssIfAny();
 }
 
 function watchInfinite() {
@@ -257,6 +262,12 @@ let harvestTimer = 0;
 function listenForHarvest() {
   if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return;
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.kind === "ADD_RSS_FEED") {
+      offerRssIfAny({ force: true })
+        .then(() => sendResponse({ ok: true }))
+        .catch(() => sendResponse({ ok: false }));
+      return true;
+    }
     if (message?.kind !== "HARVEST_SAVES") return;
     collectSaves()
       .then((items) => sendResponse({ ok: true, items }))
@@ -266,7 +277,8 @@ function listenForHarvest() {
 }
 
 async function collectSaves() {
-  if (settings.importSavesEnabled === false) return [];
+  const { flags } = resolveFlags(settings);
+  if (!flags.importSaves) return [];
   const library = classifyLibraryUrl(location.href);
   const source = sourceForHost(location.href);
   const fromDom = library ? harvestDocument(document, location.href) : [];
@@ -290,4 +302,40 @@ function watchLibraryGrowth() {
     }, 1600);
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
+}
+
+async function offerRssIfAny({ force = false } = {}) {
+  const feeds = detectFeeds(document, location.href);
+  if (!feeds.length) {
+    if (force && overlay.els) overlay.toast("No RSS/Atom feed found on this page.");
+    return;
+  }
+  if (!overlay.els) {
+    if (force) {
+      await call("ADD_RSS_FEED", { url: feeds[0].url, title: feeds[0].title });
+    }
+    return;
+  }
+  const { flags } = resolveFlags(settings);
+  if (!flags.rss && !force) return;
+  const known = new Set((settings.rssFeeds || []).map((feed) => feed.url));
+  const feed = feeds.find((item) => !known.has(item.url)) || (force ? feeds[0] : null);
+  if (!feed) return;
+  overlay.offerFeed(feed, {
+    onAdd: async (rawTags) => {
+      const result = await call("ADD_RSS_FEED", {
+        url: feed.url,
+        title: feed.title,
+        tags: parseTagInput(rawTags)
+      });
+      settings = result?.settings || (await call("GET_SETTINGS")) || settings;
+      overlay.offerFeed(null);
+      overlay.toast(
+        result?.itemCount
+          ? `Feed added. Pulled ${result.itemCount} item${result.itemCount === 1 ? "" : "s"}.`
+          : "Feed added. Items will show under RSS when the feed has entries."
+      );
+    },
+    onDismiss: () => overlay.offerFeed(null)
+  });
 }

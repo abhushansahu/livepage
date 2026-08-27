@@ -35,6 +35,7 @@ export class Overlay {
       <style>${css}</style>
       <div class="lp-root">
         <div class="banner" hidden></div>
+        <div class="feed-offer" hidden></div>
         <div class="gutter"></div>
         <div class="toolbar" hidden></div>
         <div class="toast" hidden></div>
@@ -42,6 +43,7 @@ export class Overlay {
     `;
     this.els = {
       banner: this.shadow.querySelector(".banner"),
+      feedOffer: this.shadow.querySelector(".feed-offer"),
       gutter: this.shadow.querySelector(".gutter"),
       toolbar: this.shadow.querySelector(".toolbar"),
       toast: this.shadow.querySelector(".toast")
@@ -112,6 +114,31 @@ export class Overlay {
       this.handlers.onSnapshot?.();
     this.els.banner.querySelector("[data-act='dismiss']").onclick = () => {
       this.els.banner.hidden = true;
+    };
+  }
+
+  offerFeed(feed, { onAdd, onDismiss } = {}) {
+    const el = this.els.feedOffer;
+    if (!el) return;
+    if (!feed) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
+    el.hidden = false;
+    el.innerHTML = `
+      <p><strong>RSS on this page.</strong> ${escapeHtml(feed.title || feed.url)}</p>
+      <input type="text" data-act="tags" placeholder="tags: design, weekly" />
+      <button class="solid" data-act="add">Add feed</button>
+      <button class="ghost" data-act="dismiss">Not now</button>
+    `;
+    el.querySelector("[data-act='add']").onclick = () => {
+      const tags = el.querySelector("[data-act='tags']")?.value || "";
+      onAdd?.(tags);
+    };
+    el.querySelector("[data-act='dismiss']").onclick = () => {
+      el.hidden = true;
+      onDismiss?.();
     };
   }
 

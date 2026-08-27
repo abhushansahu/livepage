@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>LivePage demo feed</title>
+    <link>http://127.0.0.1:4173/demo/article.html</link>
+    <description>A tiny tagged RSS fixture for the dashboard.</description>
+    <item>
+      <title>Open knowledge should travel as files, not as a product lock-in</title>
+      <link>https://example.com/open-knowledge-files</link>
+      <description>A vault is a git repo. Humans and agents walk the same markdown.</description>
+      <category>systems</category>
+      <category>okf</category>
+      <pubDate>Mon, 25 Aug 2026 12:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Bookmarks last; finding them at the right time does not</title>
+      <link>https://example.com/bookmarks-are-long-lived</link>
+      <description>Stars are cheap. Tags and resurfacing are the actual prosthetic.</description>
+      <category>bookmarks</category>
+      <pubDate>Tue, 26 Aug 2026 12:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

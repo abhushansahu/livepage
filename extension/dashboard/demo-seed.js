@@ -16,6 +16,21 @@ export async function ensureDemoHabitat(call) {
     if (!page.importMeta && found?.threads?.length && found.progress?.maxPercent) continue;
     await call("SAVE_PAGE", { page: found ? { ...page, ...found, ...enrich(found, page) } : page });
   }
+  const settings = (await call("GET_SETTINGS")) || {};
+  if (!(settings.rssFeeds || []).length) {
+    await call("SAVE_SETTINGS", {
+      rssFeeds: [
+        {
+          id: "rss_demo",
+          url: `${origin}/demo/feed.xml`,
+          title: "LivePage demo feed",
+          tags: ["demo", "systems"],
+          enabled: true,
+          addedAt: now
+        }
+      ]
+    });
+  }
   const check = (await call("LIST_PAGES")) || [];
   if (!check.length) throw new Error("Demo seed wrote no pages");
 }
@@ -28,7 +43,8 @@ function enrich(found, seed) {
     highlights: found.highlights?.length ? found.highlights : seed.highlights,
     threads: found.threads?.length ? found.threads : seed.threads,
     parsed: found.parsed?.excerpt ? found.parsed : seed.parsed,
-    why: found.why || seed.why
+    why: found.why || seed.why,
+    tags: found.tags?.length ? found.tags : seed.tags
   };
 }
 
@@ -47,6 +63,7 @@ function articleSeed(origin, now) {
   page.createdAt = now - 4 * 3600000;
   page.lastVisitedAt = now - 18 * 60000;
   page.bookmarked = true;
+  page.tags = ["habitat", "live"];
   page.why = "Came back to argue with the filing-cabinet line.";
   page.readState = "in_progress";
   page.progress = { percent: 42, maxPercent: 42, scrollY: 920, updatedAt: now - 18 * 60000 };
@@ -120,6 +137,7 @@ function feedSeed(origin, now) {
     blocks: []
   };
   page.why = "Opened by accident. Still sitting at the top.";
+  page.tags = ["feeds"];
   return page;
 }
 
@@ -130,6 +148,7 @@ function intentionSeed(origin, now) {
   page.createdAt = now - 10 * 24 * 3600000;
   page.lastVisitedAt = now - 2 * 24 * 3600000;
   page.bookmarked = true;
+  page.tags = ["intention", "mirror"];
   page.readState = "read";
   page.progress = { percent: 96, maxPercent: 96, scrollY: 8400, updatedAt: now - 2 * 24 * 3600000 };
   page.parsed = {
@@ -176,6 +195,7 @@ function buildImportSeeds(now) {
       author: "How to Take Notes",
       source: "youtube",
       kind: "watch_later",
+      tags: ["memory"],
       days: 14
     }, now),
     imported({
@@ -203,6 +223,7 @@ function buildImportSeeds(now) {
       author: "@andy_matuschak",
       source: "twitter",
       kind: "bookmark",
+      tags: ["questions"],
       days: 21
     }, now),
     imported({
@@ -240,6 +261,17 @@ function buildImportSeeds(now) {
       source: "pocket",
       kind: "saved",
       days: 9
+    }, now),
+    imported({
+      url: "https://example.com/open-knowledge-files",
+      title: "Open knowledge should travel as files, not as a product lock-in",
+      excerpt: "From a tagged RSS feed. The vault is a git repo both you and an agent can walk.",
+      author: "LivePage demo feed",
+      source: "rss",
+      kind: "rss",
+      tags: ["systems", "okf", "demo"],
+      bookmarked: false,
+      days: 2
     }, now)
   ];
 }
@@ -250,7 +282,8 @@ function imported(spec, now) {
   page.createdAt = created;
   page.lastVisitedAt = 0;
   page.openedAt = null;
-  page.bookmarked = true;
+  page.bookmarked = spec.bookmarked !== false;
+  page.tags = spec.tags || [];
   page.readState = "unread";
   page.parsed = { ...page.parsed, excerpt: spec.excerpt };
   page.importMeta = {

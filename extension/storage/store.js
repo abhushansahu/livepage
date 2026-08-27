@@ -1,14 +1,16 @@
 import { uid } from "../shared/id.js";
 import { isWaiting } from "../shared/progress.js";
 import { canonicalizeUrl, hostnameOf, pageIdFromUrl } from "../shared/url.js";
+import { contentTags, mergeTags } from "../shared/tags.js";
+import { DEFAULT_EXPERIMENT } from "../shared/flags.js";
 
 const DB_NAME = "livepage";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export const DEFAULT_SETTINGS = {
   defaultColor: "lemon",
   obsidianVault: "",
-  obsidianFolder: "LivePage",
+  obsidianFolder: "livepage",
   reminderHour: 9,
   reminderMinute: 0,
   remindersEnabled: true,
@@ -16,7 +18,11 @@ export const DEFAULT_SETTINGS = {
   allowInfiniteSnapshot: true,
   lockInfiniteScroll: true,
   importSavesEnabled: true,
-  localTweetsEnabled: true
+  localTweetsEnabled: false,
+  rssFeeds: [],
+  flags: {},
+  experiment: { ...DEFAULT_EXPERIMENT },
+  vault: { bound: false, name: "", boundAt: 0 }
 };
 
 let dbPromise = null;
@@ -46,6 +52,9 @@ function openDb() {
       }
       if (!db.objectStoreNames.contains("mind")) {
         db.createObjectStore("mind", { keyPath: "key" });
+      }
+      if (!db.objectStoreNames.contains("vaultMeta")) {
+        db.createObjectStore("vaultMeta", { keyPath: "id" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -97,7 +106,7 @@ export function emptyPage(url, extras = {}) {
     why: extras.why || "",
     importMeta: extras.importMeta || null,
     snoozedUntil: 0,
-    tags: [],
+    tags: mergeTags(extras.tags),
     infiniteScroll: false,
     snapshot: null,
     parsed: {
@@ -238,6 +247,7 @@ export function pageMatches(page, q) {
     page.readState,
     page.importMeta?.source,
     page.importMeta?.author,
+    ...contentTags(page),
     page.parsed?.excerpt,
     ...(page.parsed?.headings || []),
     ...(page.tags || []),
@@ -270,7 +280,8 @@ export async function upsertImportedPages(items) {
         importedAt: existing.importMeta?.importedAt || item.importMeta?.importedAt || Date.now(),
         lastSyncedAt: Date.now()
       };
-      existing.bookmarked = true;
+      existing.tags = mergeTags(existing.tags, item.tags);
+      if (item.bookmarked) existing.bookmarked = true;
       if (item.title && (!existing.title || existing.title === existing.canonicalUrl)) {
         existing.title = item.title;
       }
@@ -285,9 +296,10 @@ export async function upsertImportedPages(items) {
     const page = emptyPage(item.url, {
       title: item.title,
       why: item.why,
-      importMeta: item.importMeta
+      importMeta: item.importMeta,
+      tags: item.tags
     });
-    page.bookmarked = true;
+    page.bookmarked = Boolean(item.bookmarked);
     page.lastVisitedAt = 0;
     page.openedAt = null;
     page.parsed = { ...page.parsed, excerpt: item.excerpt || "" };
@@ -392,4 +404,20 @@ async function trimEvents(keep = 400) {
   rows.sort((a, b) => (a.at || 0) - (b.at || 0));
   for (const row of rows.slice(0, rows.length - keep)) store.delete(row.id);
   await txDone(tx);
+}
+
+export async function getVaultMeta() {
+  try {
+    return await withStore("vaultMeta", "readonly", (store) => reqOf(store.get("dir")));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveVaultMeta(meta) {
+  const next = { id: "dir", ...meta };
+  await withStore("vaultMeta", "readwrite", (store) => {
+    store.put(next);
+  });
+  return next;
 }

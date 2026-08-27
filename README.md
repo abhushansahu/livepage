@@ -1,78 +1,53 @@
 # LivePage
 
-A Chrome extension that turns any live webpage into a writable thinking surface: colored highlights, margin conversations, forked threads with Cursor Agent or Claude Code, a dashboard of waiting pages, and an Obsidian dump.
+A Chrome extension that turns any live webpage into a writable thinking surface: colored highlights, margin conversations, forked threads with Cursor Agent or Claude Code, a dashboard of waiting pages, and an Obsidian vault dump.
 
 The philosophy lives in [`docs/intention.md`](docs/intention.md). This folder is the first build.
 
-## Install (one command)
+## Install
 
-LivePage is a Chrome extension, so Homebrew cannot inject it into the Chrome you already use. The installer puts a `livepage` command on your PATH. That command starts a dedicated Chrome profile **with the extension always loaded**.
+Load the unpacked extension into **the Chrome you already use**. That profile is already signed into X, Reddit, and YouTube. LivePage harvests those sessions. There is no dedicated LivePage browser, and no second login.
 
-### Homebrew
-
-```bash
-brew tap abhushansahu/livepage https://github.com/abhushansahu/livepage-exploration
-brew install livepage
-livepage
-```
-
-### curl (macOS or Linux, no Homebrew)
+1. Clone this repo (or pull if you already have it).
+2. Open `chrome://extensions`.
+3. Enable **Developer mode**.
+4. **Load unpacked** → select the `extension/` folder.
+5. Pin LivePage.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/abhushansahu/livepage-exploration/main/scripts/install.sh | bash
+git clone https://github.com/abhushansahu/livepage-exploration
+cd livepage-exploration
 ```
 
-That clones into `~/.livepage/src`, symlinks `~/.local/bin/livepage`, and launches.
+Reload the extension after `git pull`.
 
-If `livepage` is not found, add `~/.local/bin` to your PATH:
+Homebrew cannot inject an extension into your existing Chrome profile, so there is no brew formula. If a `livepage` command is still on your PATH from an earlier experiment, you can ignore or delete it.
+
+## Local demo habitat
+
+Optional. Serves the fixture pages and the dashboard over HTTP so you can try the UI without packing.
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
+npm test
+npm run demo
 ```
 
-### First launch
+Then open:
 
-`livepage` opens:
+- [http://127.0.0.1:4173/demo/article.html](http://127.0.0.1:4173/demo/article.html)
+- [http://127.0.0.1:4173/extension/dashboard/index.html](http://127.0.0.1:4173/extension/dashboard/index.html)
 
-1. A **LivePage Chrome profile** (not your daily profile) with the extension loaded
-2. The **For you** dashboard
-3. The demo article
-
-Sign into **X, Reddit, and YouTube once** in that window so **Pull saves** can harvest bookmarks / saved / Watch Later. After that, the daily habit is:
-
-```bash
-livepage
-```
-
-Other commands:
-
-```bash
-livepage dashboard   # For you feed only
-livepage demo        # demo article + dashboard
-livepage stop        # stop the local server
-livepage update      # git pull (curl install)
-livepage where       # print paths
-```
-
-### Load it into your everyday Chrome instead
-
-If you would rather keep one browser profile:
-
-1. Open `chrome://extensions`
-2. Enable **Developer mode**
-3. **Load unpacked** → select the `extension/` folder inside the install (`livepage where` prints it)
-4. Pin LivePage
-
-Then you do not need the LivePage Chrome profile. `livepage dashboard` still serves the For you feed locally.
+The HTTP dashboard seeds a trail. The real extension uses its own IndexedDB inside your Chrome profile.
 
 ## Try for a few days
 
-1. Run `livepage` each morning (or whenever you browse).
-2. Read as usual in that Chrome window. Highlight and comment on the live page.
-3. Scroll articles — reading status is how far you actually got, not a clip checkbox.
-4. Open X bookmarks, Reddit saved, or YouTube Watch Later once (or tap **Pull saves** on the dashboard).
-5. Use **For you** like a timeline. Local observations will start to fit how you snooze, open, and finish.
-6. **♡ Learned** on a nudge that helped. **Not this** on one that did not. Take **Give it a real pass** when you have twelve minutes.
+1. Browse in your normal Chrome. Highlight and comment on the live page.
+2. Scroll articles — reading status is how far you actually got, not a clip checkbox.
+3. Open X bookmarks, Reddit saved, or YouTube Watch Later once (or tap **Refresh from this Chrome**). Stay logged in as usual; do not create a second account for LivePage.
+4. Add RSS from Settings, or from a page that advertises a feed. Tag the feed. Tags copy onto items.
+5. Star bookmarks as you go. They are meant to live a long time. Tags, search (`#tag`), and sort (oldest unread / never opened) are how you find them later.
+6. Bind your Obsidian vault folder (a git repo) from the dashboard. **Write vault** dumps open markdown + `catalog.json`. `git pull` / `git push` keeps two machines in sync. Chrome cannot push for you.
+7. If the dashboard gets loud, open Settings → Experiments. Switch A (feed) / B (lists), or turn individual surfaces off.
 
 ## What it does
 
@@ -90,11 +65,30 @@ Paste that packet into Cursor Agent or Claude Code. Paste the reply into the sam
 
 **Infinite-scroll pages are locked.** Feeds (or pages that keep growing) cannot keep stable anchors. LivePage blocks highlighting until you **snapshot** the current view. Known hosts include X, Reddit, LinkedIn, Instagram, TikTok, YouTube, Facebook, and HN.
 
-**Dashboard.** Home is a **For you** feed — scroll it like a timeline. Untouched YouTube Watch Later, X bookmarks, Reddit saves, half-read pages, and comments still waiting keep coming back, ranked by how long they have been sitting and whether you ever opened them. Reading status is still **scroll depth**. **Local tweets** from LivePage sit in the feed: short observations learned from what you save, snooze, open, and actually scroll — aimed at one real pass, not a guilt score. Lists (reading / bookmarks / saves / review) are still there when you want a pile.
+**Dashboard.** Home can be a **For you** feed or a quieter list, depending on the experiment flag. Untouched Watch Later, X bookmarks, Reddit saves, RSS, half-read pages, and comments still waiting keep coming back. Reading status is still **scroll depth**. Local observations are **off by default**. Lists (reading / bookmarks / saves / RSS / review) can be hidden independently so the board does not become every inbox at once.
 
-**Pulled saves.** While you are logged in, LivePage harvests X bookmarks, Reddit saved, YouTube Watch Later, Pocket, and HN favorites. It tries Reddit and YouTube on a timer; X bookmarks are pulled when you open that page (or tap **Pull saves**, which opens the lists in the background). They land as unread bookmarks until you actually open the live page.
+**Pulled saves.** While this Chrome is logged in, LivePage harvests X bookmarks, Reddit saved, YouTube Watch Later, Pocket, and HN favorites. It does not ask you to sign in again. X bookmarks are pulled when you open that page (or tap **Refresh from this Chrome**). They land as unread bookmarks until you actually open the live page.
 
-**Obsidian.** Dump a page plus its conversations to `obsidian://new` and a downloaded `.md` file. The note keeps URL, why-opened, parsed excerpt, highlight anchors, branch labels, and agent/user voice.
+**Tags.** Every page carries user tags plus derived tags (`youtube`, `bookmark`, `user-comment`, `ai-comment`, feed names, …). The dashboard filters and sorts on that shared vocabulary. Search `#tag` works too.
+
+**RSS.** Settings holds tagged feeds. On a site that exposes `<link rel="alternate" type="application/rss+xml">`, LivePage offers **Add feed**. Right-click → **LivePage: add RSS feed from this page**.
+
+**Bookmarks.** The star is independent of reading progress. They are not meant to expire. The problem they usually have is retrieval: tags, oldest-unread sort, and feed copy like “Bookmarked 21 days ago · #questions · never opened.”
+
+**Obsidian / git vault.** Dump is not only `obsidian://new`. Bind the vault folder (the git checkout). LivePage writes:
+
+```
+livepage/README.md
+livepage/index.md          # map of content
+livepage/catalog.json      # machine index
+livepage/config.json       # RSS + flags snapshot
+livepage/tags.md
+livepage/pages/*.md        # YAML frontmatter notes
+```
+
+That layout is ordinary files. You, an agent, or a second laptop can walk the repo. GitHub is the sync bus. Fallback if you skip the bind: download `.md` + `obsidian://new`.
+
+**Feature flags / A-B.** Settings → Experiments. Variant A is feed-first. Variant B hides For you and starts in lists. Individual rooms (For you, reading list, bookmarks, saves, RSS, review, local observations, harvest) can be toggled. This is how we keep the dashboard from becoming every source at once while we learn what actually helps.
 
 ## Shortcuts
 
@@ -104,11 +98,7 @@ Paste that packet into Cursor Agent or Claude Code. Paste the reply into the sam
 | Comment on selection | `Alt+M` |
 | Open dashboard | `Alt+Shift+L` |
 
-Right-click a selection for the same actions.
-
-## Settings
-
-Obsidian vault name and folder, default color, default agent, daily reminder hour, whether infinite pages stay locked until snapshot, save importing, and local observations.
+Right-click a selection for the same actions. Right-click a page to add its RSS feed.
 
 ## Tests
 
@@ -121,5 +111,6 @@ npm test
 - This is an extension, not a research browser. It cannot rewrite navigation the way Horse Trails does.
 - Agent connection is a **strict context packet** plus paste-back, not a live API into Cursor or Claude Code.
 - Highlights use text-quote selectors. If a page rewrites the paragraph, the mark may not restore.
-- Very large Obsidian URIs can fail; the downloaded markdown is the reliable copy.
-- Homebrew cannot silently install into your existing Chrome profile; `livepage` uses its own profile so the extension is guaranteed to load.
+- Chrome cannot `git push`. The vault dump is files; sync is your git (or Obsidian Git).
+- Very large `obsidian://` URIs can fail; the bound folder or downloaded markdown is the reliable copy.
+- Harvest uses the cookies of **this** Chrome profile. If you are not logged into X in this profile, LivePage cannot invent that session.
