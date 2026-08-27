@@ -80,8 +80,15 @@ document.getElementById("sync-saves").onclick = async () => {
 };
 
 async function boot() {
-  await ensureDemoHabitat(call);
+  try {
+    await ensureDemoHabitat(call);
+  } catch (error) {
+    state.syncNote = `Could not seed the trail: ${error.message || error}`;
+  }
   await reload();
+  if (!state.pages.length) {
+    state.syncNote = `${state.syncNote ? state.syncNote + " " : ""}Trail is empty after boot.`;
+  }
 }
 
 boot().catch((error) => {
