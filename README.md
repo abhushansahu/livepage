@@ -35,7 +35,9 @@ Paste that packet into Cursor Agent or Claude Code. Paste the reply into the sam
 
 **Infinite-scroll pages are locked.** Feeds (or pages that keep growing) cannot keep stable anchors. LivePage blocks highlighting until you **snapshot** the current view. Known hosts include X, Reddit, LinkedIn, Instagram, TikTok, YouTube, Facebook, and HN.
 
-**Dashboard.** A homepage for the trail: reading list, bookmarks, and review. Reading status is **scroll depth** (not started / % through / read through), not a clip checkbox. Comments whose last voice is still yours sit in Review. The toolbar badge and a daily notification nudge pages that still have not been read through — reactivation, not a guilt scoreboard.
+**Dashboard.** Home is a **For you** feed — scroll it like a timeline. Untouched YouTube Watch Later, X bookmarks, Reddit saves, half-read pages, and comments still waiting keep coming back, ranked by how long they have been sitting and whether you ever opened them. Reading status is still **scroll depth**. Lists (reading / bookmarks / saves / review) are still there when you want a pile.
+
+**Pulled saves.** While you are logged in, LivePage harvests X bookmarks, Reddit saved, YouTube Watch Later, Pocket, and HN favorites. It tries Reddit and YouTube on a timer; X bookmarks are pulled when you open that page (or tap **Pull saves**, which opens the lists in the background). They land as unread bookmarks until you actually open the live page.
 
 **Obsidian.** Dump a page plus its conversations to `obsidian://new` and a downloaded `.md` file. The note keeps URL, why-opened, parsed excerpt, highlight anchors, branch labels, and agent/user voice.
 

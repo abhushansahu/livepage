@@ -7,14 +7,13 @@ import { emptyPage } from "../storage/store.js";
 export async function ensureDemoHabitat(call) {
   if (globalThis.chrome?.runtime?.id) return;
   const existing = (await call("LIST_PAGES")) || [];
-  const seeded = existing.some((page) => page.progress?.maxPercent > 0 && (page.threads || []).length);
-  if (seeded && existing.length >= 3) return;
-
   const now = Date.now();
   const origin = location.origin;
-  for (const page of buildSeeds(origin, now)) {
+  const seeds = [...buildSeeds(origin, now), ...buildImportSeeds(now)];
+  for (const page of seeds) {
     const found = existing.find((p) => p.id === page.id);
-    if (found?.threads?.length && found.progress?.maxPercent) continue;
+    if (page.importMeta && found?.importMeta) continue;
+    if (!page.importMeta && found?.threads?.length && found.progress?.maxPercent) continue;
     await call("SAVE_PAGE", { page: found ? { ...page, ...found, ...enrich(found, page) } : page });
   }
 }
@@ -164,4 +163,102 @@ function highlight(id, color, text, createdAt) {
 
 function message(id, role, agent, content, createdAt) {
   return { id, role, agent, content, createdAt };
+}
+
+function buildImportSeeds(now) {
+  return [
+    imported({
+      url: "https://www.youtube.com/watch?v=lp-watch-later-01",
+      title: "How to remember what you read — without a second brain",
+      excerpt: "Memory is a trail you walk again, not a vault you fill. Watch later, then never watch.",
+      author: "How to Take Notes",
+      source: "youtube",
+      kind: "watch_later",
+      days: 14
+    }, now),
+    imported({
+      url: "https://www.youtube.com/watch?v=lp-watch-later-02",
+      title: "The case against finishing every article",
+      excerpt: "Abandonment is a skill. You saved this to Watch Later because the title rhymed with a mood.",
+      author: "The Browser",
+      source: "youtube",
+      kind: "watch_later",
+      days: 3
+    }, now),
+    imported({
+      url: "https://x.com/visakanv/status/1800000000000000001",
+      title: "bookmarks are a graveyard of intended selves",
+      excerpt: "Every bookmark is a person you meant to be next week. The feed should bring that person back.",
+      author: "@visakanv",
+      source: "twitter",
+      kind: "bookmark",
+      days: 6
+    }, now),
+    imported({
+      url: "https://x.com/andy_matuschak/status/1800000000000000002",
+      title: "Note-taking is not the work. The work is the next question.",
+      excerpt: "You starred this on X, opened nothing, and the question went cold.",
+      author: "@andy_matuschak",
+      source: "twitter",
+      kind: "bookmark",
+      days: 21
+    }, now),
+    imported({
+      url: "https://www.theatlantic.com/livepage-saved-essay",
+      title: "Why we never return to the tabs we save",
+      excerpt: "Saved from r/TrueReddit. The article is still the live page. You have not scrolled a pixel.",
+      author: "r/TrueReddit",
+      source: "reddit",
+      kind: "saved",
+      days: 12
+    }, now),
+    imported({
+      url: "https://www.reddit.com/r/slatestarcodex/comments/lpdemo/on_trails/",
+      title: "On trails, not filing cabinets",
+      excerpt: "A thread you saved because someone disagreed well. Still unread.",
+      author: "r/slatestarcodex",
+      source: "reddit",
+      kind: "saved",
+      days: 5
+    }, now),
+    imported({
+      url: "https://news.ycombinator.com/item?id=lp-hn-1",
+      title: "Show HN: a dashboard that is a feed, not a library",
+      excerpt: "Favorited on HN a month ago. The comments are the live page.",
+      author: "HN",
+      source: "hn",
+      kind: "favorite",
+      days: 28
+    }, now),
+    imported({
+      url: "https://getpocket.com/never-opened-essay",
+      title: "Pocket is full of people you were going to become",
+      excerpt: "Saved in Pocket. The interest dies when the pile has no surface to scroll.",
+      author: "Pocket",
+      source: "pocket",
+      kind: "saved",
+      days: 9
+    }, now)
+  ];
+}
+
+function imported(spec, now) {
+  const created = now - spec.days * 24 * 3600000;
+  const page = emptyPage(spec.url, { title: spec.title, why: spec.excerpt });
+  page.createdAt = created;
+  page.lastVisitedAt = 0;
+  page.openedAt = null;
+  page.bookmarked = true;
+  page.readState = "unread";
+  page.parsed = { ...page.parsed, excerpt: spec.excerpt };
+  page.importMeta = {
+    source: spec.source,
+    kind: spec.kind,
+    author: spec.author,
+    externalId: spec.url,
+    importedAt: created,
+    lastSyncedAt: now
+  };
+  page.progress = { percent: 0, maxPercent: 0, scrollY: 0, updatedAt: created };
+  return page;
 }

@@ -13,12 +13,15 @@ import {
   saveSettings,
   searchPages,
   unreadPages,
+  upsertImportedPages,
   upsertPageFromVisit
 } from "../storage/store.js";
 import { buildAgentPacket, nextLedger } from "../agent/packet.js";
 import { obsidianNewUri, pageToMarkdown, suggestedFilename } from "../export/obsidian.js";
 import { canonicalizeUrl, pageIdFromUrl } from "../shared/url.js";
 import { applyProgress } from "../shared/progress.js";
+import { uniqueItems } from "../import/normalize.js";
+import { syncSaves } from "../import/sync.js";
 
 export async function handleMessage(message) {
   const type = message?.type;
@@ -75,6 +78,17 @@ export async function handleMessage(message) {
       return snapshotPage(payload);
     case "REPORT_PROGRESS":
       return reportProgress(payload);
+    case "IMPORT_ITEMS":
+      return upsertImportedPages(uniqueItems(payload.items || []));
+    case "SYNC_SAVES":
+      return syncSaves({
+        openTabs: Boolean(payload.openTabs),
+        importItems: upsertImportedPages
+      });
+    case "SNOOZE_PAGE":
+      return patchPage(payload.id, {
+        snoozedUntil: Date.now() + (payload.hours || 48) * 60 * 60 * 1000
+      });
     default:
       throw new Error(`Unknown message: ${type}`);
   }

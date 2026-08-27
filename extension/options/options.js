@@ -20,7 +20,8 @@ form.addEventListener("submit", async (event) => {
     obsidianFolder: form.elements.obsidianFolder.value.trim() || "LivePage",
     remindersEnabled: form.elements.remindersEnabled.checked,
     reminderHour: Number(form.elements.reminderHour.value || 9),
-    lockInfiniteScroll: form.elements.lockInfiniteScroll.checked
+    lockInfiniteScroll: form.elements.lockInfiniteScroll.checked,
+    importSavesEnabled: form.elements.importSavesEnabled.checked
   };
   await call("SAVE_SETTINGS", patch);
   chrome.runtime.sendMessage({ type: "RESCHEDULE_REMINDER" });

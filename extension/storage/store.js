@@ -14,7 +14,8 @@ export const DEFAULT_SETTINGS = {
   remindersEnabled: true,
   agentDefault: "cursor",
   allowInfiniteSnapshot: true,
-  lockInfiniteScroll: true
+  lockInfiniteScroll: true,
+  importSavesEnabled: true
 };
 
 let dbPromise = null;
@@ -80,9 +81,12 @@ export function emptyPage(url, extras = {}) {
     createdAt: ts,
     updatedAt: ts,
     lastVisitedAt: ts,
+    openedAt: extras.openedAt || null,
     readState: "unread",
     bookmarked: false,
     why: extras.why || "",
+    importMeta: extras.importMeta || null,
+    snoozedUntil: 0,
     tags: [],
     infiniteScroll: false,
     snapshot: null,
@@ -141,6 +145,7 @@ export async function upsertPageFromVisit(url, meta = {}) {
   const existing = await getPageByUrl(url);
   if (existing) {
     existing.lastVisitedAt = Date.now();
+    existing.openedAt = Date.now();
     if (meta.title && (!existing.title || existing.title === existing.canonicalUrl)) {
       existing.title = meta.title;
     }
@@ -151,6 +156,7 @@ export async function upsertPageFromVisit(url, meta = {}) {
     return putPage(existing);
   }
   const page = emptyPage(url, meta);
+  page.openedAt = Date.now();
   if (meta.parsed) page.parsed = meta.parsed;
   if (typeof meta.infiniteScroll === "boolean") page.infiniteScroll = meta.infiniteScroll;
   return putPage(page);
@@ -220,6 +226,8 @@ export function pageMatches(page, q) {
     page.url,
     page.why,
     page.readState,
+    page.importMeta?.source,
+    page.importMeta?.author,
     page.parsed?.excerpt,
     ...(page.parsed?.headings || []),
     ...(page.tags || []),
@@ -237,6 +245,46 @@ export function pageMatches(page, q) {
 export async function unreadPages() {
   const pages = await listPages();
   return pages.filter(isWaiting);
+}
+
+export async function upsertImportedPages(items) {
+  let imported = 0;
+  let updated = 0;
+  for (const item of items || []) {
+    if (!item?.url) continue;
+    const existing = await getPageByUrl(item.url);
+    if (existing) {
+      existing.importMeta = {
+        ...(existing.importMeta || {}),
+        ...item.importMeta,
+        importedAt: existing.importMeta?.importedAt || item.importMeta?.importedAt || Date.now(),
+        lastSyncedAt: Date.now()
+      };
+      existing.bookmarked = true;
+      if (item.title && (!existing.title || existing.title === existing.canonicalUrl)) {
+        existing.title = item.title;
+      }
+      if (item.excerpt && !existing.parsed?.excerpt) {
+        existing.parsed = { ...(existing.parsed || {}), excerpt: item.excerpt };
+      }
+      if (item.why && !existing.why) existing.why = item.why;
+      await putPage(existing);
+      updated += 1;
+      continue;
+    }
+    const page = emptyPage(item.url, {
+      title: item.title,
+      why: item.why,
+      importMeta: item.importMeta
+    });
+    page.bookmarked = true;
+    page.lastVisitedAt = 0;
+    page.openedAt = null;
+    page.parsed = { ...page.parsed, excerpt: item.excerpt || "" };
+    await putPage(page);
+    imported += 1;
+  }
+  return { imported, updated, total: imported + updated };
 }
 
 export function newHighlight(partial) {

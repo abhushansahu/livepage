@@ -1,8 +1,10 @@
 import { handleMessage } from "./handlers.js";
-import { getSettings, unreadPages } from "../storage/store.js";
+import { getSettings, unreadPages, upsertImportedPages } from "../storage/store.js";
+import { syncSaves } from "../import/sync.js";
 
 const DASHBOARD_PATH = "dashboard/index.html";
 const ALARM = "livepage-unread-reminder";
+const SYNC_ALARM = "livepage-sync-saves";
 
 chrome.runtime.onInstalled.addListener(async () => {
   chrome.contextMenus.removeAll(() => {
@@ -24,11 +26,13 @@ chrome.runtime.onInstalled.addListener(async () => {
   });
   await refreshBadge();
   await scheduleReminder();
+  await scheduleSync();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await refreshBadge();
   await scheduleReminder();
+  await scheduleSync();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -77,6 +81,13 @@ chrome.action.onClicked.addListener(() => {
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === SYNC_ALARM) {
+    const settings = await getSettings();
+    if (settings.importSavesEnabled === false) return;
+    await syncSaves({ openTabs: false, importItems: upsertImportedPages });
+    await refreshBadge();
+    return;
+  }
   if (alarm.name !== ALARM) return;
   const settings = await getSettings();
   if (!settings.remindersEnabled) return;
@@ -125,6 +136,11 @@ async function scheduleReminder() {
   chrome.alarms.create(ALARM, { when, periodInMinutes: 24 * 60 });
 }
 
+async function scheduleSync() {
+  await chrome.alarms.clear(SYNC_ALARM);
+  chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 180 });
+}
+
 function nextTime(hour, minute) {
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
@@ -140,7 +156,10 @@ function shouldRefreshBadge(type) {
     "DELETE_PAGE",
     "ADD_HIGHLIGHT",
     "SAVE_PAGE",
-    "REPORT_PROGRESS"
+    "REPORT_PROGRESS",
+    "IMPORT_ITEMS",
+    "SYNC_SAVES",
+    "SNOOZE_PAGE"
   ].includes(type);
 }
 

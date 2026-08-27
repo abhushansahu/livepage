@@ -10,17 +10,19 @@
     <div class="app">
       <aside class="side">
         <p class="mark">LivePage</p>
-        <h1 id="heading">Home</h1>
+        <h1 id="heading">For you</h1>
         <p class="lede">
-          Reading list, bookmarks, how far you actually scrolled, and the comments still waiting for review.
+          A feed of what you meant to come back to: Watch Later, X bookmarks, Reddit saves, half-read pages, and comments still waiting.
         </p>
         <nav>
-          <button class="nav is-on" data-filter="home">Home</button>
+          <button class="nav is-on" data-filter="home">For you</button>
           <button class="nav" data-filter="reading">Reading list <span class="count"></span></button>
           <button class="nav" data-filter="bookmarked">Bookmarks <span class="count"></span></button>
+          <button class="nav" data-filter="saves">Saves <span class="count"></span></button>
           <button class="nav" data-filter="review">Review <span class="count"></span></button>
         </nav>
         <div class="side-actions">
+          <button class="solid" id="sync-saves">Pull saves</button>
           <button class="ghost" id="export-waiting">Dump waiting to Obsidian</button>
           <a class="ghost" href="../options/options.html">Settings</a>
         </div>

@@ -4,6 +4,7 @@ import { COLORS } from "../shared/colors.js";
 import { downloadMarkdown } from "../export/download.js";
 import { ensureDemoHabitat } from "./demo-seed.js";
 import { isWaiting, progressLabel, progressOf, reviewItems } from "../shared/progress.js";
+import { feedItems, sourceGlyph, sourceLabel } from "../shared/feed.js";
 
 if (!globalThis.chrome?.runtime?.id && !globalThis.__LP_BRIDGE) {
   const { handleMessage } = await import("../background/handlers.js");
@@ -11,17 +12,20 @@ if (!globalThis.chrome?.runtime?.id && !globalThis.__LP_BRIDGE) {
 }
 
 const TITLES = {
-  home: "Home",
+  home: "For you",
   reading: "Reading list",
   bookmarked: "Bookmarks",
-  review: "Review"
+  review: "Review",
+  saves: "Saves"
 };
 
 const state = {
   pages: [],
   filter: "home",
   query: "",
-  activeId: null
+  activeId: null,
+  feedLimit: 8,
+  syncNote: ""
 };
 
 const els = {
@@ -36,6 +40,7 @@ document.querySelectorAll(".nav").forEach((btn) => {
   btn.onclick = () => {
     document.querySelectorAll(".nav").forEach((b) => b.classList.toggle("is-on", b === btn));
     state.filter = btn.dataset.filter;
+    state.feedLimit = 8;
     render();
   };
 });
@@ -54,6 +59,23 @@ document.getElementById("export-waiting").onclick = async () => {
   }
 };
 
+document.getElementById("sync-saves").onclick = async () => {
+  const btn = document.getElementById("sync-saves");
+  btn.textContent = "Pulling…";
+  try {
+    const result = await call("SYNC_SAVES", { openTabs: Boolean(globalThis.chrome?.tabs) });
+    const n = result?.imported || result?.itemCount || 0;
+    state.syncNote = n
+      ? `Pulled ${n} saved ${n === 1 ? "item" : "items"}.`
+      : "Nothing new. Open X bookmarks, Reddit saved, or YouTube Watch Later while logged in — LivePage harvests them as you scroll.";
+    await reload();
+  } catch (error) {
+    state.syncNote = String(error.message || error);
+    render();
+  }
+  btn.textContent = "Pull saves";
+};
+
 boot();
 
 async function boot() {
@@ -68,6 +90,8 @@ function matchesQuery(page) {
     page.title,
     page.domain,
     page.why,
+    page.importMeta?.source,
+    page.importMeta?.author,
     page.parsed?.excerpt,
     ...(page.highlights || []).map((h) => h.text),
     ...(page.threads || []).flatMap((t) => (t.messages || []).map((m) => m.content))
@@ -84,20 +108,22 @@ function buckets(pages) {
   const review = reviewItems(pages);
   const awaiting = review.filter((r) => r.awaiting);
   const trail = pages.filter((p) => p.readState !== "released");
-  return { waiting, reading, bookmarks, review, awaiting, trail };
+  const saves = pages.filter((p) => p.importMeta);
+  return { waiting, reading, bookmarks, review, awaiting, trail, saves };
 }
 
 function render() {
   const pages = state.pages.filter(matchesQuery);
-  const { waiting, reading, bookmarks, review, awaiting, trail } = buckets(pages);
-  els.heading.textContent = TITLES[state.filter] || "Home";
-  els.counts.textContent = `${waiting.length} unread through · ${bookmarks.length} bookmarks · ${awaiting.length} to review`;
+  const { waiting, bookmarks, review, awaiting, trail, saves } = buckets(pages);
+  els.heading.textContent = TITLES[state.filter] || "For you";
+  els.counts.textContent = `${waiting.length} unread through · ${saves.length} pulled saves · ${awaiting.length} to review`;
   setNavCount("reading", trail.length);
   setNavCount("bookmarked", bookmarks.length);
   setNavCount("review", awaiting.length);
+  setNavCount("saves", saves.length);
 
   if (state.filter === "home") {
-    els.view.innerHTML = homeHtml({ waiting, reading, bookmarks, awaiting });
+    els.view.innerHTML = homeHtml(pages, awaiting);
   } else if (state.filter === "reading") {
     els.view.innerHTML = listHtml(
       "Reading list",
@@ -106,6 +132,12 @@ function render() {
     );
   } else if (state.filter === "bookmarked") {
     els.view.innerHTML = listHtml("Bookmarks", "Pinned on purpose, independent of how far you read.", bookmarks);
+  } else if (state.filter === "saves") {
+    els.view.innerHTML = listHtml(
+      "Saves",
+      "Pulled from X bookmarks, Reddit saved, YouTube Watch Later, and similar lists. They stay here until you actually open them.",
+      saves
+    );
   } else {
     els.view.innerHTML = reviewHtml(review);
   }
@@ -117,51 +149,27 @@ function setNavCount(filter, n) {
   if (el) el.textContent = n ? String(n) : "";
 }
 
-function homeHtml({ waiting, reading, bookmarks, awaiting }) {
+function homeHtml(pages, awaiting) {
+  const feed = feedItems(pages);
+  const shown = feed.slice(0, state.feedLimit);
   return `
-    <section class="stats" aria-label="Reading status">
-      ${stat("Unread through", waiting.length, "Never reached the end of the page.")}
-      ${stat("Mid-scroll", reading.length, "Somewhere between 9% and 89%.")}
-      ${stat("To review", awaiting.length, "Your last turn is still waiting.")}
-      ${stat("Bookmarks", bookmarks.length, "Kept, even unfinished.")}
-    </section>
-    ${
-      waiting.length
-        ? `<section class="section"><div class="push-card">
-            <h2>Still not read through.</h2>
-            <p>Scroll depth is the reading status. These pages never reached the end — or never really started.</p>
-            <div class="push-list">
-              ${waiting
-                .slice(0, 4)
-                .map(
-                  (p) =>
-                    `<button data-open="${p.id}"><strong>${escapeHtml(p.title)}</strong><br/><span>${escapeHtml(p.domain)} · ${progressLabel(p)} · ${formatRelative(p.lastVisitedAt)}</span></button>`
-                )
-                .join("")}
-            </div>
-          </div></section>`
-        : ""
-    }
-    <section class="section">
-      <h2>Continue</h2>
-      <p class="hint">In the middle of the page. The bar is how far you have actually scrolled.</p>
-      <div class="grid">${reading.length ? reading.slice(0, 6).map(pageCard).join("") : `<p class="empty">Nothing mid-read.</p>`}</div>
-    </section>
-    <section class="section">
-      <h2>Review</h2>
-      <p class="hint">Comments and asks whose last voice is still yours — they want a pass.</p>
-      <div class="grid">${awaiting.length ? awaiting.slice(0, 4).map(reviewCard).join("") : `<p class="empty">No open asks right now.</p>`}</div>
-    </section>
-    <section class="section">
-      <h2>Bookmarks</h2>
-      <p class="hint">Kept on purpose, even if the scroll is unfinished.</p>
-      <div class="grid">${bookmarks.length ? bookmarks.map(pageCard).join("") : `<p class="empty">Star a page from the reading list.</p>`}</div>
-    </section>
+    <div class="feed-wrap">
+      <header class="feed-head">
+        <div>
+          <h2>For you</h2>
+          <p class="hint">Scroll it like a timeline. Untouched Watch Later, X bookmarks, Reddit saves, half-read pages, and asks still waiting keep coming back.</p>
+        </div>
+      </header>
+      ${state.syncNote ? `<p class="sync-note">${escapeHtml(state.syncNote)}</p>` : ""}
+      <div class="feed-stats">
+        <span>${awaiting.length} waiting a reply</span>
+        <span>${pages.filter((p) => p.importMeta && progressOf(p) <= 8).length} never opened</span>
+        <span>${pages.filter((p) => progressOf(p) > 8 && progressOf(p) < 90).length} mid-scroll</span>
+      </div>
+      <div class="feed">${shown.map(feedPost).join("") || `<p class="empty">Nothing on the trail yet.</p>`}</div>
+      ${shown.length < feed.length ? `<button class="more" id="feed-more">Show more</button>` : ""}
+    </div>
   `;
-}
-
-function stat(label, value, hint) {
-  return `<div class="stat"><strong>${value}</strong><span>${escapeHtml(label)}</span><em>${escapeHtml(hint)}</em></div>`;
 }
 
 function listHtml(title, hint, pages) {
@@ -178,11 +186,46 @@ function reviewHtml(items) {
   return `<section class="section"><h2>Review</h2><p class="hint">Re-enter a thread. The last voice is what still wants you.</p><div class="grid">${items.map(reviewCard).join("")}</div></section>`;
 }
 
+function feedPost(item) {
+  const page = item.page;
+  const p = progressOf(page);
+  const review = item.review;
+  return `
+    <article class="tweet" data-id="${page.id}">
+      <div class="avatar src-${page.importMeta?.source || "live"}">${sourceGlyph(page)}</div>
+      <div class="tweet-body">
+        <p class="tweet-top">
+          <strong>${escapeHtml(sourceLabel(page))}</strong>
+          <span>${escapeHtml(page.importMeta?.author || page.domain)}</span>
+          <span>· ${formatRelative(page.importMeta?.importedAt || page.lastVisitedAt || page.createdAt)}</span>
+        </p>
+        <p class="reason">${escapeHtml(item.reason)}</p>
+        <h3>${escapeHtml(page.title || page.url)}</h3>
+        ${
+          review
+            ? `<q>${escapeHtml(clip(review.highlight?.text || "", 140))}</q>
+               <p class="excerpt"><strong>You:</strong> ${escapeHtml(clip(review.last.content, 160))}</p>`
+            : `<p class="excerpt">${escapeHtml(clip(page.parsed?.excerpt || page.why || "", 200))}</p>`
+        }
+        <div class="bar-row">
+          <div class="bar" title="${p}%"><span style="width:${p}%"></span></div>
+          <span class="pct">${p}%</span>
+        </div>
+        <p class="meta-line">${progressLabel(page)}${page.highlights?.length ? ` · ${page.highlights.length} marks` : ""}</p>
+        <div class="tweet-actions">
+          <a href="${page.url}" target="_blank" rel="noreferrer" data-live="${page.id}">Open</a>
+          <button type="button" data-snooze="${page.id}">Not now</button>
+          <button type="button" class="star" data-star="${page.id}">${page.bookmarked ? "★" : "☆"}</button>
+        </div>
+      </div>
+    </article>`;
+}
+
 function pageCard(page) {
   const p = progressOf(page);
   return `
     <article class="card" data-id="${page.id}">
-      <div class="domain">${escapeHtml(page.domain)}</div>
+      <div class="domain">${escapeHtml(sourceLabel(page))} · ${escapeHtml(page.domain)}</div>
       <h3>${escapeHtml(page.title || page.url)}</h3>
       <p class="excerpt">${escapeHtml(clip(page.parsed?.excerpt || page.why || "No parsed excerpt yet.", 140))}</p>
       <div class="bar-row">
@@ -207,17 +250,35 @@ function reviewCard(item) {
 }
 
 function bindView() {
-  els.view.querySelectorAll("[data-open], .card, .review-card").forEach((el) => {
-    if (el.dataset.star) return;
-    el.onclick = () => openDrawer(el.dataset.open || el.dataset.id);
+  els.view.querySelectorAll("[data-open], .card, .review-card, .tweet").forEach((el) => {
+    el.onclick = (event) => {
+      if (event.target.closest("[data-star], [data-snooze], [data-live], a")) return;
+      openDrawer(el.dataset.open || el.dataset.id);
+    };
   });
   els.view.querySelectorAll("[data-star]").forEach((btn) => {
     btn.onclick = async (event) => {
+      event.preventDefault();
       event.stopPropagation();
       await call("TOGGLE_BOOKMARK", { id: btn.dataset.star });
       await reload();
     };
   });
+  els.view.querySelectorAll("[data-snooze]").forEach((btn) => {
+    btn.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await call("SNOOZE_PAGE", { id: btn.dataset.snooze, hours: 48 });
+      await reload();
+    };
+  });
+  const more = document.getElementById("feed-more");
+  if (more) {
+    more.onclick = () => {
+      state.feedLimit += 8;
+      render();
+    };
+  }
 }
 
 async function openDrawer(id) {
@@ -245,9 +306,13 @@ async function openDrawer(id) {
     })
     .join("");
 
+  const source = page.importMeta
+    ? `<p class="why">${escapeHtml(page.importMeta.kind || "saved")} from ${escapeHtml(sourceLabel(page))}${page.importMeta.author ? ` · ${escapeHtml(page.importMeta.author)}` : ""}</p>`
+    : "";
+
   els.drawer.innerHTML = `
     <button class="ghost" id="close-drawer">Close</button>
-    <p class="domain">${escapeHtml(page.domain)}</p>
+    <p class="domain">${escapeHtml(sourceLabel(page))} · ${escapeHtml(page.domain)}</p>
     <h2>${escapeHtml(page.title)}</h2>
     <p><a href="${page.url}" target="_blank" rel="noreferrer">Open live page</a></p>
     <div class="progress-hero">
@@ -255,13 +320,15 @@ async function openDrawer(id) {
         <div class="bar" title="${p}%"><span style="width:${p}%"></span></div>
         <span class="pct">${p}%</span>
       </div>
-      <p>${progressLabel(page)} · furthest scroll ${p}% · last on page ${formatRelative(page.progress?.updatedAt || page.lastVisitedAt)}</p>
+      <p>${progressLabel(page)} · furthest scroll ${p}% · last on page ${page.openedAt ? formatRelative(page.progress?.updatedAt || page.lastVisitedAt) : "never"}</p>
     </div>
+    ${source}
     ${page.why ? `<p class="why">${escapeHtml(page.why)}</p>` : ""}
     <div class="actions">
       <button class="ghost" data-act="bookmark">${page.bookmarked ? "Unbookmark" : "Bookmark"}</button>
       <button class="ghost" data-state="parked">Park</button>
       <button class="ghost" data-state="released">Release</button>
+      <button class="ghost" data-act="snooze">Not now</button>
       <button class="solid" data-act="obsidian">Dump to Obsidian</button>
       <button class="ghost" data-act="delete">Remove</button>
     </div>
@@ -283,6 +350,11 @@ async function openDrawer(id) {
     await reload();
     openDrawer(page.id);
   };
+  els.drawer.querySelector("[data-act='snooze']").onclick = async () => {
+    await call("SNOOZE_PAGE", { id: page.id, hours: 48 });
+    els.drawer.hidden = true;
+    await reload();
+  };
   els.drawer.querySelector("[data-act='obsidian']").onclick = async () => {
     const dump = await call("EXPORT_OBSIDIAN", { id: page.id });
     try {
@@ -303,9 +375,6 @@ async function openDrawer(id) {
 async function reload() {
   state.pages = (await call("LIST_PAGES")) || [];
   render();
-  if (state.activeId && !els.drawer.hidden) {
-    /* keep drawer contents in sync after bookmark/park */
-  }
 }
 
 function clip(text, n) {

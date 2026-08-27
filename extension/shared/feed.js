@@ -1,0 +1,154 @@
+import { isWaiting, needsReview, progressOf, progressLabel, reviewItems } from "./progress.js";
+
+const DAY = 24 * 60 * 60 * 1000;
+
+export function hasOpened(page) {
+  if (page?.openedAt) return true;
+  if (page?.importMeta && progressOf(page) <= 8) return false;
+  return progressOf(page) > 0 || Boolean(page?.lastVisitedAt && !page?.importMeta);
+}
+
+export function isSnoozed(page, now = Date.now()) {
+  return Number(page?.snoozedUntil || 0) > now;
+}
+
+export function sourceLabel(page) {
+  const source = page?.importMeta?.source;
+  if (source === "twitter") return "X";
+  if (source === "reddit") return "Reddit";
+  if (source === "youtube") return "YouTube";
+  if (source === "pocket") return "Pocket";
+  if (source === "hn") return "HN";
+  return page?.domain || "LivePage";
+}
+
+export function sourceGlyph(page) {
+  const source = page?.importMeta?.source;
+  if (source === "twitter") return "𝕏";
+  if (source === "reddit") return "r/";
+  if (source === "youtube") return "▶";
+  if (source === "pocket") return "P";
+  if (source === "hn") return "Y";
+  return "¶";
+}
+
+export function reasonFor(page, extra = {}, now = Date.now()) {
+  if (extra.kind === "review") {
+    return "Your last turn is still waiting. The thread is still warm.";
+  }
+  const days = Math.max(0, Math.floor((now - (page.importMeta?.importedAt || page.createdAt || now)) / DAY));
+  const wait = days === 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
+  if (page.importMeta && !hasOpened(page)) {
+    if (page.importMeta.source === "youtube") {
+      return `Watch Later · parked ${wait} and never pressed play.`;
+    }
+    if (page.importMeta.source === "twitter") {
+      return `Bookmarked on X ${wait} and never went back.`;
+    }
+    if (page.importMeta.source === "reddit") {
+      return `Saved on Reddit ${wait} — still sitting in /saved.`;
+    }
+    return `Saved ${wait} and never opened.`;
+  }
+  const p = progressOf(page);
+  if (p > 8 && p < 90) {
+    return `You stopped at ${p}%. Halfway is still a place.`;
+  }
+  if (page.bookmarked && isWaiting(page)) {
+    return `Starred, but the scroll never finished.`;
+  }
+  if (isWaiting(page)) {
+    return `Still not read through · ${progressLabel(page)}.`;
+  }
+  return page.why || "On the trail.";
+}
+
+export function feedItems(pages, now = Date.now()) {
+  const items = [];
+  const reviews = reviewItems(pages).filter((r) => r.awaiting);
+  const reviewPages = new Set(reviews.map((r) => r.page.id));
+
+  for (const page of pages || []) {
+    if (page.readState === "released" || isSnoozed(page, now)) continue;
+    if (reviewPages.has(page.id)) continue;
+    const score = scorePage(page, now);
+    if (score < 12) continue;
+    const kind = kindOf(page);
+    items.push({
+      id: `p:${page.id}`,
+      kind,
+      page,
+      score,
+      reason: reasonFor(page, { kind }, now)
+    });
+  }
+
+  for (const review of reviews) {
+    if (isSnoozed(review.page, now) || review.page.readState === "released") continue;
+    items.push({
+      id: `r:${review.page.id}:${review.thread?.id || "t"}`,
+      kind: "review",
+      page: review.page,
+      review,
+      score: 92 + Math.min(8, (now - (review.last?.createdAt || 0)) / DAY),
+      reason: reasonFor(review.page, { kind: "review" }, now)
+    });
+  }
+
+  items.sort((a, b) => b.score - a.score || (b.page.updatedAt || 0) - (a.page.updatedAt || 0));
+  return diversify(items);
+}
+
+function kindOf(page) {
+  if (page.importMeta && !hasOpened(page)) return "stalled_save";
+  const p = progressOf(page);
+  if (p > 8 && p < 90) return "continue";
+  if (page.importMeta) return "save";
+  if (page.bookmarked) return "bookmark";
+  return "nudge";
+}
+
+export function scorePage(page, now = Date.now()) {
+  if (page.readState === "released" || isSnoozed(page, now)) return 0;
+  const p = progressOf(page);
+  const ageDays = Math.min(45, Math.floor((now - (page.importMeta?.importedAt || page.createdAt || now)) / DAY));
+  let score = 0;
+  if (needsReview(page)) score += 88;
+  if (page.importMeta && !hasOpened(page)) score += 74 + Math.min(20, ageDays);
+  if (p > 8 && p < 90) score += 68 + (30 - Math.abs(p - 45)) / 3;
+  if (page.bookmarked && p < 90) score += 18;
+  if (isWaiting(page) && !page.importMeta) score += 22;
+  if (p >= 90 && !needsReview(page)) score -= 40;
+  const idle = Math.min(21, Math.floor((now - (page.lastVisitedAt || page.createdAt || now)) / DAY));
+  score += idle * 0.6;
+  return score;
+}
+
+function diversify(items) {
+  const out = [];
+  const used = new Set();
+  const buckets = new Map();
+  for (const item of items) {
+    const key = item.page.importMeta?.source || item.kind;
+    const list = buckets.get(key) || [];
+    list.push(item);
+    buckets.set(key, list);
+  }
+  const keys = [...buckets.keys()];
+  let added = true;
+  while (added) {
+    added = false;
+    for (const key of keys) {
+      const list = buckets.get(key);
+      while (list.length) {
+        const next = list.shift();
+        if (used.has(next.id)) continue;
+        used.add(next.id);
+        out.push(next);
+        added = true;
+        break;
+      }
+    }
+  }
+  return out;
+}

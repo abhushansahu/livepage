@@ -13,6 +13,9 @@ import {
 import { Overlay } from "./overlay.js";
 import { COLOR_IDS } from "../shared/colors.js";
 import { measureScrollProgress } from "../shared/progress.js";
+import { harvestDocument, classifyLibraryUrl, sourceForHost } from "../import/harvest.js";
+import { fetchRedditSaved, fetchYoutubeWatchLater } from "../import/fetchers.js";
+import { uniqueItems } from "../import/normalize.js";
 
 const overlay = new Overlay();
 let page = null;
@@ -40,10 +43,19 @@ overlay.handlers = {
 };
 
 boot().catch((error) => console.warn("LivePage failed to start", error));
+listenForHarvest();
 
 async function boot() {
-  await overlay.ready;
   settings = (await call("GET_SETTINGS")) || settings;
+  const library = classifyLibraryUrl(location.href);
+  const source = sourceForHost(location.href);
+  if (settings.importSavesEnabled !== false && (library || source?.id === "reddit" || source?.id === "youtube")) {
+    pushSaves().catch(() => {});
+    if (library) watchLibraryGrowth();
+  }
+  if (library) return;
+
+  await overlay.ready;
   const parsed = parseDocument(document, location.href);
   const hostGuess = evaluateInfiniteScroll(location.href, document);
   infinite = hostGuess;
@@ -238,4 +250,44 @@ async function mutate(type, payload) {
 function handleContext(action) {
   if (action === "comment") createFromSelection({ color: settings.defaultColor, comment: true });
   else createFromSelection({ color: settings.defaultColor || COLOR_IDS[0] });
+}
+
+let harvestTimer = 0;
+
+function listenForHarvest() {
+  if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return;
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.kind !== "HARVEST_SAVES") return;
+    collectSaves()
+      .then((items) => sendResponse({ ok: true, items }))
+      .catch(() => sendResponse({ ok: false, items: [] }));
+    return true;
+  });
+}
+
+async function collectSaves() {
+  if (settings.importSavesEnabled === false) return [];
+  const library = classifyLibraryUrl(location.href);
+  const source = sourceForHost(location.href);
+  const fromDom = library ? harvestDocument(document, location.href) : [];
+  let fromApi = [];
+  if (source?.id === "reddit") fromApi = (await fetchRedditSaved()).items || [];
+  if (source?.id === "youtube") fromApi = (await fetchYoutubeWatchLater()).items || [];
+  return uniqueItems([...fromDom, ...fromApi]);
+}
+
+async function pushSaves() {
+  const items = await collectSaves();
+  if (items.length) await call("IMPORT_ITEMS", { items });
+  return items;
+}
+
+function watchLibraryGrowth() {
+  const observer = new MutationObserver(() => {
+    clearTimeout(harvestTimer);
+    harvestTimer = setTimeout(() => {
+      pushSaves().catch(() => {});
+    }, 1600);
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
 }
