@@ -5,7 +5,7 @@ import { emptyPage } from "../storage/store.js";
  * can be shown without a prior browsing session. Never runs inside the packed extension.
  */
 export async function ensureDemoHabitat(call) {
-  if (globalThis.chrome?.runtime?.id) return;
+  if (globalThis.location?.protocol === "chrome-extension:") return;
   const existing = (await call("LIST_PAGES")) || [];
   const now = Date.now();
   const origin = location.origin;

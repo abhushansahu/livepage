@@ -334,8 +334,12 @@ export function newMessage(partial) {
 export const EMPTY_MIND = { key: "app", signals: {}, lastAct: null };
 
 export async function getMind() {
-  const row = await withStore("mind", "readonly", (store) => reqOf(store.get("app")));
-  return { ...EMPTY_MIND, ...(row || {}) };
+  try {
+    const row = await withStore("mind", "readonly", (store) => reqOf(store.get("app")));
+    return { ...EMPTY_MIND, ...(row || {}) };
+  } catch {
+    return { ...EMPTY_MIND };
+  }
 }
 
 export async function saveMind(mind) {
@@ -364,11 +368,15 @@ export async function recordEvent(partial = {}) {
 }
 
 export async function listEvents(limit = 250) {
-  const db = await openDb();
-  const tx = db.transaction("events", "readonly");
-  const rows = await reqOf(tx.objectStore("events").getAll());
-  rows.sort((a, b) => (b.at || 0) - (a.at || 0));
-  return rows.slice(0, limit);
+  try {
+    const db = await openDb();
+    const tx = db.transaction("events", "readonly");
+    const rows = await reqOf(tx.objectStore("events").getAll());
+    rows.sort((a, b) => (b.at || 0) - (a.at || 0));
+    return rows.slice(0, limit);
+  } catch {
+    return [];
+  }
 }
 
 async function trimEvents(keep = 400) {

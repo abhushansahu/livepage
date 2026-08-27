@@ -1,6 +1,6 @@
 import { observeTrail, clipTitle } from "./observe.js";
 import { progressOf } from "../shared/progress.js";
-import { sourceLabel } from "../shared/feed.js";
+import { sourceLabel } from "../shared/source-meta.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 

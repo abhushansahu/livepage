@@ -1,37 +1,14 @@
-import { isWaiting, needsReview, progressOf, progressLabel, reviewItems } from "./progress.js";
+import { isWaiting, needsReview, progressOf, progressLabel, reviewItems, hasOpened } from "./progress.js";
 import { composeLocalTweets, weaveFeed } from "../feed/local-tweets.js";
 
 const DAY = 24 * 60 * 60 * 1000;
-
-export function hasOpened(page) {
-  if (page?.openedAt) return true;
-  if (page?.importMeta && progressOf(page) <= 8) return false;
-  return progressOf(page) > 0 || Boolean(page?.lastVisitedAt && !page?.importMeta);
-}
 
 export function isSnoozed(page, now = Date.now()) {
   return Number(page?.snoozedUntil || 0) > now;
 }
 
-export function sourceLabel(page) {
-  const source = page?.importMeta?.source;
-  if (source === "twitter") return "X";
-  if (source === "reddit") return "Reddit";
-  if (source === "youtube") return "YouTube";
-  if (source === "pocket") return "Pocket";
-  if (source === "hn") return "HN";
-  return page?.domain || "LivePage";
-}
-
-export function sourceGlyph(page) {
-  const source = page?.importMeta?.source;
-  if (source === "twitter") return "𝕏";
-  if (source === "reddit") return "r/";
-  if (source === "youtube") return "▶";
-  if (source === "pocket") return "P";
-  if (source === "hn") return "Y";
-  return "¶";
-}
+export { sourceLabel, sourceGlyph } from "./source-meta.js";
+export { hasOpened } from "./progress.js";
 
 export function reasonFor(page, extra = {}, now = Date.now()) {
   if (extra.kind === "review") {

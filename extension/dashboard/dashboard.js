@@ -79,12 +79,15 @@ document.getElementById("sync-saves").onclick = async () => {
   btn.textContent = "Pull saves";
 };
 
-boot();
-
 async function boot() {
   await ensureDemoHabitat(call);
   await reload();
 }
+
+boot().catch((error) => {
+  console.warn("LivePage dashboard failed", error);
+  els.view.innerHTML = `<p class="empty">Dashboard failed to boot. ${escapeHtml(error.message || error)}</p>`;
+});
 
 function matchesQuery(page) {
   const q = state.query.trim().toLowerCase();

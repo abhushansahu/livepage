@@ -52,6 +52,12 @@ export function isWaiting(page) {
   return progressOf(page) < 90;
 }
 
+export function hasOpened(page) {
+  if (page?.openedAt) return true;
+  if (page?.importMeta && progressOf(page) <= 8) return false;
+  return progressOf(page) > 0 || Boolean(page?.lastVisitedAt && !page?.importMeta);
+}
+
 export function needsReview(page) {
   const threads = page.threads || [];
   return threads.some((thread) => {

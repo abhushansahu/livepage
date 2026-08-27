@@ -1,5 +1,5 @@
-import { hasOpened, sourceLabel } from "../shared/feed.js";
-import { isWaiting, needsReview, progressOf } from "../shared/progress.js";
+import { hasOpened, needsReview, progressOf } from "../shared/progress.js";
+import { sourceLabel } from "../shared/source-meta.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 
