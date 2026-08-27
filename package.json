@@ -3,9 +3,13 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
+  "bin": {
+    "livepage": "bin/livepage"
+  },
   "scripts": {
     "test": "node --test tests/*.test.js",
     "icons": "python3 scripts/make-icons.py",
-    "demo": "python3 -m http.server 4173 --directory ."
+    "demo": "./bin/livepage demo",
+    "start": "./bin/livepage"
   }
 }

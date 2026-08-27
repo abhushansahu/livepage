@@ -4,20 +4,75 @@ A Chrome extension that turns any live webpage into a writable thinking surface:
 
 The philosophy lives in [`docs/intention.md`](docs/intention.md). This folder is the first build.
 
-## Install (unpacked)
+## Install (one command)
+
+LivePage is a Chrome extension, so Homebrew cannot inject it into the Chrome you already use. The installer puts a `livepage` command on your PATH. That command starts a dedicated Chrome profile **with the extension always loaded**.
+
+### Homebrew
+
+```bash
+brew tap abhushansahu/livepage https://github.com/abhushansahu/livepage-exploration
+brew install livepage
+livepage
+```
+
+### curl (macOS or Linux, no Homebrew)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/abhushansahu/livepage-exploration/main/scripts/install.sh | bash
+```
+
+That clones into `~/.livepage/src`, symlinks `~/.local/bin/livepage`, and launches.
+
+If `livepage` is not found, add `~/.local/bin` to your PATH:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### First launch
+
+`livepage` opens:
+
+1. A **LivePage Chrome profile** (not your daily profile) with the extension loaded
+2. The **For you** dashboard
+3. The demo article
+
+Sign into **X, Reddit, and YouTube once** in that window so **Pull saves** can harvest bookmarks / saved / Watch Later. After that, the daily habit is:
+
+```bash
+livepage
+```
+
+Other commands:
+
+```bash
+livepage dashboard   # For you feed only
+livepage demo        # demo article + dashboard
+livepage stop        # stop the local server
+livepage update      # git pull (curl install)
+livepage where       # print paths
+```
+
+### Load it into your everyday Chrome instead
+
+If you would rather keep one browser profile:
 
 1. Open `chrome://extensions`
 2. Enable **Developer mode**
-3. **Load unpacked** → select the `extension/` directory
-4. Pin LivePage. Visit any article. Select text.
+3. **Load unpacked** → select the `extension/` folder inside the install (`livepage where` prints it)
+4. Pin LivePage
 
-Demo pages (optional):
+Then you do not need the LivePage Chrome profile. `livepage dashboard` still serves the For you feed locally.
 
-```bash
-npm run demo
-```
+## Try for a few days
 
-Then open `http://127.0.0.1:4173/demo/article.html` and `http://127.0.0.1:4173/demo/feed.html`. The demo pages can run LivePage without installing the extension, so you can try the habitat immediately. Load unpacked from `extension/` to use it on the real web.
+1. Run `livepage` each morning (or whenever you browse).
+2. Read as usual in that Chrome window. Highlight and comment on the live page.
+3. Scroll articles — reading status is how far you actually got, not a clip checkbox.
+4. Open X bookmarks, Reddit saved, or YouTube Watch Later once (or tap **Pull saves** on the dashboard).
+5. Use **For you** like a timeline. Local observations will start to fit how you snooze, open, and finish.
+6. **♡ Learned** on a nudge that helped. **Not this** on one that did not. Take **Give it a real pass** when you have twelve minutes.
 
 ## What it does
 
@@ -53,7 +108,7 @@ Right-click a selection for the same actions.
 
 ## Settings
 
-Obsidian vault name and folder, default color, default agent, daily reminder hour, and whether infinite pages stay locked until snapshot.
+Obsidian vault name and folder, default color, default agent, daily reminder hour, whether infinite pages stay locked until snapshot, save importing, and local observations.
 
 ## Tests
 
@@ -67,3 +122,4 @@ npm test
 - Agent connection is a **strict context packet** plus paste-back, not a live API into Cursor or Claude Code.
 - Highlights use text-quote selectors. If a page rewrites the paragraph, the mark may not restore.
 - Very large Obsidian URIs can fail; the downloaded markdown is the reliable copy.
+- Homebrew cannot silently install into your existing Chrome profile; `livepage` uses its own profile so the extension is guaranteed to load.

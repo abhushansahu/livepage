@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+# LivePage launcher. Install once, then run `livepage` on any machine.
+set -euo pipefail
+
+VERSION="0.1.0"
+PORT="${LIVEPAGE_PORT:-4173}"
+STATE_DIR="${LIVEPAGE_HOME:-$HOME/.livepage}"
+PROFILE_DIR="$STATE_DIR/chrome-profile"
+PID_FILE="$STATE_DIR/demo.pid"
+LOG_FILE="$STATE_DIR/demo.log"
+
+resolve_root() {
+  local source="${BASH_SOURCE[0]}"
+  while [ -L "$source" ]; do
+    local dir
+    dir="$(cd "$(dirname "$source")" && pwd)"
+    source="$(readlink "$source")"
+    [[ "$source" != /* ]] && source="$dir/$source"
+  done
+  local bindir
+  bindir="$(cd "$(dirname "$source")" && pwd)"
+  local root
+  root="$(cd "$bindir/.." && pwd)"
+  if [ -d "$root/extension" ]; then
+    printf '%s\n' "$root"
+    return
+  fi
+  if [ -d "$bindir/../libexec/extension" ]; then
+    cd "$bindir/../libexec" && pwd
+    return
+  fi
+  printf '%s\n' "$root"
+}
+
+ROOT="$(resolve_root)"
+EXT="$ROOT/extension"
+
+usage() {
+  cat <<EOF
+LivePage $VERSION — think on the live web.
+
+Usage:
+  livepage              Launch Chrome with LivePage loaded (default)
+  livepage demo         Serve the local habitat and open the demo article
+  livepage dashboard    Open the For you feed
+  livepage stop         Stop the local demo server
+  livepage update       Pull the latest LivePage (git install only)
+  livepage where        Print install and profile paths
+  livepage help         Show this help
+
+First run opens a dedicated Chrome profile so the extension always loads.
+Sign into X / Reddit / YouTube once in that window. After that, just run
+livepage again — your saves, scroll depth, and local tweets stay there.
+EOF
+}
+
+mkdir -p "$STATE_DIR"
+
+find_chrome() {
+  local candidates=()
+  case "$(uname -s)" in
+    Darwin)
+      candidates=(
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        "/Applications/Chromium.app/Contents/MacOS/Chromium"
+        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+      )
+      ;;
+    *)
+      candidates=(
+        google-chrome
+        google-chrome-stable
+        chromium
+        chromium-browser
+        brave-browser
+        microsoft-edge
+        chrome
+      )
+      ;;
+  esac
+  local c
+  for c in "${candidates[@]}"; do
+    if [ -x "$c" ]; then
+      printf '%s\n' "$c"
+      return 0
+    fi
+    if command -v "$c" >/dev/null 2>&1; then
+      command -v "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+demo_running() {
+  if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+start_demo() {
+  if demo_running; then
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 is required to serve the LivePage dashboard." >&2
+    exit 1
+  fi
+  mkdir -p "$STATE_DIR"
+  nohup python3 -m http.server "$PORT" --directory "$ROOT" >"$LOG_FILE" 2>&1 &
+  echo $! >"$PID_FILE"
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if command -v curl >/dev/null 2>&1; then
+      curl -sf "http://127.0.0.1:$PORT/extension/dashboard/index.html" >/dev/null 2>&1 && return 0
+    else
+      sleep 0.3
+      return 0
+    fi
+    sleep 0.2
+  done
+}
+
+stop_demo() {
+  if [ -f "$PID_FILE" ]; then
+    kill "$(cat "$PID_FILE")" 2>/dev/null || true
+    rm -f "$PID_FILE"
+  fi
+  echo "Stopped the local LivePage server."
+}
+
+open_url() {
+  local url="$1"
+  case "$(uname -s)" in
+    Darwin) open "$url" ;;
+    *) xdg-open "$url" >/dev/null 2>&1 || true ;;
+  esac
+}
+
+launch_chrome() {
+  local chrome urls
+  if ! chrome="$(find_chrome)"; then
+    echo "Could not find Chrome (or Chromium / Brave / Edge)." >&2
+    echo "Install Google Chrome, then run livepage again." >&2
+    echo "Meanwhile the dashboard is at http://127.0.0.1:$PORT/extension/dashboard/index.html" >&2
+    open_url "http://127.0.0.1:$PORT/extension/dashboard/index.html"
+    return 1
+  fi
+  mkdir -p "$PROFILE_DIR"
+  urls=(
+    "http://127.0.0.1:$PORT/extension/dashboard/index.html"
+    "http://127.0.0.1:$PORT/demo/article.html"
+  )
+  if [ "$#" -gt 0 ]; then
+    urls=("$@")
+  fi
+  # Dedicated profile so --load-extension always works, including Chrome 137+.
+  "$chrome" \
+    --user-data-dir="$PROFILE_DIR" \
+    --disable-features=DisableLoadExtensionCommandLineSwitch \
+    --load-extension="$EXT" \
+    --no-first-run \
+    --no-default-browser-check \
+    --disable-session-crashed-bubble \
+    "${urls[@]}" >/dev/null 2>&1 &
+  echo "LivePage is up."
+  echo "  Dashboard  http://127.0.0.1:$PORT/extension/dashboard/index.html"
+  echo "  Demo       http://127.0.0.1:$PORT/demo/article.html"
+  echo "  Profile    $PROFILE_DIR"
+  echo
+  echo "This is a LivePage Chrome profile (not your daily one), so the extension"
+  echo "loads every time. Sign into X, Reddit, and YouTube once in this window"
+  echo "if you want Pull saves to work. Then just run: livepage"
+}
+
+cmd_update() {
+  if [ -d "$ROOT/.git" ]; then
+    git -C "$ROOT" pull --ff-only origin main || git -C "$ROOT" pull --ff-only
+    echo "Updated $ROOT"
+  else
+    echo "This install is not a git checkout. Re-run the installer or:"
+    echo "  brew upgrade livepage"
+  fi
+}
+
+cmd_where() {
+  echo "root     $ROOT"
+  echo "extension $EXT"
+  echo "state    $STATE_DIR"
+  echo "profile  $PROFILE_DIR"
+  echo "dashboard http://127.0.0.1:$PORT/extension/dashboard/index.html"
+}
+
+cmd="${1:-launch}"
+shift || true
+
+case "$cmd" in
+  launch|start|"")
+    start_demo
+    launch_chrome
+    ;;
+  demo)
+    start_demo
+    launch_chrome "http://127.0.0.1:$PORT/demo/article.html" "http://127.0.0.1:$PORT/extension/dashboard/index.html"
+    ;;
+  dashboard)
+    start_demo
+    launch_chrome "http://127.0.0.1:$PORT/extension/dashboard/index.html"
+    ;;
+  stop)
+    stop_demo
+    ;;
+  update)
+    cmd_update
+    ;;
+  where)
+    cmd_where
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: $cmd" >&2
+    usage >&2
+    exit 1
+    ;;
+esac
