@@ -17,20 +17,23 @@ export async function ensureDemoHabitat(call) {
     await call("SAVE_PAGE", { page: found ? { ...page, ...found, ...enrich(found, page) } : page });
   }
   const settings = (await call("GET_SETTINGS")) || {};
+  const patch = {};
   if (!(settings.rssFeeds || []).length) {
-    await call("SAVE_SETTINGS", {
-      rssFeeds: [
-        {
-          id: "rss_demo",
-          url: `${origin}/demo/feed.xml`,
-          title: "LivePage demo feed",
-          tags: ["demo", "systems"],
-          enabled: true,
-          addedAt: now
-        }
-      ]
-    });
+    patch.rssFeeds = [
+      {
+        id: "rss_demo",
+        url: `${origin}/demo/feed.xml`,
+        title: "LivePage demo feed",
+        tags: ["demo", "systems"],
+        enabled: true,
+        addedAt: now
+      }
+    ];
   }
+  if (settings.localTweetsEnabled && settings.flags?.localTweets !== true) {
+    patch.localTweetsEnabled = false;
+  }
+  if (Object.keys(patch).length) await call("SAVE_SETTINGS", patch);
   const check = (await call("LIST_PAGES")) || [];
   if (!check.length) throw new Error("Demo seed wrote no pages");
 }

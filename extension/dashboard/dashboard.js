@@ -151,7 +151,11 @@ document.getElementById("bind-vault").onclick = async () => {
     render();
     updateVaultButtons();
   } catch (error) {
-    state.syncNote = String(error.message || error);
+    if (error?.name === "AbortError" || /abort/i.test(String(error.message || error))) {
+      state.syncNote = "Vault bind cancelled.";
+    } else {
+      state.syncNote = String(error.message || error);
+    }
     render();
   }
 };

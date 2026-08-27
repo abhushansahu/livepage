@@ -50,13 +50,18 @@ document.getElementById("rss-add").onclick = async () => {
 };
 
 document.getElementById("bind-vault").onclick = async () => {
-  const result = await bindVaultFolder();
-  if (result.ok) {
-    settings = await call("SAVE_SETTINGS", {
-      vault: { bound: true, name: result.name, boundAt: result.boundAt }
-    });
+  try {
+    const result = await bindVaultFolder();
+    if (result.ok) {
+      settings = await call("SAVE_SETTINGS", {
+        vault: { bound: true, name: result.name, boundAt: result.boundAt }
+      });
+    }
+    await refreshVault();
+  } catch (error) {
+    if (error?.name === "AbortError" || /abort/i.test(String(error.message || error))) return;
+    document.getElementById("vault-status").textContent = String(error.message || error);
   }
-  await refreshVault();
 };
 
 function currentPatch() {
