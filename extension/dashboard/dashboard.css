@@ -645,6 +645,45 @@ input[type="search"] {
   padding: 12px 0;
 }
 
+.hl-block {
+  border-top: 1px solid var(--line);
+  padding: 14px 0 4px;
+}
+
+.hl-block q {
+  display: block;
+  color: var(--ink);
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  margin-bottom: 8px;
+}
+
+.hl-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.hl-edit .swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--lp-mark);
+  cursor: pointer;
+  padding: 0;
+}
+
+.hl-edit .swatch.is-on {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.hl-block .thread {
+  border-top: 1px dashed var(--line);
+}
+
 .thread q {
   display: block;
   color: var(--ink);
@@ -657,8 +696,188 @@ input[type="search"] {
   padding: 40px 8px;
 }
 
+.tools {
+  display: contents;
+}
+
+.tools summary {
+  display: none;
+}
+
 @media (max-width: 860px) {
   .app { grid-template-columns: 1fr; }
   .side { border-right: 0; border-bottom: 1px solid var(--line); }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+body[data-layout="compact"] {
+  background-image: none;
+}
+
+body[data-layout="compact"] .app {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+}
+
+body[data-layout="compact"].drawer-open .app {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 38vw);
+}
+
+body[data-layout="compact"] .side {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 18px;
+  border-right: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+body[data-layout="compact"] .mark {
+  margin: 0;
+  letter-spacing: 0.1em;
+}
+
+body[data-layout="compact"] .side h1,
+body[data-layout="compact"] .lede,
+body[data-layout="compact"] .experiment {
+  display: none;
+}
+
+body[data-layout="compact"] nav {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+body[data-layout="compact"] .nav {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+body[data-layout="compact"] .side-actions {
+  margin: 0 0 0 auto;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+body[data-layout="compact"] .side-actions .solid,
+body[data-layout="compact"] .side-actions .ghost {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+body[data-layout="compact"] main {
+  padding: 12px 18px 40px;
+  min-width: 0;
+}
+
+body[data-layout="compact"] .top {
+  gap: 10px;
+}
+
+body[data-layout="compact"] input[type="search"] {
+  padding: 8px 12px;
+}
+
+body[data-layout="compact"] .counts {
+  font-size: 12px;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body[data-layout="compact"] .feed-wrap {
+  max-width: none;
+}
+
+body[data-layout="compact"] .feed-head,
+body[data-layout="compact"] .feed-stats,
+body[data-layout="compact"] .section h2,
+body[data-layout="compact"] .section p.hint {
+  display: none;
+}
+
+body[data-layout="compact"] .section {
+  margin: 8px 0;
+}
+
+body[data-layout="compact"] .grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+body[data-layout="compact"] .row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+body[data-layout="compact"] .row:hover,
+body[data-layout="compact"] .row.is-on {
+  background: rgba(255, 252, 247, 0.8);
+}
+
+body[data-layout="compact"] .row-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body[data-layout="compact"] .row-sub {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body[data-layout="compact"] .row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+body[data-layout="compact"] .row-actions button:not(.star) {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--sage);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+body[data-layout="compact"] .drawer {
+  position: sticky;
+  top: 0;
+  right: auto;
+  bottom: auto;
+  width: auto;
+  height: 100vh;
+  max-height: 100vh;
+  border-radius: 0;
+  border: 0;
+  border-left: 1px solid var(--line);
+  box-shadow: none;
+  padding: 16px 18px 32px;
+}
+
+body[data-layout="compact"] .drawer[hidden] {
+  display: none;
 }

@@ -22,6 +22,11 @@ chrome.runtime.onInstalled.addListener(async () => {
       contexts: ["selection"]
     });
     chrome.contextMenus.create({
+      id: "lp-reading-list",
+      title: "LivePage: add to reading list",
+      contexts: ["page", "link"]
+    });
+    chrome.contextMenus.create({
       id: "lp-dashboard",
       title: "Open LivePage dashboard",
       contexts: ["action", "page"]
@@ -72,14 +77,26 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
   if (info.menuItemId === "lp-add-feed") {
+    if (tab?.id) await sendToTab(tab.id, { broadcast: true, kind: "ADD_RSS_FEED" });
+    return;
+  }
+  if (info.menuItemId === "lp-reading-list") {
+    const url = info.linkUrl || tab?.url;
+    const title = info.linkUrl ? "" : tab?.title;
+    if (!url) return;
+    await handleMessage({
+      type: "QUEUE_READING_LIST",
+      payload: { url, title }
+    });
     if (tab?.id) {
-      chrome.tabs.sendMessage(tab.id, { broadcast: true, kind: "ADD_RSS_FEED" });
+      await sendToTab(tab.id, { broadcast: true, kind: "TOAST", text: "Added to reading list" });
     }
+    await refreshBadge();
     return;
   }
   if (!tab?.id) return;
   const action = info.menuItemId === "lp-comment" ? "comment" : "highlight";
-  chrome.tabs.sendMessage(tab.id, { broadcast: true, kind: "CONTEXT_ACTION", action });
+  await sendToTab(tab.id, { broadcast: true, kind: "CONTEXT_ACTION", action });
 });
 
 chrome.commands.onCommand.addListener(async (command, tab) => {
@@ -87,9 +104,25 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     await openDashboard();
     return;
   }
+  if (command === "add-to-reading-list") {
+    if (!tab?.url) return;
+    await handleMessage({
+      type: "QUEUE_READING_LIST",
+      payload: { url: tab.url, title: tab.title }
+    });
+    if (tab.id) {
+      await sendToTab(tab.id, {
+        broadcast: true,
+        kind: "TOAST",
+        text: "Added to reading list"
+      });
+    }
+    await refreshBadge();
+    return;
+  }
   if (!tab?.id) return;
   const action = command === "comment-selection" ? "comment" : "highlight";
-  chrome.tabs.sendMessage(tab.id, { broadcast: true, kind: "CONTEXT_ACTION", action });
+  await sendToTab(tab.id, { broadcast: true, kind: "CONTEXT_ACTION", action });
 });
 
 chrome.action.onClicked.addListener(() => {
@@ -132,6 +165,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 chrome.notifications.onClicked.addListener(() => {
   openDashboard();
 });
+
+async function sendToTab(tabId, message) {
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    /* content script missing on this tab (chrome://, not injected yet, etc.) */
+  }
+}
 
 async function openDashboard() {
   const url = chrome.runtime.getURL(DASHBOARD_PATH);
@@ -191,7 +232,10 @@ function shouldRefreshBadge(type) {
     "SYNC_SAVES",
     "SYNC_RSS",
     "ADD_RSS_FEED",
+    "ADD_RSS_FEEDS",
     "SET_TAGS",
+    "TOGGLE_READING_LIST",
+    "QUEUE_READING_LIST",
     "SNOOZE_PAGE"
   ].includes(type);
 }

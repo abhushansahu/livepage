@@ -7,7 +7,19 @@
   </head>
   <body>
     <p class="mark">LivePage</p>
-    <h1>Waiting</h1>
+    <h1 id="title">This page</h1>
+    <p class="domain" id="domain"></p>
+    <div class="actions">
+      <button type="button" id="reading">Add to reading list</button>
+      <button type="button" id="star">☆ Bookmark</button>
+    </div>
+    <label>
+      Tags
+      <input id="tags" placeholder="machine learning, later" />
+    </label>
+    <p class="hint">Comma-separated. Alt+Shift+R also adds to the reading list.</p>
+    <p class="status" id="status" hidden></p>
+    <h2>Waiting</h2>
     <div id="list"></div>
     <footer>
       <button id="dashboard">Open dashboard</button>

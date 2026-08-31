@@ -4,21 +4,25 @@ import {
   createInfiniteScrollDetector,
   evaluateInfiniteScroll
 } from "../parse/infinite-scroll.js";
-import { quoteFromRange } from "../parse/quote.js";
+import { quoteFromRange, unwrapHighlight } from "../parse/quote.js";
 import {
   applyRangeHighlight,
   restoreHighlights,
-  selectionIsSafe
+  selectionIsSafe,
+  recolorMarks
 } from "./highlights.js";
 import { Overlay } from "./overlay.js";
+import { toolbarAction, rangeRect } from "./selection.js";
 import { COLOR_IDS } from "../shared/colors.js";
 import { measureScrollProgress } from "../shared/progress.js";
-import { harvestDocument, classifyLibraryUrl, sourceForHost } from "../import/harvest.js";
-import { fetchRedditSaved, fetchYoutubeWatchLater } from "../import/fetchers.js";
-import { uniqueItems } from "../import/normalize.js";
 import { detectFeeds } from "../import/rss.js";
 import { parseTagInput } from "../shared/tags.js";
 import { resolveFlags } from "../shared/flags.js";
+
+if (globalThis.__LP_CONTENT_STARTED) {
+  throw new Error("LivePage content already started");
+}
+globalThis.__LP_CONTENT_STARTED = true;
 
 const overlay = new Overlay();
 let page = null;
@@ -26,6 +30,8 @@ let settings = { defaultColor: "lemon", lockInfiniteScroll: true, allowInfiniteS
 let infinite = { infinite: false, reason: null };
 let snapshotMode = false;
 let savedRange = null;
+let savedRect = null;
+let gestureSelected = false;
 
 overlay.handlers = {
   onSnapshot: () => snapshot(),
@@ -42,45 +48,62 @@ overlay.handlers = {
   onFork: (threadId, messageId, branchLabel) =>
     mutate("FORK_THREAD", { pageId: page.id, threadId, messageId, branchLabel }).then((data) => {
       overlay.openThread(data.thread.id);
-    })
+    }),
+  onDeleteMessage: (threadId, messageId) =>
+    mutate("DELETE_MESSAGE", { pageId: page.id, threadId, messageId }),
+  onRecolorHighlight: (highlightId, color) => recolorHighlight(highlightId, color),
+  onMoveHighlight: (highlightId) => moveHighlight(highlightId),
+  onDeleteHighlight: (highlightId) => deleteHighlight(highlightId)
 };
 
+onBroadcast((message) => {
+  if (message.kind === "CONTEXT_ACTION") handleContext(message.action);
+  if (message.kind === "TOAST" && message.text) overlay.toast(message.text);
+});
 boot().catch((error) => console.warn("LivePage failed to start", error));
-listenForHarvest();
 
 async function boot() {
-  settings = (await call("GET_SETTINGS")) || settings;
-  const { flags } = resolveFlags(settings);
-  const library = classifyLibraryUrl(location.href);
-  const source = sourceForHost(location.href);
-  if (flags.importSaves && (library || source?.id === "reddit" || source?.id === "youtube")) {
-    pushSaves().catch(() => {});
-    if (library) watchLibraryGrowth();
-  }
-  if (library) return;
-
-  await overlay.ready;
-  const parsed = parseDocument(document, location.href);
-  const hostGuess = evaluateInfiniteScroll(location.href, document);
-  infinite = hostGuess;
-  page = await call("VISIT_PAGE", {
-    url: location.href,
-    title: document.title,
-    parsed,
-    infiniteScroll: hostGuess.infinite
-  });
-  if (page.snapshot) snapshotMode = true;
-  restoreHighlights(document.body, page.highlights);
-  overlay.setPage(page);
-  applyLock();
+  infinite = evaluateInfiniteScroll(location.href, document);
   watchSelection();
   watchMarks();
-  watchInfinite();
-  watchScroll();
-  onBroadcast((message) => {
-    if (message.kind === "CONTEXT_ACTION") handleContext(message.action);
-  });
-  document.documentElement.classList.add("lp-rail-on");
+
+  try {
+    settings = (await call("GET_SETTINGS")) || settings;
+  } catch (error) {
+    console.warn("LivePage settings unavailable", error);
+  }
+  const { flags } = resolveFlags(settings);
+
+  try {
+    await overlay.ready;
+  } catch (error) {
+    console.warn("LivePage overlay failed", error);
+  }
+  maybeToolbar();
+
+  let parsed = { blocks: [] };
+  try {
+    parsed = parseDocument(document, location.href);
+  } catch (error) {
+    console.warn("LivePage parse failed", error);
+  }
+  if (!infinite.infinite) infinite = evaluateInfiniteScroll(location.href, document);
+  try {
+    page = await call("VISIT_PAGE", {
+      url: location.href,
+      title: document.title,
+      parsed,
+      infiniteScroll: infinite.infinite
+    });
+    if (page.snapshot) snapshotMode = true;
+    restoreHighlights(document.body, page.highlights);
+    overlay.setPage(page);
+    applyLock();
+    watchInfinite();
+    watchScroll();
+  } catch (error) {
+    console.warn("LivePage visit failed", error);
+  }
   if (flags.rss) offerRssIfAny();
 }
 
@@ -146,65 +169,197 @@ function watchScroll() {
   report();
 }
 
+function eventFromOverlay(event) {
+  return overlay.ownsEvent?.(event);
+}
+
 function watchSelection() {
-  document.addEventListener("mouseup", () => {
+  overlay.attachHosts?.();
+  const finishGesture = () => {
     requestAnimationFrame(() => maybeToolbar());
-  });
+    setTimeout(() => maybeToolbar(), 40);
+  };
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (eventFromOverlay(event)) return;
+      gestureSelected = false;
+      overlay.hideToolbar();
+    },
+    true
+  );
+  document.addEventListener(
+    "pointerup",
+    (event) => {
+      if (eventFromOverlay(event)) return;
+      finishGesture();
+    },
+    true
+  );
   document.addEventListener("keyup", (event) => {
-    if (event.key === "Escape") overlay.hideToolbar();
+    if (event.key === "Escape") {
+      savedRange = null;
+      savedRect = null;
+      gestureSelected = false;
+      overlay.hideToolbar();
+      return;
+    }
+    if (event.shiftKey || event.key.startsWith("Arrow")) finishGesture();
+  });
+  document.addEventListener("selectionchange", () => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+    gestureSelected = true;
+    captureSelection(selection);
   });
 }
 
+function captureSelection(selection = window.getSelection()) {
+  if (!selection || selection.isCollapsed || !selection.rangeCount) return false;
+  if (selection.anchorNode && overlay.host?.contains(selection.anchorNode)) return false;
+  if (selection.anchorNode && overlay.floatHost?.contains(selection.anchorNode)) return false;
+  savedRange = selection.getRangeAt(0).cloneRange();
+  savedRect = rangeRect(savedRange);
+  return true;
+}
+
 function maybeToolbar() {
-  const selection = window.getSelection();
-  if (!selection || selection.isCollapsed) {
-    overlay.hideToolbar();
-    savedRange = null;
+  overlay.attachHosts?.();
+  if (!overlay.els?.toolbar) {
+    overlay.ready.then(() => maybeToolbar()).catch(() => {});
     return;
   }
-  if (selection.anchorNode && overlay.host.contains(selection.anchorNode)) return;
+  const selection = window.getSelection();
+  const liveHasRange = Boolean(selection && !selection.isCollapsed && selection.rangeCount);
+  if (liveHasRange) captureSelection(selection);
+  if (toolbarAction({ liveHasRange, gestureSelected, savedRange }) === "hide") {
+    overlay.hideToolbar();
+    return;
+  }
+  const rect = rangeRect(savedRange) || savedRect;
+  if (!rect) return;
+  savedRect = rect;
   const locked = settings.lockInfiniteScroll && infinite.infinite && !snapshotMode;
   if (locked) {
-    overlay.hideToolbar();
-    overlay.toast("Snapshot this page before highlighting. Infinite pages cannot keep stable anchors.");
+    overlay.showToolbar(rect, {
+      onSnapshot: () => overlay.handlers.onSnapshot?.()
+    });
     return;
   }
-  if (snapshotMode && !selectionIsSafe(selection, (page.parsed?.blocks || []).map((b) => b.text))) {
+  if (snapshotMode && liveHasRange && !selectionIsSafe(selection, (page?.parsed?.blocks || []).map((b) => b.text))) {
     overlay.toast("That span arrived after the snapshot. Ignore or snapshot again.");
     overlay.hideToolbar();
     return;
   }
-  const range = selection.getRangeAt(0);
-  savedRange = range.cloneRange();
-  const rect = range.getBoundingClientRect();
-  if (!rect.width && !rect.height) return;
   overlay.showToolbar(rect, {
     onHighlight: (color) => createFromSelection({ color }),
     onComment: () => createFromSelection({ color: settings.defaultColor, comment: true })
   });
 }
 
+async function ensurePage() {
+  if (page?.id) return page;
+  const parsed = parseDocument(document, location.href);
+  page = await call("VISIT_PAGE", {
+    url: location.href,
+    title: document.title,
+    parsed,
+    infiniteScroll: infinite.infinite
+  });
+  overlay.setPage(page);
+  return page;
+}
+
 async function createFromSelection({ color, comment = false }) {
+  captureSelection();
   const range = savedRange;
   if (!range || range.collapsed) return;
   const quote = quoteFromRange(range, document.body);
-  if (!quote) return;
-  if (!page.why) {
-    const why = prompt("Why this page? Optional — helps later-you reactivate.") || "";
-    if (why) {
-      page = await call("PATCH_PAGE", { id: page.id, patch: { why } });
-    }
+  if (!quote) {
+    overlay.toast("Could not read that selection. Try a longer span of text.");
+    return;
   }
-  const result = await call("ADD_HIGHLIGHT", {
-    pageId: page.id,
-    highlight: { color, text: quote.exact, prefix: quote.prefix, suffix: quote.suffix }
-  });
-  page = result.page;
-  applyRangeHighlight(range, result.highlight);
-  window.getSelection()?.removeAllRanges();
-  savedRange = null;
-  overlay.setPage(page);
-  if (comment && result.thread) overlay.openThread(result.thread.id);
+  try {
+    await overlay.ready;
+    await ensurePage();
+    const result = await call("ADD_HIGHLIGHT", {
+      pageId: page.id,
+      highlight: { color, text: quote.exact, prefix: quote.prefix, suffix: quote.suffix }
+    });
+    page = result.page;
+    applyRangeHighlight(range, result.highlight);
+    window.getSelection()?.removeAllRanges();
+    savedRange = null;
+    overlay.setPage(page);
+    if (comment && result.thread) overlay.openThread(result.thread.id);
+  } catch (error) {
+    overlay.toast("Could not save that highlight. Reload the tab and try again.");
+    console.warn("LivePage highlight", error);
+  }
+}
+
+async function recolorHighlight(highlightId, color) {
+  try {
+    const result = await call("PATCH_HIGHLIGHT", {
+      pageId: page.id,
+      highlightId,
+      patch: { color }
+    });
+    page = result.page;
+    recolorMarks(highlightId, color);
+    overlay.setPage(page);
+  } catch (error) {
+    overlay.toast("Could not change that color.");
+    console.warn("LivePage recolor", error);
+  }
+}
+
+async function moveHighlight(highlightId) {
+  captureSelection();
+  const range = savedRange;
+  if (!range || range.collapsed) {
+    overlay.toast("Select the new span on the page, then click Replace span.");
+    return;
+  }
+  const quote = quoteFromRange(range, document.body);
+  if (!quote) {
+    overlay.toast("Could not read that selection. Try a longer span of text.");
+    return;
+  }
+  try {
+    const result = await call("PATCH_HIGHLIGHT", {
+      pageId: page.id,
+      highlightId,
+      patch: { text: quote.exact, prefix: quote.prefix, suffix: quote.suffix }
+    });
+    page = result.page;
+    applyRangeHighlight(range, result.highlight);
+    window.getSelection()?.removeAllRanges();
+    savedRange = null;
+    overlay.hideToolbar();
+    overlay.setPage(page);
+    overlay.toast("Highlight moved to that span.");
+  } catch (error) {
+    overlay.toast("Could not move that highlight.");
+    console.warn("LivePage move highlight", error);
+  }
+}
+
+async function deleteHighlight(highlightId) {
+  try {
+    unwrapHighlight(document, highlightId);
+    if (overlay.activeThreadId) {
+      const thread = page?.threads?.find((t) => t.id === overlay.activeThreadId);
+      if (!thread || thread.highlightId === highlightId) overlay.closePanel();
+    }
+    const result = await call("REMOVE_HIGHLIGHT", { pageId: page.id, highlightId });
+    page = result.page || result;
+    overlay.setPage(page);
+    overlay.toast("Highlight removed.");
+  } catch (error) {
+    overlay.toast("Could not delete that highlight.");
+    console.warn("LivePage delete highlight", error);
+  }
 }
 
 function watchMarks() {
@@ -216,6 +371,7 @@ function watchMarks() {
 }
 
 function openOrCreateThread(highlightId) {
+  if (!page?.threads) return;
   const existing =
     page.threads.find((t) => t.highlightId === highlightId && !t.parentId) ||
     page.threads.find((t) => t.highlightId === highlightId);
@@ -223,24 +379,27 @@ function openOrCreateThread(highlightId) {
 }
 
 async function sendToAgent(threadId, ask, agent) {
-  const result = await call("BUILD_AGENT_PACKET", {
-    pageId: page.id,
-    threadId,
-    ask,
-    agent
-  });
-  page = result.page;
-  overlay.setPage(page);
-  overlay.openThread(result.thread.id);
   try {
-    await navigator.clipboard.writeText(result.packet.markdown);
-    overlay.toast(
-      agent === "claude-code"
-        ? "Packet copied. Paste Claude’s reply here and send."
-        : "Packet copied. Paste Cursor’s reply here and send."
-    );
-  } catch {
-    overlay.toast("Could not copy automatically. Packet is in the dashboard export.");
+    overlay.toast("Asking the agent…");
+    const result = await call("ASK_AGENT", {
+      pageId: page.id,
+      threadId,
+      ask,
+      agent
+    });
+    page = result.page;
+    overlay.setPage(page);
+    overlay.openThread(result.thread.id);
+    overlay.toast("Reply landed in the thread.");
+  } catch (error) {
+    overlay.toast(String(error.message || error));
+    console.warn("LivePage agent", error);
+    try {
+      page = await call("GET_PAGE", { id: page.id });
+      overlay.setPage(page);
+    } catch {
+      /* keep current page */
+    }
   }
 }
 
@@ -253,55 +412,23 @@ async function mutate(type, payload) {
 }
 
 function handleContext(action) {
+  if (settings.lockInfiniteScroll && infinite.infinite && !snapshotMode) {
+    overlay.toast("Snapshot this page before highlighting. Infinite pages cannot keep stable anchors.");
+    return;
+  }
+  captureSelection();
   if (action === "comment") createFromSelection({ color: settings.defaultColor, comment: true });
   else createFromSelection({ color: settings.defaultColor || COLOR_IDS[0] });
 }
 
-let harvestTimer = 0;
-
-function listenForHarvest() {
-  if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return;
+if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.kind === "ADD_RSS_FEED") {
-      offerRssIfAny({ force: true })
-        .then(() => sendResponse({ ok: true }))
-        .catch(() => sendResponse({ ok: false }));
-      return true;
-    }
-    if (message?.kind !== "HARVEST_SAVES") return;
-    collectSaves()
-      .then((items) => sendResponse({ ok: true, items }))
-      .catch(() => sendResponse({ ok: false, items: [] }));
+    if (message?.kind !== "ADD_RSS_FEED") return;
+    offerRssIfAny({ force: true })
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   });
-}
-
-async function collectSaves() {
-  const { flags } = resolveFlags(settings);
-  if (!flags.importSaves) return [];
-  const library = classifyLibraryUrl(location.href);
-  const source = sourceForHost(location.href);
-  const fromDom = library ? harvestDocument(document, location.href) : [];
-  let fromApi = [];
-  if (source?.id === "reddit") fromApi = (await fetchRedditSaved()).items || [];
-  if (source?.id === "youtube") fromApi = (await fetchYoutubeWatchLater()).items || [];
-  return uniqueItems([...fromDom, ...fromApi]);
-}
-
-async function pushSaves() {
-  const items = await collectSaves();
-  if (items.length) await call("IMPORT_ITEMS", { items });
-  return items;
-}
-
-function watchLibraryGrowth() {
-  const observer = new MutationObserver(() => {
-    clearTimeout(harvestTimer);
-    harvestTimer = setTimeout(() => {
-      pushSaves().catch(() => {});
-    }, 1600);
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
 }
 
 async function offerRssIfAny({ force = false } = {}) {

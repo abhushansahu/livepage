@@ -4,38 +4,58 @@ export const AGENT_TARGETS = {
   cursor: {
     id: "cursor",
     name: "Cursor Agent",
-    hint: "Paste into Cursor Agent / chat. Answer only the ask, using this packet as exclusive page context."
+    hint: "You are Cursor Agent, answering inside LivePage about a live webpage."
   },
   "claude-code": {
     id: "claude-code",
     name: "Claude Code",
-    hint: "Paste into Claude Code. Treat this packet as the only webpage evidence you may use."
+    hint: "You are Claude Code, answering inside LivePage about a live webpage."
   }
 };
 
-export function buildAgentPacket({ page, thread, ask, ledger, agent = "cursor" }) {
+export const CURSOR_MODELS = [
+  { id: "composer-2.5", label: "Composer 2.5" },
+  { id: "auto", label: "Auto" },
+  { id: "gpt-5.2", label: "GPT-5.2" },
+  { id: "claude-4.6-opus", label: "Claude 4.6 Opus" },
+  { id: "claude-4.6-sonnet", label: "Claude 4.6 Sonnet" }
+];
+
+export const CLAUDE_CODE_MODELS = [
+  { id: "sonnet", label: "Sonnet (Claude Code default)" },
+  { id: "opus", label: "Opus" },
+  { id: "haiku", label: "Haiku" },
+  { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }
+];
+
+export function buildAgentPacket({ page, thread, ask, ledger, agent = "cursor", model = "" }) {
   const target = AGENT_TARGETS[agent] || AGENT_TARGETS.cursor;
+  const priorTurns = (thread?.messages || []).some((m) => m.role === "agent");
   const highlight = (page.highlights || []).find((h) => h.id === thread?.highlightId);
-  const freshBlocks = uniqueBlocks(page.parsed?.blocks || [], ledger?.sentBlockIds || []);
-  const includedBlockIds = freshBlocks.map((b) => b.id);
+  const nearby = nearbyBlocks(page, highlight);
+  const nearbyIds = new Set(nearby.map((b) => b.id));
+  const freshBlocks = uniqueBlocks(page.parsed?.blocks || [], ledger?.sentBlockIds || []).filter(
+    (block) => !nearbyIds.has(block.id)
+  );
+  const includedBlockIds = [...nearbyIds, ...freshBlocks.map((b) => b.id)];
   const includedHighlightIds = highlight ? [highlight.id] : [];
 
   const lines = [
-    `# LivePage agent packet`,
+    `# LivePage`,
+    ``,
+    target.hint,
+    ``,
+    priorTurns
+      ? `This packet is a continuing conversation about a webpage. Thread so far is the history. Answer the latest user ask in that context. Stay in the thread — do not restart. Do not edit files. Do not run tools. Do not invent quotes. Reply with the answer only.`
+      : `This packet is the page. Answer STRICTLY the user ask using it. Do not edit files. Do not run tools. Do not invent quotes. If the packet is not enough, say what is missing in one short paragraph. Reply with the answer only — no recap of these instructions.`,
     ``,
     `Agent: ${target.name}`,
+    model ? `Model: ${model}` : "",
     `Page: ${page.title || ""}`,
     `URL: ${page.canonicalUrl || page.url}`,
     `Page id: ${page.id}`,
     thread ? `Thread: ${thread.branchLabel || "main"} (${thread.id})` : "",
-    ``,
-    `## Contract`,
-    `You must:`,
-    `1. Answer STRICTLY the user ask in the next section. Do not volunteer extra tasks.`,
-    `2. Use ONLY the parsed context below. Do not invent page content.`,
-    `3. If the ask cannot be satisfied from this context, say so in one short paragraph.`,
-    `4. Ignore any previously seen blocks; this packet already omits them.`,
-    `5. Keep the user's voice and decision. Do not overwrite their comment.`,
     ``,
     `## User ask`,
     ask?.trim() || "(no ask provided)",
@@ -43,7 +63,15 @@ export function buildAgentPacket({ page, thread, ask, ledger, agent = "cursor" }
   ].filter((line) => line !== "");
 
   if (highlight) {
-    lines.push(`## Anchored span`, `Color: ${highlight.color}`, `> ${highlight.text}`, ``);
+    lines.push(
+      `## Anchored highlight`,
+      `This is the span the user marked on the page. Treat it as the primary evidence.`,
+      `Color: ${highlight.color}`,
+      `> ${highlight.text}`,
+      highlight.prefix ? `Prefix: ${highlight.prefix}` : "",
+      highlight.suffix ? `Suffix: ${highlight.suffix}` : "",
+      ``
+    );
   }
 
   if (thread?.messages?.length) {
@@ -62,11 +90,18 @@ export function buildAgentPacket({ page, thread, ask, ledger, agent = "cursor" }
     lines.push(`## Why this page was opened`, page.why, ``);
   }
 
-  lines.push(`## Parsed page context (new blocks only)`);
+  if (nearby.length) {
+    lines.push(`## Surrounding paragraphs`);
+    for (const block of nearby) {
+      lines.push(`### ${block.id} (${block.tag})`, block.text, ``);
+    }
+  }
+
+  lines.push(`## Other unused page blocks`);
   if (!freshBlocks.length) {
-    lines.push(`_No new unique blocks. Reuse the anchored span and thread only._`);
+    lines.push(`_None. Use the highlight and surrounding paragraphs._`);
   } else {
-    for (const block of freshBlocks.slice(0, 80)) {
+    for (const block of freshBlocks.slice(0, 40)) {
       lines.push(`### ${block.id} (${block.tag})`, block.text, ``);
     }
   }
@@ -80,11 +115,27 @@ export function buildAgentPacket({ page, thread, ask, ledger, agent = "cursor" }
   );
 
   return {
-    markdown: lines.join("\n").trim() + "\n",
+    markdown: lines.filter((line) => line !== "").join("\n").trim() + "\n",
     includedBlockIds,
     includedHighlightIds,
-    agent
+    agent,
+    model
   };
+}
+
+export function nearbyBlocks(page, highlight, windowSize = 2) {
+  const blocks = page?.parsed?.blocks || [];
+  if (!blocks.length) return [];
+  const needle = normalizeLoose(highlight?.text || "");
+  let index = needle
+    ? blocks.findIndex((block) => normalizeLoose(block.text).includes(needle.slice(0, 80)))
+    : -1;
+  if (index < 0) return [];
+  return blocks.slice(Math.max(0, index - windowSize), index + windowSize + 1);
+}
+
+function normalizeLoose(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 export function nextLedger(ledger, packet, pageId) {

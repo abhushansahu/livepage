@@ -43,6 +43,7 @@ function enrich(found, seed) {
     progress: found.progress?.maxPercent ? found.progress : seed.progress,
     readState: found.readState && found.readState !== "unread" ? found.readState : seed.readState,
     bookmarked: found.bookmarked || seed.bookmarked,
+    inReadingList: found.inReadingList || seed.inReadingList,
     highlights: found.highlights?.length ? found.highlights : seed.highlights,
     threads: found.threads?.length ? found.threads : seed.threads,
     parsed: found.parsed?.excerpt ? found.parsed : seed.parsed,
@@ -66,6 +67,7 @@ function articleSeed(origin, now) {
   page.createdAt = now - 4 * 3600000;
   page.lastVisitedAt = now - 18 * 60000;
   page.bookmarked = true;
+  page.inReadingList = true;
   page.tags = ["habitat", "live"];
   page.why = "Came back to argue with the filing-cabinet line.";
   page.readState = "in_progress";
@@ -285,7 +287,8 @@ function imported(spec, now) {
   page.createdAt = created;
   page.lastVisitedAt = 0;
   page.openedAt = null;
-  page.bookmarked = spec.bookmarked !== false;
+  page.bookmarked = Boolean(spec.bookmarked);
+  page.inReadingList = Boolean(spec.inReadingList);
   page.tags = spec.tags || [];
   page.readState = "unread";
   page.parsed = { ...page.parsed, excerpt: spec.excerpt };

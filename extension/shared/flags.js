@@ -38,6 +38,15 @@ export const EXPERIMENTS = {
           dashboardLayout: "lists",
           localTweets: false
         }
+      },
+      C: {
+        label: "C · compact",
+        hint: "Top nav, dense rows, detail docked beside the list. Same rooms, less chrome.",
+        flags: {
+          forYouFeed: true,
+          dashboardLayout: "compact",
+          localTweets: false
+        }
       }
     }
   }
@@ -65,7 +74,7 @@ export function resolveFlags(settings = {}) {
     ...legacy,
     ...(settings.flags || {})
   };
-  if (flags.dashboardLayout !== "lists") flags.dashboardLayout = "feed";
+  if (!["feed", "lists", "compact"].includes(flags.dashboardLayout)) flags.dashboardLayout = "feed";
   return { flags, experiment };
 }
 

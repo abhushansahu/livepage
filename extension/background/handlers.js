@@ -21,16 +21,18 @@ import {
   listEvents
 } from "../storage/store.js";
 import { buildAgentPacket, nextLedger } from "../agent/packet.js";
+import { pingAgentHost, runAgentAsk } from "../agent/host-client.js";
 import { obsidianNewUri, pageToMarkdown, suggestedFilename } from "../export/obsidian.js";
 import { canonicalizeUrl, pageIdFromUrl } from "../shared/url.js";
 import { applyProgress } from "../shared/progress.js";
 import { uniqueItems } from "../import/normalize.js";
 import { syncSaves } from "../import/sync.js";
-import { syncRssFeeds } from "../import/rss.js";
+import { parseRssUrlInput, syncRssFeeds } from "../import/rss.js";
 import { applyTweetReaction } from "../feed/local-tweets.js";
 import { mergeTags, parseTagInput } from "../shared/tags.js";
 import { uid } from "../shared/id.js";
 import { resolveFlags } from "../shared/flags.js";
+import { COLOR_IDS } from "../shared/colors.js";
 
 export async function handleMessage(message) {
   const type = message?.type;
@@ -64,20 +66,34 @@ export async function handleMessage(message) {
       return patchPage(payload.id, { readState: payload.readState });
     case "TOGGLE_BOOKMARK":
       return toggleBookmark(payload.id);
+    case "TOGGLE_READING_LIST":
+      return toggleReadingList(payload);
+    case "QUEUE_READING_LIST":
+      return queueReadingList(payload);
+    case "ENSURE_PAGE":
+      return ensurePage(payload);
     case "SET_TAGS":
       return setTags(payload.id, payload.tags);
     case "ADD_HIGHLIGHT":
       return addHighlight(payload);
     case "REMOVE_HIGHLIGHT":
       return removeHighlight(payload.pageId, payload.highlightId);
+    case "PATCH_HIGHLIGHT":
+      return patchHighlight(payload);
     case "ADD_MESSAGE":
       return addMessage(payload);
+    case "DELETE_MESSAGE":
+      return deleteMessage(payload);
     case "FORK_THREAD":
       return forkThread(payload);
     case "SET_THREAD_STATUS":
       return setThreadStatus(payload);
     case "BUILD_AGENT_PACKET":
       return makePacket(payload);
+    case "ASK_AGENT":
+      return askAgentLive(payload);
+    case "PING_AGENT_HOST":
+      return pingAgentHostStatus();
     case "RESET_LEDGER":
       return saveLedger({
         pageId: payload.pageId,
@@ -101,6 +117,8 @@ export async function handleMessage(message) {
       });
     case "ADD_RSS_FEED":
       return addRssFeed(payload);
+    case "ADD_RSS_FEEDS":
+      return addRssFeeds(payload);
     case "UPDATE_RSS_FEED":
       return updateRssFeed(payload);
     case "REMOVE_RSS_FEED":
@@ -141,11 +159,118 @@ async function toggleBookmark(id) {
   return putPage(page);
 }
 
+async function toggleReadingList(payload) {
+  const page = payload.id
+    ? await getPage(payload.id)
+    : await getPageByUrl(payload.url);
+  if (!page) {
+    if (!payload.url) throw new Error("Page not found");
+    return queueReadingList(payload);
+  }
+  const next = payload.on ?? !page.inReadingList;
+  page.inReadingList = Boolean(next);
+  return putPage(page);
+}
+
+async function ensurePage(payload) {
+  const url = payload.url || "";
+  if (!url) throw new Error("URL required");
+  const existing = await getPageByUrl(url);
+  const tags = mergeTags(
+    existing?.tags,
+    Array.isArray(payload.tags) ? payload.tags : parseTagInput(payload.tags)
+  );
+  if (existing) {
+    if (payload.title && (!existing.title || existing.title === existing.canonicalUrl)) {
+      existing.title = payload.title;
+    }
+    if (tags.length) existing.tags = tags;
+    return putPage(existing);
+  }
+  const page = await upsertPageFromVisit(url, {
+    title: payload.title,
+    tags,
+    inReadingList: false
+  });
+  page.inReadingList = false;
+  page.tags = tags;
+  return putPage(page);
+}
+
+async function queueReadingList(payload) {
+  const url = payload.url || "";
+  if (!url) throw new Error("URL required");
+  const existing = await getPageByUrl(url);
+  const tags = mergeTags(
+    existing?.tags,
+    Array.isArray(payload.tags) ? payload.tags : parseTagInput(payload.tags)
+  );
+  if (existing) {
+    existing.inReadingList = true;
+    if (payload.title && (!existing.title || existing.title === existing.canonicalUrl)) {
+      existing.title = payload.title;
+    }
+    existing.tags = tags;
+    return putPage(existing);
+  }
+  const page = await upsertPageFromVisit(url, {
+    title: payload.title,
+    tags,
+    inReadingList: true
+  });
+  page.inReadingList = true;
+  page.tags = tags;
+  return putPage(page);
+}
+
 async function setTags(id, tags) {
   const page = await getPage(id);
   if (!page) throw new Error("Page not found");
   page.tags = mergeTags(Array.isArray(tags) ? tags : parseTagInput(tags));
   return putPage(page);
+}
+
+async function addRssFeeds(payload) {
+  const rows = Array.isArray(payload.urls)
+    ? payload.urls.map((url) => ({ url, tags: [] }))
+    : parseRssUrlInput(payload.text || "");
+  if (!rows.length) throw new Error("No feed URLs found");
+  const shared = mergeTags(
+    Array.isArray(payload.tags) ? payload.tags : parseTagInput(payload.tags)
+  );
+  const settings = await getSettings();
+  let rssFeeds = [...(settings.rssFeeds || [])];
+  const added = [];
+  for (const row of rows) {
+    const url = canonicalizeUrl(row.url || "");
+    if (!url) continue;
+    const tags = mergeTags(row.tags, shared);
+    const existing = rssFeeds.find((feed) => feed.url === url);
+    const feed = existing
+      ? {
+          ...existing,
+          tags: mergeTags(existing.tags, tags),
+          enabled: true
+        }
+      : {
+          id: uid("rss"),
+          url,
+          title: url,
+          tags,
+          enabled: true,
+          addedAt: Date.now()
+        };
+    rssFeeds = existing
+      ? rssFeeds.map((item) => (item.id === feed.id ? feed : item))
+      : [...rssFeeds, feed];
+    added.push(feed);
+  }
+  const next = await saveSettings({ rssFeeds });
+  const synced = await syncRssFeeds({
+    settings: next,
+    importItems: upsertImportedPages
+  });
+  return { feeds: added, settings: next, ...synced };
 }
 
 async function addRssFeed(payload) {
@@ -237,7 +362,27 @@ async function removeHighlight(pageId, highlightId) {
   page.highlights = page.highlights.filter((h) => h.id !== highlightId);
   page.threads = page.threads.filter((t) => t.highlightId !== highlightId);
   await putPage(page);
-  return page;
+  return { page };
+}
+
+async function patchHighlight(payload) {
+  const page = await loadPage(payload);
+  const highlight = (page.highlights || []).find((h) => h.id === payload.highlightId);
+  if (!highlight) throw new Error("Highlight not found");
+  const patch = payload.patch || payload;
+  if (patch.color) {
+    if (!COLOR_IDS.includes(patch.color)) throw new Error("Unknown highlight color");
+    highlight.color = patch.color;
+  }
+  if (typeof patch.text === "string") {
+    const text = patch.text.trim();
+    if (!text) throw new Error("Empty highlight");
+    highlight.text = text;
+    if (typeof patch.prefix === "string") highlight.prefix = patch.prefix;
+    if (typeof patch.suffix === "string") highlight.suffix = patch.suffix;
+  }
+  await putPage(page);
+  return { page, highlight };
 }
 
 async function addMessage(payload) {
@@ -247,9 +392,22 @@ async function addMessage(payload) {
   const message = newMessage(payload.message || payload);
   if (!message.content) throw new Error("Empty message");
   thread.messages.push(message);
+  if (message.role === "agent") thread.awaitingAgent = null;
   if (payload.status) thread.status = payload.status;
+  if (payload.agentSession) thread.agentSession = payload.agentSession;
   await putPage(page);
   return { page, thread, message };
+}
+
+async function deleteMessage(payload) {
+  const page = await loadPage(payload);
+  const thread = page.threads.find((t) => t.id === payload.threadId);
+  if (!thread) throw new Error("Thread not found");
+  const before = thread.messages.length;
+  thread.messages = (thread.messages || []).filter((m) => m.id !== payload.messageId);
+  if (thread.messages.length === before) throw new Error("Message not found");
+  await putPage(page);
+  return { page, thread };
 }
 
 async function forkThread(payload) {
@@ -283,6 +441,13 @@ function nextBranchLabel(page, source) {
   return `branch-${siblings.length}`;
 }
 
+function sameAgentSession(thread, agent) {
+  const session = thread?.agentSession;
+  if (!session?.id) return "";
+  if (session.agent && session.agent !== agent) return "";
+  return session.id;
+}
+
 async function setThreadStatus(payload) {
   const page = await loadPage(payload);
   const thread = page.threads.find((t) => t.id === payload.threadId);
@@ -302,7 +467,8 @@ async function makePacket(payload) {
     thread,
     ask: payload.ask,
     ledger,
-    agent: payload.agent
+    agent: payload.agent,
+    model: payload.model
   });
   if (payload.commit !== false) {
     await saveLedger(nextLedger(ledger, packet, page.id));
@@ -314,9 +480,71 @@ async function makePacket(payload) {
         content: payload.ask
       })
     );
+    thread.awaitingAgent = {
+      agent: payload.agent || "cursor",
+      model: payload.model || "",
+      packet: packet.markdown,
+      askedAt: Date.now(),
+      status: "pending"
+    };
     await putPage(page);
   }
   return { packet, page, thread };
+}
+
+async function pingAgentHostStatus() {
+  const settings = await getSettings();
+  const probe = await pingAgentHost(settings);
+  return {
+    ...probe,
+    url: settings.agentHostUrl || "http://127.0.0.1:17321"
+  };
+}
+
+async function askAgentLive(payload) {
+  const settings = await getSettings();
+  const agent = payload.agent || settings.agentDefault || "cursor";
+  const model =
+    payload.model ||
+    (agent === "claude-code" ? settings.claudeCodeModel : settings.cursorModel) ||
+    "";
+  const built = await makePacket({
+    ...payload,
+    agent,
+    model,
+    commit: true,
+    recordAsk: true
+  });
+  try {
+    const result = await runAgentAsk({
+      settings,
+      agent,
+      model,
+      packet: built.packet.markdown,
+      resumeId: sameAgentSession(built.thread, agent),
+      cwd: built.thread.agentSession?.workspace || ""
+    });
+    const text = typeof result === "string" ? result : result.text;
+    const sessionId = typeof result === "string" ? "" : result.sessionId || "";
+    const workspace = typeof result === "string" ? "" : result.workspace || "";
+    return addMessage({
+      pageId: built.page.id,
+      threadId: built.thread.id,
+      message: { role: "agent", agent, content: text },
+      agentSession: sessionId
+        ? { agent, id: sessionId, workspace: workspace || built.thread.agentSession?.workspace || "" }
+        : built.thread.agentSession
+    });
+  } catch (error) {
+    const page = await getPage(built.page.id);
+    const thread = page.threads.find((t) => t.id === built.thread.id);
+    if (thread?.awaitingAgent) {
+      thread.awaitingAgent.status = "error";
+      thread.awaitingAgent.error = error.message || String(error);
+      await putPage(page);
+    }
+    throw error;
+  }
 }
 
 async function exportObsidian(id) {

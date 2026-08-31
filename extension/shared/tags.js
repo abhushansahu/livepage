@@ -15,8 +15,16 @@ export function parseTagInput(value) {
   return mergeTags(
     String(value || "")
       .split(/[,;\n]+/)
-      .flatMap((part) => part.trim().replace(/^#/, "").split(/\s+/))
+      .map((part) => part.trim().replace(/^#/, ""))
   );
+}
+
+/** Space-separated leftover tokens after a URL, used by the RSS paste box. */
+export function parseLooseTags(value) {
+  const text = String(value || "").trim();
+  if (!text) return [];
+  if (/[,;\n]/.test(text)) return parseTagInput(text);
+  return mergeTags(text.split(/\s+/));
 }
 
 export function mergeTags(...lists) {
@@ -60,6 +68,37 @@ export function pageHasTags(page, required = []) {
   if (!need.length) return true;
   const have = new Set(contentTags(page));
   return need.every((tag) => have.has(tag));
+}
+
+export const NOISE_TAGS = new Set([
+  "bookmark",
+  "parked",
+  "released",
+  "user-comment",
+  "ai-comment",
+  "cursor",
+  "claude-code",
+  "watch-later",
+  "saved",
+  "favorite"
+]);
+
+export function displayTags(page, limit = 8) {
+  const user = page?.tags || [];
+  const extra = derivedTags(page).filter((tag) => !NOISE_TAGS.has(tag) && !user.includes(tag));
+  return mergeTags(user, extra).slice(0, limit);
+}
+
+export function filterBarTags(pages = []) {
+  return allTagsFromPages(pages).filter((row) => !NOISE_TAGS.has(row.tag));
+}
+
+export function suggestedTagsForHost(host) {
+  const raw = String(host || "")
+    .replace(/^www\./i, "")
+    .replace(/\.(com|org|net|io|co|edu|gov)$/i, "");
+  const slug = normalizeTag(raw.split(".")[0] || raw);
+  return slug ? [slug] : [];
 }
 
 export function allTagsFromPages(pages = []) {

@@ -1,17 +1,35 @@
 :host {
   all: initial;
   display: block;
+  pointer-events: none;
+  z-index: 2147483000;
+}
+
+:host([hidden]) {
+  display: none !important;
+}
+
+:host([data-lp="root"]) {
   position: absolute;
   top: 0;
   right: 0;
   width: var(--lp-gutter, 328px);
   min-height: 100%;
   height: var(--lp-doc-height, 100%);
-  pointer-events: none;
-  z-index: 2147483000;
 }
 
-.lp-root {
+:host([data-lp="float"]) {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  z-index: 2147483640;
+  pointer-events: none;
+}
+
+.lp-root,
+.lp-float {
   font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, sans-serif;
   color: #1c1712;
   font-size: 13px;
@@ -20,7 +38,12 @@
   height: 100%;
 }
 
-.lp-root * {
+.lp-float {
+  pointer-events: none;
+}
+
+.lp-root *,
+.lp-float * {
   box-sizing: border-box;
 }
 
@@ -127,6 +150,9 @@
   cursor: default;
   box-shadow: 0 10px 28px rgba(28, 23, 18, 0.1);
   z-index: 2;
+  display: flex;
+  flex-direction: column;
+  max-height: min(72vh, 680px);
 }
 
 .card .quote {
@@ -145,12 +171,55 @@
 .card .meta-line {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
   margin: 0 0 6px;
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #7a7168;
+}
+
+.hl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 22px 8px 0;
+}
+
+.hl-toolbar .swatches {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.swatch.is-on {
+  outline: 2px solid #1c1712;
+  outline-offset: 1px;
+}
+
+.hl-delete {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: #8a3a32;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 0 2px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.card:not(.is-open) .hl-delete {
+  font-size: 14px;
+  opacity: 0.55;
+}
+
+.card:not(.is-open):hover .hl-delete,
+.card:not(.is-open) .hl-delete:focus {
+  opacity: 1;
 }
 
 .toolbar {
@@ -242,22 +311,52 @@ button.solid:hover {
 }
 
 .messages {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
   margin: 8px 0;
-  max-height: 280px;
+  padding: 4px 0 8px 14px;
+  flex: 1;
+  min-height: 96px;
+  max-height: none;
   overflow: auto;
 }
 
+.messages::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 10px;
+  bottom: 10px;
+  border-left: 1.5px dotted rgba(28, 23, 18, 0.28);
+}
+
 .msg {
+  position: relative;
   padding: 8px 10px;
   border-radius: 10px;
   background: rgba(28, 23, 18, 0.04);
+  margin: 0 0 8px;
 }
 
-.msg.agent {
-  background: rgba(63, 107, 82, 0.1);
+.msg::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 16px;
+  width: 12px;
+  border-top: 1.5px dotted rgba(28, 23, 18, 0.28);
+}
+
+.msg.is-you {
+  margin-left: 10px;
+  background: rgba(28, 23, 18, 0.05);
+}
+
+.msg.is-agent {
+  margin-right: 4px;
+  background: rgba(63, 107, 82, 0.12);
 }
 
 .msg .meta {
@@ -274,20 +373,103 @@ button.solid:hover {
   white-space: pre-wrap;
 }
 
-.fork {
+.msg-actions {
+  display: flex;
+  gap: 10px;
   margin-top: 6px;
+}
+
+.fork,
+.delete {
   font-size: 11px;
-  color: #3f6b52;
   background: none;
   border: 0;
   cursor: pointer;
   padding: 0;
-  opacity: 0;
+  color: #3f6b52;
 }
 
-.msg:hover .fork,
-.msg:focus-within .fork {
-  opacity: 1;
+.delete {
+  color: #8a3a32;
+}
+
+.fork-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.fork-form[hidden] {
+  display: none !important;
+}
+
+.fork-form input {
+  flex: 1;
+  min-width: 90px;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px dashed rgba(63, 107, 82, 0.55);
+  background: #fff;
+}
+
+.fork-form button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  color: #3f6b52;
+  padding: 4px 0;
+}
+
+.fork-off {
+  position: relative;
+  margin: -2px 0 10px 8px;
+  padding: 4px 0 8px 14px;
+  border-left: 1.5px dashed rgba(63, 107, 82, 0.5);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.fork-kicker {
+  width: 100%;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a7168;
+}
+
+.packet {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.packet .hint {
+  margin: 0;
+  color: #5c5348;
+  font-size: 12px;
+}
+
+.packet .error {
+  margin: 0;
+  color: #8a3a32;
+  font-size: 12px;
+}
+
+.packet-md {
+  min-height: 88px;
+  max-height: 140px;
+  font-size: 11px;
+  line-height: 1.35;
+  background: rgba(28, 23, 18, 0.04);
 }
 
 .composer {
@@ -295,6 +477,10 @@ button.solid:hover {
   flex-direction: column;
   gap: 8px;
   margin-top: 8px;
+}
+
+.card.is-open .composer {
+  flex-shrink: 0;
 }
 
 textarea {

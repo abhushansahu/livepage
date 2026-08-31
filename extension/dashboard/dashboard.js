@@ -1,13 +1,15 @@
 import { call } from "../shared/bridge.js";
 import { formatRelative } from "../shared/time.js";
-import { COLORS } from "../shared/colors.js";
+import { COLORS, COLOR_IDS } from "../shared/colors.js";
 import { downloadMarkdown } from "../export/download.js";
 import { ensureDemoHabitat } from "./demo-seed.js";
 import { isWaiting, progressLabel, progressOf, reviewItems } from "../shared/progress.js";
 import { composeFeed, sourceGlyph, sourceLabel } from "../shared/feed.js";
+import { isBookmark, isReadingList, isRss, isSave } from "../shared/lists.js";
 import {
-  allTagsFromPages,
   contentTags,
+  displayTags,
+  filterBarTags,
   normalizeTag,
   pageHasTags,
   parseTagInput,
@@ -102,11 +104,23 @@ document.getElementById("sync-saves").onclick = async () => {
   const btn = document.getElementById("sync-saves");
   btn.textContent = "Refreshing…";
   try {
-    const result = await call("SYNC_SAVES", { openTabs: Boolean(globalThis.chrome?.tabs) });
+    const result = await call("SYNC_SAVES", { openTabs: true });
+    const twitter = (result?.reports || []).find((row) => row.source === "twitter");
     const n = result?.imported || result?.itemCount || 0;
-    state.syncNote = n
-      ? `Pulled ${n} saved ${n === 1 ? "item" : "items"} from this Chrome profile.`
-      : "Nothing new. Stay in this Chrome — the one already logged into X, Reddit, and YouTube — and open those lists. LivePage harvests the session you already have.";
+    if (twitter?.status === "login") {
+      state.syncNote =
+        "X is asking for login in this Chrome profile. Stay signed in, then Refresh again.";
+    } else if (n) {
+      const x = twitter?.items ? ` X ${twitter.items}.` : "";
+      state.syncNote = `Pulled ${n} saved ${n === 1 ? "item" : "items"} from YouTube, Reddit, and X.${x}`;
+    } else if (twitter?.status === "no-tab") {
+      state.syncNote =
+        "YouTube/Reddit were checked. X needs a bookmarks tab in this Chrome profile — Refresh opens it; stay logged in.";
+    } else {
+      state.syncNote = twitter?.ok
+        ? "Nothing new from YouTube, Reddit, or X bookmarks."
+        : "Nothing new. Refresh flashes X bookmarks so LivePage can catch the list — stay logged in, then try again.";
+    }
     await reload();
   } catch (error) {
     state.syncNote = String(error.message || error);
@@ -213,14 +227,14 @@ function matchesQuery(page) {
 
 function buckets(pages) {
   const waiting = pages.filter(isWaiting);
-  const reading = pages.filter((p) => progressOf(p) > 8 && progressOf(p) < 90 && p.readState !== "released");
-  const bookmarks = pages.filter((p) => p.bookmarked);
+  const readingList = pages.filter(isReadingList);
+  const bookmarks = pages.filter(isBookmark);
   const review = reviewItems(pages);
   const awaiting = review.filter((r) => r.awaiting);
   const trail = pages.filter((p) => p.readState !== "released");
-  const saves = pages.filter((p) => p.importMeta && p.importMeta.source !== "rss");
-  const rss = pages.filter((p) => p.importMeta?.source === "rss");
-  return { waiting, reading, bookmarks, review, awaiting, trail, saves, rss };
+  const saves = pages.filter(isSave);
+  const rss = pages.filter(isRss);
+  return { waiting, readingList, bookmarks, review, awaiting, trail, saves, rss };
 }
 
 function visiblePages() {
@@ -233,10 +247,12 @@ function visiblePages() {
 function render() {
   applyChrome();
   const pages = visiblePages();
-  const { waiting, bookmarks, review, awaiting, trail, saves, rss } = buckets(pages);
+  const { waiting, readingList, bookmarks, review, awaiting, trail, saves, rss } = buckets(pages);
   els.heading.textContent = TITLES[state.filter] || "For you";
-  els.counts.textContent = `${waiting.length} unread through · ${saves.length} pulled saves · ${rss.length} rss · ${awaiting.length} to review`;
-  setNavCount("reading", trail.length);
+  els.counts.textContent = isCompact()
+    ? `${waiting.length} unread · ${saves.length} saves · ${awaiting.length} review`
+    : `${waiting.length} unread through · ${saves.length} pulled saves · ${rss.length} rss · ${awaiting.length} to review`;
+  setNavCount("reading", readingList.length);
   setNavCount("bookmarked", bookmarks.length);
   setNavCount("review", awaiting.length);
   setNavCount("saves", saves.length);
@@ -244,8 +260,9 @@ function render() {
   renderTagBar(pages);
 
   if (state.filter === "home") {
-    els.view.innerHTML =
-      state.flags.dashboardLayout === "lists"
+    els.view.innerHTML = isCompact()
+      ? compactListHtml(trail)
+      : state.flags.dashboardLayout === "lists"
         ? listHtml(
             "Home",
             "Lists-first experiment. Same trail, no timeline chrome.",
@@ -253,37 +270,47 @@ function render() {
           )
         : homeHtml(pages, awaiting);
   } else if (state.filter === "reading") {
-    els.view.innerHTML = listHtml(
-      "Reading list",
-      "Everything still on the trail. The bar is how far the page was actually scrolled — not whether you clipped it.",
-      trail
-    );
+    els.view.innerHTML = isCompact()
+      ? compactListHtml(readingList)
+      : listHtml(
+          "Reading list",
+          "Pages you queued on purpose — popup, Alt+Shift+R, or right-click. Visiting a page or starring it does not put it here.",
+          readingList
+        );
   } else if (state.filter === "bookmarked") {
-    els.view.innerHTML = listHtml(
-      "Bookmarks",
-      "These stay. Tags and sort are how you find them years later — not another pile to feel guilty about.",
-      bookmarks
-    );
+    els.view.innerHTML = isCompact()
+      ? compactListHtml(bookmarks)
+      : listHtml(
+          "Bookmarks",
+          "Starred pages. Independent of the reading list and of harvested Saves.",
+          bookmarks
+        );
   } else if (state.filter === "saves") {
-    els.view.innerHTML = listHtml(
-      "Saves",
-      "Harvested from this Chrome while you are already logged into X, Reddit, YouTube, Pocket, HN. No second sign-in.",
-      saves
-    );
+    els.view.innerHTML = isCompact()
+      ? compactListHtml(saves)
+      : listHtml(
+          "Saves",
+          "Harvested YouTube Watch Later, Reddit saved, and X bookmarks. Not the reading list. Not starred bookmarks unless you star them.",
+          saves
+        );
   } else if (state.filter === "rss") {
-    els.view.innerHTML = listHtml(
-      "RSS",
-      "Custom feeds from Settings, or added while browsing. Feed tags copy onto each item.",
-      rss
-    );
+    els.view.innerHTML = isCompact()
+      ? compactListHtml(rss)
+      : listHtml(
+          "RSS",
+          "Custom feeds from Settings, or added while browsing. Feed tags copy onto each item.",
+          rss
+        );
   } else {
-    els.view.innerHTML = reviewHtml(review);
+    els.view.innerHTML = isCompact() ? compactReviewHtml(review) : reviewHtml(review);
   }
   bindView();
 }
 
 function applyChrome() {
   const flags = state.flags;
+  document.body.dataset.layout = flags.dashboardLayout || "feed";
+  document.body.classList.toggle("drawer-open", Boolean(state.activeId) && els.drawer && !els.drawer.hidden);
   document.querySelectorAll(".nav").forEach((btn) => {
     const flag = btn.dataset.flag;
     const on = !flag || flags[flag] !== false;
@@ -317,7 +344,7 @@ function setNavCount(filter, n) {
 }
 
 function renderTagBar(pages) {
-  const rows = allTagsFromPages(pages).slice(0, 16);
+  const rows = filterBarTags(pages).slice(0, 18);
   if (!rows.length && !state.tagFilters.length) {
     els.tagBar.innerHTML = "";
     return;
@@ -337,6 +364,49 @@ function renderTagBar(pages) {
       render();
     };
   });
+}
+
+function compactListHtml(pages) {
+  const note = state.syncNote ? `<p class="sync-note">${escapeHtml(state.syncNote)}</p>` : "";
+  if (!pages.length) {
+    return `${note}<p class="empty">Nothing here yet.</p>`;
+  }
+  return `${note}<div class="rows">${pages.map(denseRow).join("")}</div>`;
+}
+
+function compactReviewHtml(items) {
+  if (!items.length) {
+    return `<p class="empty">No conversations to review yet. Leave a comment on a page.</p>`;
+  }
+  return `<div class="rows">${items.map(denseReviewRow).join("")}</div>`;
+}
+
+function denseRow(page) {
+  return `
+    <article class="row ${state.activeId === page.id ? "is-on" : ""}" data-id="${page.id}">
+      <div class="row-main">
+        <p class="row-title">${escapeHtml(page.title || page.url)}</p>
+        <p class="row-sub">${escapeHtml(sourceLabel(page))} · ${escapeHtml(page.domain)}${page.highlights?.length ? ` · ${page.highlights.length} marks` : ""} · ${progressLabel(page)}</p>
+      </div>
+      <div class="row-actions">
+        <button type="button" data-reading="${page.id}">${page.inReadingList ? "Listed" : "List"}</button>
+        <button type="button" class="star" data-star="${page.id}">${page.bookmarked ? "★" : "☆"}</button>
+      </div>
+    </article>`;
+}
+
+function denseReviewRow(item) {
+  return `
+    <article class="row" data-id="${item.page.id}">
+      <div class="row-main">
+        <p class="row-title">${escapeHtml(clip(item.highlight?.text || item.page.title || "", 90))}</p>
+        <p class="row-sub">${item.awaiting ? "awaiting · " : ""}${item.last.role === "agent" ? "Agent" : "You"} · ${escapeHtml(clip(item.last.content, 100))}</p>
+      </div>
+    </article>`;
+}
+
+function isCompact() {
+  return state.flags.dashboardLayout === "compact";
 }
 
 function homeHtml(pages, awaiting) {
@@ -405,10 +475,11 @@ function feedPost(item) {
           <div class="bar" title="${p}%"><span style="width:${p}%"></span></div>
           <span class="pct">${p}%</span>
         </div>
-        <p class="meta-line">${progressLabel(page)}${page.highlights?.length ? ` · ${page.highlights.length} marks` : ""}${page.bookmarked ? " · ★ bookmark" : ""}</p>
+        <p class="meta-line">${progressLabel(page)}${page.highlights?.length ? ` · ${page.highlights.length} marks` : ""}${page.inReadingList ? " · reading list" : ""}${page.bookmarked ? " · ★ bookmark" : ""}</p>
         <div class="tweet-actions">
           <a href="${page.url}" target="_blank" rel="noreferrer" data-live="${page.id}">Open</a>
           <button type="button" data-snooze="${page.id}">Not now</button>
+          <button type="button" data-reading="${page.id}">${page.inReadingList ? "In reading list" : "Reading list"}</button>
           <button type="button" class="star" data-star="${page.id}">${page.bookmarked ? "★" : "☆"}</button>
         </div>
       </div>
@@ -463,6 +534,7 @@ function pageCard(page) {
       </div>
       <div class="meta">
         <span>${progressLabel(page)} · ${page.highlights?.length || 0} marks${page.openedAt ? "" : " · never opened"}</span>
+        <button class="ghost" data-reading="${page.id}" title="Reading list">${page.inReadingList ? "Listed" : "List"}</button>
         <button class="star" data-star="${page.id}" title="Bookmark">${page.bookmarked ? "★" : "☆"}</button>
       </div>
     </article>`;
@@ -480,16 +552,16 @@ function reviewCard(item) {
 }
 
 function tagRow(page) {
-  const tags = contentTags(page).slice(0, 6);
+  const tags = displayTags(page, 6);
   if (!tags.length) return "";
   return `<p class="tags">${tags.map((tag) => `<span>#${escapeHtml(tag)}</span>`).join("")}</p>`;
 }
 
 function bindView() {
-  els.view.querySelectorAll("[data-open], .card, .review-card, .tweet").forEach((el) => {
+  els.view.querySelectorAll("[data-open], .card, .review-card, .tweet, .row").forEach((el) => {
     el.onclick = (event) => {
       if (el.classList.contains("local-tweet")) return;
-      if (event.target.closest("[data-star], [data-snooze], [data-live], a, [data-cta], [data-like], [data-dismiss]")) return;
+      if (event.target.closest("[data-star], [data-reading], [data-snooze], [data-live], a, [data-cta], [data-like], [data-dismiss]")) return;
       openDrawer(el.dataset.open || el.dataset.id);
     };
   });
@@ -498,6 +570,14 @@ function bindView() {
       event.preventDefault();
       event.stopPropagation();
       await call("TOGGLE_BOOKMARK", { id: btn.dataset.star });
+      await reload();
+    };
+  });
+  els.view.querySelectorAll("[data-reading]").forEach((btn) => {
+    btn.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await call("TOGGLE_READING_LIST", { id: btn.dataset.reading });
       await reload();
     };
   });
@@ -553,21 +633,43 @@ async function openDrawer(id) {
   if (!page) return;
   state.activeId = id;
   els.drawer.hidden = false;
+  document.body.classList.add("drawer-open");
   const p = progressOf(page);
-  const threads = (page.threads || [])
-    .map((thread) => {
-      const highlight = (page.highlights || []).find((h) => h.id === thread.highlightId);
-      const color = COLORS[highlight?.color]?.fill || "#F6E27A";
-      const last = thread.messages?.[thread.messages.length - 1];
+  const highlights = page.highlights || [];
+  const threadsByHighlight = new Map();
+  for (const thread of page.threads || []) {
+    const list = threadsByHighlight.get(thread.highlightId) || [];
+    list.push(thread);
+    threadsByHighlight.set(thread.highlightId, list);
+  }
+  const highlightBlocks = highlights
+    .map((highlight) => {
+      const color = COLORS[highlight.color]?.fill || "#F6E27A";
+      const threads = threadsByHighlight.get(highlight.id) || [];
       return `
-        <section class="thread">
-          <q style="border-left: 3px solid ${color}; padding-left: 8px">${escapeHtml(highlight?.text || "")}</q>
-          <p>${escapeHtml(thread.branchLabel || "main")}${thread.parentId ? " · forked" : ""}${last?.role === "user" ? " · needs review" : ""}</p>
-          ${(thread.messages || [])
-            .map(
-              (m) =>
-                `<p><strong>${m.role === "agent" ? `Agent (${m.agent})` : "You"}:</strong> ${escapeHtml(m.content)}</p>`
-            )
+        <section class="hl-block" data-highlight="${highlight.id}">
+          <q style="border-left: 3px solid ${color}; padding-left: 8px">${escapeHtml(highlight.text || "")}</q>
+          <div class="hl-edit">
+            ${COLOR_IDS.map(
+              (id) =>
+                `<button type="button" class="swatch ${highlight.color === id ? "is-on" : ""}" title="${id}" style="--lp-mark:${COLORS[id].fill}" data-hl-color="${id}"></button>`
+            ).join("")}
+            <button type="button" class="ghost" data-remove-hl="${highlight.id}">Delete highlight</button>
+          </div>
+          ${threads
+            .map((thread) => {
+              const last = thread.messages?.[thread.messages.length - 1];
+              return `
+                <div class="thread">
+                  <p>${escapeHtml(thread.branchLabel || "main")}${thread.parentId ? " · forked" : ""}${last?.role === "user" ? " · needs review" : ""}</p>
+                  ${(thread.messages || [])
+                    .map(
+                      (m) =>
+                        `<p><strong>${m.role === "agent" ? `Agent (${m.agent})` : "You"}:</strong> ${escapeHtml(m.content)}</p>`
+                    )
+                    .join("")}
+                </div>`;
+            })
             .join("")}
         </section>`;
     })
@@ -591,13 +693,14 @@ async function openDrawer(id) {
     </div>
     ${source}
     ${page.why ? `<p class="why">${escapeHtml(page.why)}</p>` : ""}
-    <label class="tag-edit">Tags
-      <input id="page-tags" value="${escapeHtml((page.tags || []).join(", "))}" placeholder="design, later, systems" />
+    <label class="tag-edit">Tags <span class="hint">comma-separated — “machine learning” stays one tag</span>
+      <input id="page-tags" value="${escapeHtml((page.tags || []).join(", "))}" placeholder="machine learning, later" />
     </label>
-    <p class="tags derived">${contentTags(page)
+    <p class="tags derived">${displayTags(page)
       .map((tag) => `<span>#${escapeHtml(tag)}</span>`)
       .join("")}</p>
     <div class="actions">
+      <button class="ghost" data-act="reading">${page.inReadingList ? "Remove from reading list" : "Add to reading list"}</button>
       <button class="ghost" data-act="bookmark">${page.bookmarked ? "Unbookmark" : "Bookmark"}</button>
       <button class="ghost" data-state="parked">Park</button>
       <button class="ghost" data-state="released">Release</button>
@@ -605,11 +708,14 @@ async function openDrawer(id) {
       <button class="solid" data-act="obsidian">${state.vault.bound ? "Write to vault" : "Dump to Obsidian"}</button>
       <button class="ghost" data-act="delete">Remove</button>
     </div>
-    <h3>Review</h3>
-    ${threads || "<p class='excerpt'>No comments to review yet.</p>"}
+    <h3>Highlights</h3>
+    ${highlightBlocks || "<p class='excerpt'>No highlights yet.</p>"}
   `;
   els.drawer.querySelector("#close-drawer").onclick = () => {
     els.drawer.hidden = true;
+    state.activeId = null;
+    document.body.classList.remove("drawer-open");
+    render();
   };
   const tagInput = els.drawer.querySelector("#page-tags");
   const saveTags = async () => {
@@ -636,9 +742,16 @@ async function openDrawer(id) {
     await reload();
     openDrawer(page.id);
   };
+  els.drawer.querySelector("[data-act='reading']").onclick = async () => {
+    await call("TOGGLE_READING_LIST", { id: page.id });
+    await reload();
+    openDrawer(page.id);
+  };
   els.drawer.querySelector("[data-act='snooze']").onclick = async () => {
     await call("SNOOZE_PAGE", { id: page.id, hours: 48 });
     els.drawer.hidden = true;
+    state.activeId = null;
+    document.body.classList.remove("drawer-open");
     await reload();
   };
   els.drawer.querySelector("[data-act='obsidian']").onclick = async () => {
@@ -663,8 +776,33 @@ async function openDrawer(id) {
   els.drawer.querySelector("[data-act='delete']").onclick = async () => {
     await call("DELETE_PAGE", { id: page.id });
     els.drawer.hidden = true;
+    state.activeId = null;
+    document.body.classList.remove("drawer-open");
     await reload();
   };
+  els.drawer.querySelectorAll("[data-hl-color]").forEach((btn) => {
+    btn.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const block = btn.closest("[data-highlight]");
+      await call("PATCH_HIGHLIGHT", {
+        pageId: page.id,
+        highlightId: block.dataset.highlight,
+        patch: { color: btn.dataset.hlColor }
+      });
+      await reload();
+      openDrawer(page.id);
+    };
+  });
+  els.drawer.querySelectorAll("[data-remove-hl]").forEach((btn) => {
+    btn.onclick = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await call("REMOVE_HIGHLIGHT", { pageId: page.id, highlightId: btn.dataset.removeHl });
+      await reload();
+      openDrawer(page.id);
+    };
+  });
 }
 
 async function reload() {

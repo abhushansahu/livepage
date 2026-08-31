@@ -16,6 +16,9 @@ let settings = await call("GET_SETTINGS");
 fillForm(settings);
 await refreshRss();
 await refreshVault();
+await refreshHost();
+
+document.getElementById("host-ping").onclick = () => refreshHost();
 
 form.elements.experimentVariant.addEventListener("change", () => {
   const variant = EXPERIMENTS["dashboard-density"].variants[form.elements.experimentVariant.value];
@@ -36,17 +39,26 @@ form.addEventListener("submit", async (event) => {
 });
 
 document.getElementById("rss-add").onclick = async () => {
-  const url = document.getElementById("rss-url").value.trim();
-  if (!url) return;
-  settings = (await call("ADD_RSS_FEED", {
-    url,
-    tags: parseTagInput(document.getElementById("rss-tags").value)
-  })).settings;
-  document.getElementById("rss-url").value = "";
-  document.getElementById("rss-tags").value = "";
-  await refreshRss();
-  status.hidden = false;
-  status.textContent = "Feed added.";
+  const text = document.getElementById("rss-urls").value.trim();
+  if (!text) return;
+  try {
+    const result = await call("ADD_RSS_FEEDS", {
+      text,
+      tags: parseTagInput(document.getElementById("rss-tags").value)
+    });
+    settings = result.settings;
+    document.getElementById("rss-urls").value = "";
+    document.getElementById("rss-tags").value = "";
+    await refreshRss();
+    status.hidden = false;
+    const n = result?.feeds?.length || 0;
+    status.textContent = n
+      ? `Added ${n} feed${n === 1 ? "" : "s"}.`
+      : "No new feeds.";
+  } catch (error) {
+    status.hidden = false;
+    status.textContent = String(error.message || error);
+  }
 };
 
 document.getElementById("bind-vault").onclick = async () => {
@@ -68,6 +80,12 @@ function currentPatch() {
   return {
     defaultColor: form.elements.defaultColor.value,
     agentDefault: form.elements.agentDefault.value,
+    cursorModel: form.elements.cursorModel.value,
+    claudeCodeModel: form.elements.claudeCodeModel.value,
+    cursorAgentPath: form.elements.cursorAgentPath.value.trim(),
+    claudeCodePath: form.elements.claudeCodePath.value.trim(),
+    agentHostUrl: form.elements.agentHostUrl.value.trim() || "http://127.0.0.1:17321",
+    agentWorkspace: form.elements.agentWorkspace.value.trim(),
     obsidianVault: form.elements.obsidianVault.value.trim(),
     obsidianFolder: form.elements.obsidianFolder.value.trim() || "livepage",
     remindersEnabled: form.elements.remindersEnabled.checked,
@@ -94,6 +112,12 @@ function fillForm(value) {
   const { flags, experiment } = resolveFlags(value);
   form.elements.defaultColor.value = value.defaultColor || "lemon";
   form.elements.agentDefault.value = value.agentDefault || "cursor";
+  form.elements.cursorModel.value = value.cursorModel || "composer-2.5";
+  form.elements.claudeCodeModel.value = value.claudeCodeModel || "sonnet";
+  form.elements.cursorAgentPath.value = value.cursorAgentPath || "";
+  form.elements.claudeCodePath.value = value.claudeCodePath || "";
+  form.elements.agentHostUrl.value = value.agentHostUrl || "http://127.0.0.1:17321";
+  form.elements.agentWorkspace.value = value.agentWorkspace || "";
   form.elements.obsidianVault.value = value.obsidianVault || "";
   form.elements.obsidianFolder.value = value.obsidianFolder || "livepage";
   form.elements.remindersEnabled.checked = value.remindersEnabled !== false;
@@ -150,6 +174,18 @@ async function refreshVault() {
       : "Bind vault folder";
   } catch {
     el.textContent = "Folder bind is unavailable in this context. Markdown download still works.";
+  }
+}
+
+async function refreshHost() {
+  const el = document.getElementById("host-status");
+  try {
+    const result = await call("PING_AGENT_HOST");
+    el.textContent = result?.ok
+      ? `Host is up. Cursor CLI: ${result.cursorOk ? result.cursor : "not found"}. Claude Code: ${result.claudeOk ? result.claude : "not found"}.`
+      : `Agent host is not running. In the LivePage repo: npm run agent-host`;
+  } catch {
+    el.textContent = "Agent host is not running. In the LivePage repo: npm run agent-host";
   }
 }
 

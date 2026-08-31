@@ -4,6 +4,7 @@ import { canonicalizeUrl, hostnameOf, pageIdFromUrl } from "../extension/shared/
 import { blockIdFromText } from "../extension/shared/id.js";
 import { uniqueBlocks } from "../extension/parse/page-parser.js";
 import { hostLooksInfinite, evaluateInfiniteScroll } from "../extension/parse/infinite-scroll.js";
+import { toolbarAction } from "../extension/content/selection.js";
 import { buildAgentPacket, nextLedger } from "../extension/agent/packet.js";
 import { pageToMarkdown, suggestedFilename } from "../extension/export/obsidian.js";
 
@@ -80,6 +81,36 @@ test("agent packet includes only new blocks and the strict ask", () => {
   assert.match(packet.markdown, /Answer STRICTLY the user ask/);
   const ledger = nextLedger({ sentBlockIds: ["b_old"] }, packet, page.id);
   assert.ok(ledger.sentBlockIds.includes("b_new"));
+});
+
+test("follow-up packets keep the thread and ask the agent to continue", () => {
+  const thread = {
+    id: "th1",
+    highlightId: "hl1",
+    branchLabel: "main",
+    messages: [
+      { role: "user", content: "What does this mean?" },
+      { role: "agent", agent: "cursor", content: "It marks a decision." }
+    ]
+  };
+  const packet = buildAgentPacket({
+    page: {
+      id: "p_1",
+      title: "Essay",
+      canonicalUrl: "https://example.com/essay",
+      url: "https://example.com/essay",
+      parsed: { headings: [], wordCount: 1, contentHash: "h", blocks: [] },
+      highlights: [{ id: "hl1", color: "lemon", text: "decision site" }],
+      threads: [thread]
+    },
+    thread,
+    ask: "And why should I care?",
+    ledger: { sentBlockIds: [] },
+    agent: "cursor"
+  });
+  assert.match(packet.markdown, /continuing conversation/);
+  assert.match(packet.markdown, /And why should I care\?/);
+  assert.match(packet.markdown, /It marks a decision/);
 });
 
 test("obsidian dump keeps anchor, voice, branch, and state", () => {
@@ -174,4 +205,23 @@ test("review items flag threads whose last voice is the user", async () => {
   assert.equal(items[0].awaiting, true);
   assert.equal(items[0].last.content, "still mine");
   assert.equal(items[1].awaiting, false);
+});
+
+test("selection toolbar stays up when the page collapses the live range", () => {
+  assert.equal(
+    toolbarAction({ liveHasRange: true, gestureSelected: true, savedRange: { collapsed: false } }),
+    "show"
+  );
+  assert.equal(
+    toolbarAction({ liveHasRange: false, gestureSelected: true, savedRange: { collapsed: false } }),
+    "show"
+  );
+  assert.equal(
+    toolbarAction({ liveHasRange: false, gestureSelected: false, savedRange: { collapsed: false } }),
+    "hide"
+  );
+  assert.equal(
+    toolbarAction({ liveHasRange: false, gestureSelected: true, savedRange: { collapsed: true } }),
+    "hide"
+  );
 });

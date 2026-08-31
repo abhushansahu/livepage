@@ -9,14 +9,14 @@ export function normalizeItem(partial = {}) {
   const title = String(partial.title || url).trim();
   const excerpt = String(partial.excerpt || "").trim();
   const author = String(partial.author || partial.importMeta?.author || "").trim();
-  const bookmarked = partial.bookmarked ?? source !== "rss";
+  const bookmarked = Boolean(partial.bookmarked);
   return {
     url,
     title,
     excerpt,
     author,
     bookmarked,
-    tags: mergeTags(partial.tags, [source, kind]),
+    tags: mergeTags(partial.tags),
     why: partial.why || whyFor(source, kind, author),
     importMeta: {
       source,

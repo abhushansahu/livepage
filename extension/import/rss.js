@@ -1,8 +1,38 @@
 import { canonicalizeUrl } from "../shared/url.js";
-import { mergeTags, normalizeTag } from "../shared/tags.js";
+import { mergeTags, normalizeTag, parseLooseTags } from "../shared/tags.js";
 import { uniqueItems } from "./normalize.js";
 
 const RSS_TYPES = /rss|atom|\+xml/i;
+
+export function parseRssUrlInput(text) {
+  const feeds = [];
+  const seen = new Set();
+  for (const rawLine of String(text || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const httpUrls = line.match(/https?:\/\/[^\s,;<>]+/gi) || [];
+    const urls = httpUrls.map((url) => url.replace(/[.,;:]+$/, ""));
+    if (!urls.length) {
+      const token = line.split(/\s+/)[0];
+      if (token && /[a-z0-9-]+\.[a-z]{2,}/i.test(token) && !token.startsWith("#")) {
+        urls.push(/^https?:\/\//i.test(token) ? token : `https://${token}`);
+      }
+    }
+    if (!urls.length) continue;
+    const leftover = line
+      .replace(/https?:\/\/[^\s,;<>]+/gi, " ")
+      .replace(/^[^\s]+\.[^\s]+/, " ");
+    const tags = parseLooseTags(leftover);
+    for (const raw of urls) {
+      let url = raw;
+      if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      feeds.push({ url, tags });
+    }
+  }
+  return feeds;
+}
 
 export function detectFeeds(doc, pageUrl) {
   if (!doc) return [];

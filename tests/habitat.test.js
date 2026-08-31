@@ -3,14 +3,16 @@ import test from "node:test";
 import {
   allTagsFromPages,
   contentTags,
+  filterBarTags,
   mergeTags,
   normalizeTag,
   pageHasTags,
   parseTagInput,
   sortPages
 } from "../extension/shared/tags.js";
+import { isBookmark, isReadingList, isRss, isSave } from "../extension/shared/lists.js";
 import { firstVisibleFilter, resolveFlags } from "../extension/shared/flags.js";
-import { parseRssXml, rssItemsForFeed } from "../extension/import/rss.js";
+import { parseRssXml, rssItemsForFeed, parseRssUrlInput } from "../extension/import/rss.js";
 import { uniqueItems } from "../extension/import/normalize.js";
 import { buildVaultBundle } from "../extension/export/vault-format.js";
 import { pageToMarkdown } from "../extension/export/obsidian.js";
@@ -18,7 +20,8 @@ import { reasonFor } from "../extension/shared/feed.js";
 
 test("tags normalize, merge, and attach derived source/comment labels", () => {
   assert.equal(normalizeTag("#Design Systems"), "design-systems");
-  assert.deepEqual(parseTagInput("design, weekly #later"), ["design", "weekly", "later"]);
+  assert.deepEqual(parseTagInput("design, weekly, #later"), ["design", "weekly", "later"]);
+  assert.deepEqual(parseTagInput("machine learning, later"), ["machine-learning", "later"]);
   const page = {
     tags: ["habitat"],
     bookmarked: true,
@@ -43,6 +46,10 @@ test("tags normalize, merge, and attach derived source/comment labels", () => {
   assert.equal(pageHasTags(page, ["youtube"]), false);
   const counted = allTagsFromPages([page]);
   assert.ok(counted[0].count >= 1);
+  const visible = filterBarTags([page]).map((row) => row.tag);
+  assert.equal(visible.includes("user-comment"), false);
+  assert.equal(visible.includes("bookmark"), false);
+  assert.ok(visible.includes("habitat"));
 });
 
 test("sort prefers never-opened bookmarks when asked", () => {
@@ -53,6 +60,13 @@ test("sort prefers never-opened bookmarks when asked", () => {
   ];
   assert.equal(sortPages(pages, "never-opened")[0].id, "old");
   assert.equal(sortPages(pages, "title")[0].id, "old");
+});
+
+test("experiment C is compact and still keeps For you", () => {
+  const c = resolveFlags({ experiment: { id: "dashboard-density", variant: "C" } });
+  assert.equal(c.flags.forYouFeed, true);
+  assert.equal(c.flags.dashboardLayout, "compact");
+  assert.equal(c.flags.localTweets, false);
 });
 
 test("experiment B hides For you until the flag is overridden", () => {
@@ -115,14 +129,47 @@ test("rss and atom parse into tagged items that are not auto-bookmarked", () => 
   assert.equal(items[0].importMeta.source, "rss");
 });
 
-test("imported social saves still star; rss does not", () => {
+test("imported social saves are not auto-starred; rss is not either", () => {
   const [tweet, article] = uniqueItems([
     { url: "https://x.com/a/status/1", title: "star me", source: "twitter", kind: "bookmark" },
     { url: "https://example.com/rss-item", title: "feed me", source: "rss", kind: "rss", bookmarked: false, tags: ["demo"] }
   ]);
-  assert.equal(tweet.bookmarked, true);
+  assert.equal(tweet.bookmarked, false);
   assert.equal(article.bookmarked, false);
   assert.ok(article.tags.includes("demo"));
+});
+
+test("reading list, bookmarks, and saves are separate memberships", () => {
+  const save = uniqueItems([
+    { url: "https://x.com/a/status/1", title: "a tweet", source: "twitter", kind: "saved" }
+  ])[0];
+  const harvested = { ...save, inReadingList: false, bookmarked: false };
+  assert.equal(isSave(harvested), true);
+  assert.equal(isReadingList(harvested), false);
+  assert.equal(isBookmark(harvested), false);
+  assert.equal(isReadingList({ ...harvested, inReadingList: true }), true);
+  const starred = { url: "https://example.com/essay", bookmarked: true, inReadingList: false };
+  assert.equal(isBookmark(starred), true);
+  assert.equal(isSave(starred), false);
+  assert.equal(isReadingList(starred), false);
+  assert.equal(isRss({ importMeta: { source: "rss" } }), true);
+  assert.equal(isSave({ importMeta: { source: "rss" } }), false);
+});
+
+test("rss textarea parses many URLs, optional per-line tags, and skips comments", () => {
+  const feeds = parseRssUrlInput(`
+# ignore me
+https://example.com/feed.xml design weekly
+https://other.com/rss, https://third.com/atom.xml
+example.org/feed
+  `);
+  assert.equal(feeds.length, 4);
+  assert.equal(feeds[0].url, "https://example.com/feed.xml");
+  assert.ok(feeds[0].tags.includes("design"));
+  assert.ok(feeds[0].tags.includes("weekly"));
+  assert.equal(feeds[1].url, "https://other.com/rss");
+  assert.equal(feeds[2].url, "https://third.com/atom.xml");
+  assert.equal(feeds[3].url, "https://example.org/feed");
 });
 
 test("vault bundle is open markdown plus a machine catalog", () => {

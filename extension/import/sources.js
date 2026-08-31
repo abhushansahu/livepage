@@ -46,8 +46,14 @@ export const SOURCES = [
   }
 ];
 
+export const REFRESH_SOURCE_IDS = ["twitter", "reddit", "youtube"];
+
 export function sourceById(id) {
   return SOURCES.find((s) => s.id === id) || null;
+}
+
+export function isRefreshSource(id) {
+  return REFRESH_SOURCE_IDS.includes(id);
 }
 
 export function hostnameOfUrl(raw) {

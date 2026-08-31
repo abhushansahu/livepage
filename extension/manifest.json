@@ -42,10 +42,15 @@
   ],
   "content_scripts": [
     {
+      "matches": ["https://x.com/*", "https://twitter.com/*"],
+      "js": ["import/x-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["content/content.js"],
+      "js": ["content/livepage.iife.js"],
       "css": ["content/content.css"],
-      "type": "module",
       "run_at": "document_idle"
     }
   ],
@@ -57,6 +62,8 @@
         "storage/*",
         "agent/*",
         "export/*",
+        "import/*",
+        "feed/*",
         "content/*",
         "background/*"
       ],
@@ -75,6 +82,10 @@
     "open-dashboard": {
       "suggested_key": { "default": "Alt+Shift+L" },
       "description": "Open the LivePage dashboard"
+    },
+    "add-to-reading-list": {
+      "suggested_key": { "default": "Alt+Shift+R" },
+      "description": "Add the current page to the reading list"
     }
   }
 }

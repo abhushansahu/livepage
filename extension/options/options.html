@@ -27,6 +27,43 @@
             <option value="claude-code">Claude Code</option>
           </select>
         </label>
+
+        <h2>Agents</h2>
+        <p class="hint">LivePage calls the Cursor Agent CLI (<code>agent</code>) and Claude Code CLI (<code>claude</code>) already on this machine. No API keys. Keep <code>npm run agent-host</code> running in the LivePage repo so the extension can reach them.</p>
+        <p class="hint" id="host-status">Checking agent host…</p>
+        <div class="row">
+          <button type="button" id="host-ping">Check host</button>
+        </div>
+        <label>Agent host URL
+          <input name="agentHostUrl" placeholder="http://127.0.0.1:17321" />
+        </label>
+        <label>Cursor model
+          <select name="cursorModel">
+            <option value="composer-2.5">Composer 2.5</option>
+            <option value="auto">Auto</option>
+            <option value="gpt-5.2">GPT-5.2</option>
+            <option value="claude-4.6-opus">Claude 4.6 Opus</option>
+            <option value="claude-4.6-sonnet">Claude 4.6 Sonnet</option>
+          </select>
+        </label>
+        <label>Claude Code model
+          <select name="claudeCodeModel">
+            <option value="sonnet">Sonnet</option>
+            <option value="opus">Opus</option>
+            <option value="haiku">Haiku</option>
+            <option value="claude-opus-4-6">Claude Opus 4.6</option>
+            <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+          </select>
+        </label>
+        <label>Cursor agent binary (optional)
+          <input name="cursorAgentPath" placeholder="agent" />
+        </label>
+        <label>Claude Code binary (optional)
+          <input name="claudeCodePath" placeholder="claude" />
+        </label>
+        <label>Workspace folder (optional)
+          <input name="agentWorkspace" placeholder="empty = a temp folder" />
+        </label>
         <label>Obsidian vault name
           <input name="obsidianVault" placeholder="optional, for obsidian:// fallback" />
         </label>
@@ -51,12 +88,14 @@
           <select name="experimentVariant">
             <option value="A">A · feed (timeline home)</option>
             <option value="B">B · lists (no timeline)</option>
+            <option value="C">C · compact (top nav, dense rows)</option>
           </select>
         </label>
         <label>Layout when For you is on
           <select name="dashboardLayout">
             <option value="feed">Feed</option>
             <option value="lists">Lists</option>
+            <option value="compact">Compact</option>
           </select>
         </label>
         <label class="check"><input type="checkbox" name="flagForYou" /> For you</label>
@@ -69,11 +108,13 @@
         <label class="check"><input type="checkbox" name="flagImportSaves" /> Harvest X / Reddit / YouTube from this Chrome session</label>
 
         <h2>RSS feeds</h2>
-        <p class="hint">Tagged subscriptions. You can also add a feed from a page that advertises RSS — no extra login.</p>
-        <div class="row">
-          <input id="rss-url" type="url" placeholder="https://example.com/feed.xml" />
-          <input id="rss-tags" placeholder="tags: design, weekly" />
-          <button type="button" id="rss-add">Add feed</button>
+        <p class="hint">Paste one feed URL per line. Optional tags after a URL, or one shared tag set for the whole paste. You can also add a feed from a page that advertises RSS.</p>
+        <div class="rss-add">
+          <textarea id="rss-urls" rows="6" placeholder="https://example.com/feed.xml design, weekly&#10;https://other.com/rss&#10;https://news.example.org/atom.xml"></textarea>
+          <div class="row">
+            <input id="rss-tags" placeholder="shared tags for all of these (optional)" />
+            <button type="button" id="rss-add">Add feeds</button>
+          </div>
         </div>
         <ul id="rss-list"></ul>
 

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyLibraryUrl, isLibraryUrl } from "../extension/import/sources.js";
+import { classifyLibraryUrl, isLibraryUrl, isRefreshSource } from "../extension/import/sources.js";
 import { itemsFromRedditListing } from "../extension/import/reddit.js";
 import { extractAssignedJson, itemsFromYtInitialData } from "../extension/import/youtube.js";
 import { uniqueItems } from "../extension/import/normalize.js";
-import { harvestTwitterDom } from "../extension/import/twitter.js";
+import { harvestDocument } from "../extension/import/harvest.js";
+import { harvestTwitterDom, scrapeTwitterBookmarksFromPage, scrapeCapturedTwitterBookmarksFromPage, itemsFromTwitterGraphql } from "../extension/import/twitter.js";
 
 test("library URLs classify X bookmarks, Reddit saved, and YouTube Watch Later", () => {
   assert.equal(classifyLibraryUrl("https://x.com/i/bookmarks")?.id, "twitter");
@@ -14,6 +15,9 @@ test("library URLs classify X bookmarks, Reddit saved, and YouTube Watch Later",
   assert.equal(classifyLibraryUrl("https://www.youtube.com/playlist?list=WL")?.id, "youtube");
   assert.equal(classifyLibraryUrl("https://www.youtube.com/watch?v=abc"), null);
   assert.equal(isLibraryUrl("https://www.reddit.com/r/all"), false);
+  assert.equal(isRefreshSource("twitter"), true);
+  assert.equal(isRefreshSource("pocket"), false);
+  assert.equal(isRefreshSource("hn"), false);
 });
 
 test("reddit saved listing maps link posts to the destination URL", () => {
@@ -69,7 +73,7 @@ test("duplicate import URLs collapse", () => {
   assert.equal(items.length, 1);
 });
 
-test("twitter bookmark harvest prefers an outbound link when present", () => {
+test("twitter bookmark harvest keeps the tweet URL, not an outbound card link", () => {
   const article = {
     querySelectorAll: (sel) => {
       if (sel === "a[href]") {
@@ -88,6 +92,120 @@ test("twitter bookmark harvest prefers an outbound link when present", () => {
   };
   const doc = { querySelectorAll: () => [article] };
   const items = harvestTwitterDom(doc, "https://x.com/i/bookmarks");
-  assert.equal(items[0].url, "https://example.com/essay");
+  assert.equal(items[0].url, "https://x.com/visakanv/status/123");
   assert.match(items[0].title, /graveyard/);
+  assert.equal(items[0].bookmarked, false);
+});
+
+test("twitter harvest keeps a status URL when there is no outbound link", () => {
+  const article = {
+    querySelectorAll: (sel) => {
+      if (sel === "a[href]") {
+        return [{ getAttribute: () => "/visakanv/status/123", href: "/visakanv/status/123" }];
+      }
+      return [];
+    },
+    querySelector: (sel) => {
+      if (sel === '[data-testid="tweetText"]') return { textContent: "just a thought" };
+      return null;
+    }
+  };
+  const doc = { querySelectorAll: () => [article] };
+  const items = harvestTwitterDom(doc, "https://x.com/i/bookmarks");
+  assert.match(items[0].url, /status\/123/);
+});
+
+test("twitter harvest falls back to status links when articles are missing", () => {
+  const doc = {
+    querySelectorAll: (sel) => {
+      if (String(sel).includes("article") || String(sel).includes("cellInnerDiv")) return [];
+      if (String(sel).includes("/status/")) {
+        return [
+          {
+            getAttribute: () => "https://x.com/a/status/99",
+            href: "https://x.com/a/status/99",
+            textContent: "hello from x bookmarks"
+          }
+        ];
+      }
+      return [];
+    }
+  };
+  const items = harvestTwitterDom(doc, "https://x.com/i/bookmarks");
+  assert.equal(items.length, 1);
+  assert.match(items[0].url, /status\/99/);
+});
+
+test("twitter harvest collapses photo permalinks onto the status URL", () => {
+  const article = {
+    querySelectorAll: (sel) => {
+      if (sel === "a[href]") {
+        return [{ getAttribute: () => "/a/status/99/photo/1", href: "/a/status/99/photo/1" }];
+      }
+      return [];
+    },
+    querySelector: () => ({ textContent: "pic tweet" })
+  };
+  const items = harvestTwitterDom({ querySelectorAll: () => [article] }, "https://x.com/i/bookmarks");
+  assert.equal(items[0].url, "https://x.com/a/status/99");
+});
+
+test("twitter graphql bookmarks parse tweet_results into status URLs", () => {
+  const payload = {
+    data: {
+      bookmark_timeline_v2: {
+        timeline: {
+          instructions: [
+            {
+              entries: [
+                {
+                  content: {
+                    itemContent: {
+                      tweet_results: {
+                        result: {
+                          rest_id: "99",
+                          legacy: { full_text: "keep this" },
+                          core: {
+                            user_results: {
+                              result: { legacy: { screen_name: "visakanv", name: "Visa" } }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  };
+  const items = itemsFromTwitterGraphql([payload]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].url, "https://x.com/visakanv/status/99");
+  assert.match(items[0].title, /keep this/);
+});
+
+test("injected twitter graphql reader is a self-contained function Chrome can serialize", () => {
+  const src = scrapeCapturedTwitterBookmarksFromPage.toString();
+  assert.match(src, /__LP_X_BOOKMARKS/);
+  assert.equal(src.includes("uniqueItems"), false);
+  assert.equal(src.includes("collectByKey"), false);
+});
+
+test("injected twitter scraper is a self-contained function Chrome can serialize", () => {
+  const src = scrapeTwitterBookmarksFromPage.toString();
+  assert.match(src, /data-testid="tweet"/);
+  assert.equal(src.includes("uniqueItems"), false);
+});
+
+test("refresh harvest ignores Pocket, HN, and Chrome-style lists", () => {
+  const doc = {
+    querySelectorAll: () => [{ href: "https://example.com/story", textContent: "A long enough title here", getAttribute: () => "https://example.com/story" }]
+  };
+  assert.deepEqual(harvestDocument(doc, "https://getpocket.com/saves"), []);
+  assert.deepEqual(harvestDocument(doc, "https://news.ycombinator.com/favorites"), []);
+  assert.deepEqual(harvestDocument(doc, "https://x.com/home"), []);
 });

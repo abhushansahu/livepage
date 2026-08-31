@@ -77,7 +77,7 @@ export function itemsFromYoutubeHtml(html, listUrl) {
 export function harvestYoutubeDom(doc, pageUrl) {
   const items = [];
   const rows = doc.querySelectorAll(
-    "ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer, ytd-rich-item-renderer"
+    "ytd-playlist-video-renderer, ytd-playlist-panel-video-renderer"
   );
   for (const row of rows) {
     const link = row.querySelector("a#video-title, a#video-title-link, a[href*='watch?v=']");

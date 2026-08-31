@@ -25,7 +25,9 @@ export function applyRangeHighlight(range, highlight, root = document.body) {
     prefix: quote.prefix,
     suffix: quote.suffix
   });
-  return wrapRange(range, highlight);
+  unwrapHighlight(root, highlight.id);
+  const located = findQuote(root, quote) || range;
+  return wrapRange(located, highlight);
 }
 
 export function applySelectionHighlight(selection, highlight, root = document.body) {
@@ -35,6 +37,12 @@ export function applySelectionHighlight(selection, highlight, root = document.bo
 
 export function marksFor(highlightId) {
   return [...document.querySelectorAll(`mark.lp-hl[data-lp-id="${CSS.escape(highlightId)}"]`)];
+}
+
+export function recolorMarks(highlightId, color) {
+  marksFor(highlightId).forEach((mark) => {
+    mark.dataset.lpColor = color;
+  });
 }
 
 export function highlightRect(highlightId) {

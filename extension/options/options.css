@@ -33,6 +33,25 @@ h2 {
 
 .row input { flex: 1; min-width: 160px; }
 
+.rss-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+textarea {
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(28,23,18,0.12);
+  background: #fffcf7;
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
 ul {
   list-style: none;
   padding: 0;
