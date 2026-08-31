@@ -26,7 +26,11 @@ import { canonicalizeUrl, pageIdFromUrl } from "../shared/url.js";
 import { applyProgress } from "../shared/progress.js";
 import { uniqueItems } from "../import/normalize.js";
 import { syncSaves } from "../import/sync.js";
+import { syncRssFeeds } from "../import/rss.js";
 import { applyTweetReaction } from "../feed/local-tweets.js";
+import { mergeTags, parseTagInput } from "../shared/tags.js";
+import { uid } from "../shared/id.js";
+import { resolveFlags } from "../shared/flags.js";
 
 export async function handleMessage(message) {
   const type = message?.type;
@@ -60,6 +64,8 @@ export async function handleMessage(message) {
       return patchPage(payload.id, { readState: payload.readState });
     case "TOGGLE_BOOKMARK":
       return toggleBookmark(payload.id);
+    case "SET_TAGS":
+      return setTags(payload.id, payload.tags);
     case "ADD_HIGHLIGHT":
       return addHighlight(payload);
     case "REMOVE_HIGHLIGHT":
@@ -93,6 +99,14 @@ export async function handleMessage(message) {
         openTabs: Boolean(payload.openTabs),
         importItems: upsertImportedPages
       });
+    case "ADD_RSS_FEED":
+      return addRssFeed(payload);
+    case "UPDATE_RSS_FEED":
+      return updateRssFeed(payload);
+    case "REMOVE_RSS_FEED":
+      return removeRssFeed(payload.id);
+    case "SYNC_RSS":
+      return runRssSync(payload.feedId);
     case "SNOOZE_PAGE": {
       const page = await patchPage(payload.id, {
         snoozedUntil: Date.now() + (payload.hours || 48) * 60 * 60 * 1000
@@ -125,6 +139,78 @@ async function toggleBookmark(id) {
   if (!page) throw new Error("Page not found");
   page.bookmarked = !page.bookmarked;
   return putPage(page);
+}
+
+async function setTags(id, tags) {
+  const page = await getPage(id);
+  if (!page) throw new Error("Page not found");
+  page.tags = mergeTags(Array.isArray(tags) ? tags : parseTagInput(tags));
+  return putPage(page);
+}
+
+async function addRssFeed(payload) {
+  const settings = await getSettings();
+  const url = canonicalizeUrl(payload.url || "");
+  if (!url) throw new Error("Feed URL required");
+  const tags = mergeTags(Array.isArray(payload.tags) ? payload.tags : parseTagInput(payload.tags));
+  const current = settings.rssFeeds || [];
+  const existing = current.find((feed) => feed.url === url);
+  const feed = existing
+    ? {
+        ...existing,
+        title: payload.title || existing.title,
+        tags: mergeTags(existing.tags, tags),
+        enabled: true
+      }
+    : {
+        id: uid("rss"),
+        url,
+        title: payload.title || url,
+        tags,
+        enabled: true,
+        addedAt: Date.now()
+      };
+  const rssFeeds = existing
+    ? current.map((row) => (row.id === feed.id ? feed : row))
+    : [...current, feed];
+  const next = await saveSettings({ rssFeeds });
+  const synced = await syncRssFeeds({
+    settings: next,
+    importItems: upsertImportedPages,
+    feedId: feed.id
+  });
+  return { feed, settings: next, ...synced };
+}
+
+async function updateRssFeed(payload) {
+  const settings = await getSettings();
+  const rssFeeds = (settings.rssFeeds || []).map((feed) => {
+    if (feed.id !== payload.id) return feed;
+    return {
+      ...feed,
+      title: payload.title ?? feed.title,
+      tags: payload.tags ? mergeTags(payload.tags) : feed.tags,
+      enabled: payload.enabled ?? feed.enabled
+    };
+  });
+  return saveSettings({ rssFeeds });
+}
+
+async function removeRssFeed(id) {
+  const settings = await getSettings();
+  const rssFeeds = (settings.rssFeeds || []).filter((feed) => feed.id !== id);
+  return saveSettings({ rssFeeds });
+}
+
+async function runRssSync(feedId) {
+  const settings = await getSettings();
+  const { flags } = resolveFlags(settings);
+  if (!flags.rss) return { ok: false, reason: "disabled", imported: 0 };
+  return syncRssFeeds({
+    settings,
+    importItems: upsertImportedPages,
+    feedId
+  });
 }
 
 async function addHighlight(payload) {

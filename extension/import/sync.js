@@ -2,10 +2,12 @@ import { getSettings, listPages } from "../storage/store.js";
 import { fetchRedditSaved, fetchYoutubeWatchLater, LIBRARY_TABS } from "./fetchers.js";
 import { sourceForHost } from "./sources.js";
 import { uniqueItems } from "./normalize.js";
+import { resolveFlags } from "../shared/flags.js";
 
 export async function syncSaves({ openTabs = false, importItems } = {}) {
   const settings = await getSettings();
-  if (settings.importSavesEnabled === false) {
+  const { flags } = resolveFlags(settings);
+  if (!flags.importSaves) {
     return { ok: false, reason: "disabled", reports: [], imported: 0 };
   }
   const reports = [];

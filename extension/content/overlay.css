@@ -25,10 +25,47 @@
 }
 
 .banner,
+.feed-offer,
 .toolbar,
 .toast,
 .card {
   pointer-events: auto;
+}
+
+.feed-offer {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  width: min(300px, calc(var(--lp-gutter, 328px) - 28px));
+  z-index: 2147483645;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 252, 247, 0.95);
+  border: 1px solid rgba(28, 23, 18, 0.1);
+  border-radius: 14px;
+  box-shadow: 0 10px 40px rgba(28, 23, 18, 0.12);
+}
+
+.feed-offer p {
+  margin: 0;
+  color: #5c5348;
+}
+
+.feed-offer input {
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(28, 23, 18, 0.12);
+  background: #fffcf7;
+}
+
+.banner[hidden],
+.feed-offer[hidden],
+.toolbar[hidden],
+.toast[hidden] {
+  display: none !important;
 }
 
 .banner {
@@ -47,12 +84,6 @@
   border-radius: 14px;
   box-shadow: 0 10px 40px rgba(28, 23, 18, 0.12);
   backdrop-filter: blur(16px);
-}
-
-.banner[hidden],
-.toolbar[hidden],
-.toast[hidden] {
-  display: none !important;
 }
 
 .banner p {

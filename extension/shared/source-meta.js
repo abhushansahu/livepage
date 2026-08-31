@@ -5,6 +5,7 @@ export function sourceLabel(page) {
   if (source === "youtube") return "YouTube";
   if (source === "pocket") return "Pocket";
   if (source === "hn") return "HN";
+  if (source === "rss") return "RSS";
   return page?.domain || "LivePage";
 }
 
@@ -15,5 +16,6 @@ export function sourceGlyph(page) {
   if (source === "youtube") return "▶";
   if (source === "pocket") return "P";
   if (source === "hn") return "Y";
+  if (source === "rss") return "◌";
   return "¶";
 }

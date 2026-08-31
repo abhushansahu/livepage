@@ -26,14 +26,20 @@ export function reasonFor(page, extra = {}, now = Date.now()) {
     if (page.importMeta.source === "reddit") {
       return `Saved on Reddit ${wait} — still sitting in /saved.`;
     }
+    if (page.importMeta.source === "rss") {
+      return `From a tagged feed ${wait}${tagHint(page)} and still unread.`;
+    }
     return `Saved ${wait} and never opened.`;
+  }
+  if (page.bookmarked && !hasOpened(page)) {
+    return `Bookmarked ${wait}${tagHint(page)} · never opened.`;
   }
   const p = progressOf(page);
   if (p > 8 && p < 90) {
     return `You stopped at ${p}%. Halfway is still a place.`;
   }
   if (page.bookmarked && isWaiting(page)) {
-    return `Starred, but the scroll never finished.`;
+    return `Starred${tagHint(page)}, but the scroll never finished.`;
   }
   if (isWaiting(page)) {
     return `Still not read through · ${progressLabel(page)}.`;
@@ -100,6 +106,7 @@ export function scorePage(page, now = Date.now()) {
   let score = 0;
   if (needsReview(page)) score += 88;
   if (page.importMeta && !hasOpened(page)) score += 74 + Math.min(20, ageDays);
+  if (page.bookmarked && !hasOpened(page)) score += 28 + Math.min(24, ageDays);
   if (p > 8 && p < 90) score += 68 + (30 - Math.abs(p - 45)) / 3;
   if (page.bookmarked && p < 90) score += 18;
   if (isWaiting(page) && !page.importMeta) score += 22;
@@ -107,6 +114,12 @@ export function scorePage(page, now = Date.now()) {
   const idle = Math.min(21, Math.floor((now - (page.lastVisitedAt || page.createdAt || now)) / DAY));
   score += idle * 0.6;
   return score;
+}
+
+function tagHint(page) {
+  const tags = (page.tags || []).slice(0, 3);
+  if (!tags.length) return "";
+  return ` · ${tags.map((tag) => `#${tag}`).join(" ")}`;
 }
 
 function diversify(items) {

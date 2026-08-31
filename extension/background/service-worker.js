@@ -1,10 +1,13 @@
 import { handleMessage } from "./handlers.js";
 import { getSettings, unreadPages, upsertImportedPages } from "../storage/store.js";
 import { syncSaves } from "../import/sync.js";
+import { syncRssFeeds } from "../import/rss.js";
+import { resolveFlags } from "../shared/flags.js";
 
 const DASHBOARD_PATH = "dashboard/index.html";
 const ALARM = "livepage-unread-reminder";
 const SYNC_ALARM = "livepage-sync-saves";
+const RSS_ALARM = "livepage-sync-rss";
 
 chrome.runtime.onInstalled.addListener(async () => {
   chrome.contextMenus.removeAll(() => {
@@ -23,16 +26,23 @@ chrome.runtime.onInstalled.addListener(async () => {
       title: "Open LivePage dashboard",
       contexts: ["action", "page"]
     });
+    chrome.contextMenus.create({
+      id: "lp-add-feed",
+      title: "LivePage: add RSS feed from this page",
+      contexts: ["page"]
+    });
   });
   await refreshBadge();
   await scheduleReminder();
   await scheduleSync();
+  await scheduleRss();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await refreshBadge();
   await scheduleReminder();
   await scheduleSync();
+  await scheduleRss();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -61,6 +71,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     await openDashboard();
     return;
   }
+  if (info.menuItemId === "lp-add-feed") {
+    if (tab?.id) {
+      chrome.tabs.sendMessage(tab.id, { broadcast: true, kind: "ADD_RSS_FEED" });
+    }
+    return;
+  }
   if (!tab?.id) return;
   const action = info.menuItemId === "lp-comment" ? "comment" : "highlight";
   chrome.tabs.sendMessage(tab.id, { broadcast: true, kind: "CONTEXT_ACTION", action });
@@ -83,8 +99,17 @@ chrome.action.onClicked.addListener(() => {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === SYNC_ALARM) {
     const settings = await getSettings();
-    if (settings.importSavesEnabled === false) return;
+    const { flags } = resolveFlags(settings);
+    if (!flags.importSaves) return;
     await syncSaves({ openTabs: false, importItems: upsertImportedPages });
+    await refreshBadge();
+    return;
+  }
+  if (alarm.name === RSS_ALARM) {
+    const settings = await getSettings();
+    const { flags } = resolveFlags(settings);
+    if (!flags.rss) return;
+    await syncRssFeeds({ settings, importItems: upsertImportedPages });
     await refreshBadge();
     return;
   }
@@ -141,6 +166,11 @@ async function scheduleSync() {
   chrome.alarms.create(SYNC_ALARM, { periodInMinutes: 180 });
 }
 
+async function scheduleRss() {
+  await chrome.alarms.clear(RSS_ALARM);
+  chrome.alarms.create(RSS_ALARM, { periodInMinutes: 180 });
+}
+
 function nextTime(hour, minute) {
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
@@ -159,6 +189,9 @@ function shouldRefreshBadge(type) {
     "REPORT_PROGRESS",
     "IMPORT_ITEMS",
     "SYNC_SAVES",
+    "SYNC_RSS",
+    "ADD_RSS_FEED",
+    "SET_TAGS",
     "SNOOZE_PAGE"
   ].includes(type);
 }

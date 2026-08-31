@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta http-equiv="Cache-Control" content="no-cache" />
     <title>LivePage settings</title>
     <link rel="stylesheet" href="./options.css" />
   </head>
@@ -27,10 +28,10 @@
           </select>
         </label>
         <label>Obsidian vault name
-          <input name="obsidianVault" placeholder="optional" />
+          <input name="obsidianVault" placeholder="optional, for obsidian:// fallback" />
         </label>
-        <label>Obsidian folder
-          <input name="obsidianFolder" placeholder="LivePage" />
+        <label>Vault folder inside the git repo
+          <input name="obsidianFolder" placeholder="livepage" />
         </label>
         <label class="check">
           <input type="checkbox" name="remindersEnabled" />
@@ -43,14 +44,45 @@
           <input type="checkbox" name="lockInfiniteScroll" />
           Disallow highlighting on infinite-scrolling pages until snapshot
         </label>
-        <label class="check">
-          <input type="checkbox" name="importSavesEnabled" />
-          Pull X bookmarks, Reddit saved, YouTube Watch Later, and similar lists
+
+        <h2>Experiments</h2>
+        <p class="hint">Flag-based surfaces. Turn rooms off if the dashboard gets loud. A/B changes the default mix; your checkboxes still win.</p>
+        <label>Dashboard density
+          <select name="experimentVariant">
+            <option value="A">A · feed (timeline home)</option>
+            <option value="B">B · lists (no timeline)</option>
+          </select>
         </label>
-        <label class="check">
-          <input type="checkbox" name="localTweetsEnabled" />
-          Local AI observations in the For you feed
+        <label>Layout when For you is on
+          <select name="dashboardLayout">
+            <option value="feed">Feed</option>
+            <option value="lists">Lists</option>
+          </select>
         </label>
+        <label class="check"><input type="checkbox" name="flagForYou" /> For you</label>
+        <label class="check"><input type="checkbox" name="flagReading" /> Reading list</label>
+        <label class="check"><input type="checkbox" name="flagBookmarks" /> Bookmarks</label>
+        <label class="check"><input type="checkbox" name="flagSaves" /> Saves</label>
+        <label class="check"><input type="checkbox" name="flagRss" /> RSS</label>
+        <label class="check"><input type="checkbox" name="flagReview" /> Review</label>
+        <label class="check"><input type="checkbox" name="flagLocalTweets" /> Local AI observations in For you</label>
+        <label class="check"><input type="checkbox" name="flagImportSaves" /> Harvest X / Reddit / YouTube from this Chrome session</label>
+
+        <h2>RSS feeds</h2>
+        <p class="hint">Tagged subscriptions. You can also add a feed from a page that advertises RSS — no extra login.</p>
+        <div class="row">
+          <input id="rss-url" type="url" placeholder="https://example.com/feed.xml" />
+          <input id="rss-tags" placeholder="tags: design, weekly" />
+          <button type="button" id="rss-add">Add feed</button>
+        </div>
+        <ul id="rss-list"></ul>
+
+        <h2>Git vault</h2>
+        <p class="hint" id="vault-status">Bind the cloned Obsidian vault (a git repo). LivePage writes open markdown there. Git keeps two machines in sync — Chrome cannot push.</p>
+        <div class="row">
+          <button type="button" id="bind-vault">Bind vault folder</button>
+        </div>
+
         <button type="submit">Save</button>
         <p id="status" hidden>Saved.</p>
       </form>

@@ -56,7 +56,14 @@ h1 {
 .lede {
   color: var(--muted);
   line-height: 1.5;
-  margin: 0 0 28px;
+  margin: 0 0 12px;
+}
+
+.experiment {
+  color: var(--sage);
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0 0 22px;
 }
 
 nav {
@@ -64,6 +71,76 @@ nav {
   flex-direction: column;
   gap: 6px;
 }
+
+.nav[hidden] { display: none; }
+
+.top select {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: 999px;
+  padding: 10px 14px;
+  font: inherit;
+  color: var(--ink);
+}
+
+.tag-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 4px;
+}
+
+.tag, .tags span {
+  font-size: 12px;
+  color: var(--sage-2);
+  background: rgba(63, 107, 82, 0.1);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+button.tag {
+  appearance: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+button.tag.is-on {
+  background: var(--sage);
+  color: var(--paper);
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.tags.derived { margin: 8px 0 0; }
+
+.tag-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tag-edit input {
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.avatar.src-rss { background: #d9c7a3; color: #3a2f22; }
+
+.side-actions .ghost[hidden],
+.side-actions .solid[hidden] { display: none; }
 
 .nav, .ghost, button.solid, .icon-btn {
   appearance: none;
