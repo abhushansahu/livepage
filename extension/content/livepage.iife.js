@@ -99,13 +99,13 @@
     }
     const excerpt = blocks.filter((b) => !b.heading).slice(0, 3).map((b) => b.text).join(" ").slice(0, 420);
     const allText = blocks.map((b) => b.text).join(" ");
-    const wordCount = allText ? allText.split(/\s+/).length : 0;
+    const wordCount2 = allText ? allText.split(/\s+/).length : 0;
     return {
       url,
       title: (doc.querySelector("title")?.textContent || "").trim(),
       excerpt,
       headings,
-      wordCount,
+      wordCount: wordCount2,
       contentHash: blockIdFromText(allText),
       blocks
     };
@@ -546,6 +546,20 @@
     return String(value).replace(/"/g, '\\"');
   }
 
+  // extension/shared/colors.js
+  var COLORS = {
+    lemon: { id: "lemon", name: "Key idea", purpose: "Worth remembering", fill: "#E8CF62", ink: "#5C4A10" },
+    moss: { id: "moss", name: "Action", purpose: "Something to try or follow up", fill: "#8FC38F", ink: "#1F3D28" },
+    sky: { id: "sky", name: "Question", purpose: "Unclear or needs context", fill: "#87BFDF", ink: "#1A3A52" },
+    rose: { id: "rose", name: "Concern", purpose: "A risk, disagreement, or warning", fill: "#DF9EAE", ink: "#5C2436" },
+    iris: { id: "iris", name: "Insight", purpose: "A connection or new thought", fill: "#AF9ADA", ink: "#3A2A5C" },
+    sand: { id: "sand", name: "Evidence", purpose: "A quote, fact, or source", fill: "#D2AE76", ink: "#4A3518" }
+  };
+  var COLOR_IDS = Object.keys(COLORS);
+  function colorOf(id) {
+    return COLORS[id] || COLORS.lemon;
+  }
+
   // extension/content/highlights.js
   function restoreHighlights(root, highlights) {
     const restored = [];
@@ -558,6 +572,7 @@
       });
       if (!range) continue;
       wrapRange(range, highlight);
+      describeMarks(highlight);
       restored.push(highlight.id);
     }
     return restored;
@@ -573,15 +588,25 @@
     });
     unwrapHighlight(root, highlight.id);
     const located = findQuote(root, quote) || range;
-    return wrapRange(located, highlight);
+    const marks = wrapRange(located, highlight);
+    describeMarks(highlight, marks);
+    return marks;
   }
   function marksFor(highlightId) {
-    return [...document.querySelectorAll(`mark.lp-hl[data-lp-id="${CSS.escape(highlightId)}"]`)];
+    return [...document.querySelectorAll(`mark.lp-hl[data-lp-id="${cssEscape(highlightId)}"]`)];
   }
   function recolorMarks(highlightId, color) {
     marksFor(highlightId).forEach((mark) => {
       mark.dataset.lpColor = color;
+      mark.title = colorHint(color);
     });
+  }
+  function describeMarks(highlight, marks = marksFor(highlight.id)) {
+    for (const mark of marks) mark.title = colorHint(highlight.color);
+  }
+  function colorHint(color) {
+    const meta = colorOf(color);
+    return `${meta.name} \u2014 ${meta.purpose}`;
   }
   function highlightRect(highlightId) {
     const marks = marksFor(highlightId);
@@ -595,25 +620,6 @@
       height: Math.max(...rects.map((r) => r.bottom)) - Math.min(...rects.map((r) => r.top))
     };
   }
-  function selectionIsSafe(selection, snapshotBlockTexts) {
-    if (!selection || selection.isCollapsed) return false;
-    const text = selection.toString().trim();
-    if (text.length < 2) return false;
-    if (!snapshotBlockTexts) return true;
-    const hay = snapshotBlockTexts.join("\n");
-    return hay.includes(text.slice(0, Math.min(80, text.length)));
-  }
-
-  // extension/shared/colors.js
-  var COLORS = {
-    lemon: { id: "lemon", name: "Lemon", fill: "#F6E27A", ink: "#5C4A10" },
-    moss: { id: "moss", name: "Moss", fill: "#A8D5A2", ink: "#1F3D28" },
-    sky: { id: "sky", name: "Sky", fill: "#A8D4F0", ink: "#1A3A52" },
-    rose: { id: "rose", name: "Rose", fill: "#F3B6C4", ink: "#5C2436" },
-    iris: { id: "iris", name: "Iris", fill: "#C9B7F2", ink: "#3A2A5C" },
-    sand: { id: "sand", name: "Sand", fill: "#E7C899", ink: "#4A3518" }
-  };
-  var COLOR_IDS = Object.keys(COLORS);
 
   // extension/shared/time.js
   function formatRelative(ts, from = Date.now()) {
@@ -632,6 +638,52 @@
     });
   }
 
+  // extension/shared/icons.js
+  var STROKE = {
+    home: '<path d="M3 10.6 12 3l9 7.6V20a1 1 0 0 1-1 1h-4.5v-6h-7v6H4a1 1 0 0 1-1-1z"/>',
+    reading: '<path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H20v15H5.5A1.5 1.5 0 0 0 4 19.5z"/><path d="M4 19.5A1.5 1.5 0 0 1 5.5 18H20v3H5.5A1.5 1.5 0 0 1 4 19.5z"/>',
+    star: '<path d="m12 3.6 2.65 5.37 5.93.86-4.29 4.18 1.01 5.9L12 17.13l-5.3 2.79 1.01-5.9-4.29-4.18 5.93-.86z"/>',
+    saves: '<path d="M6 3h12v18l-6-4.3L6 21z"/>',
+    rss: '<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5.5" cy="18.5" r="1.6"/>',
+    review: '<path d="M4 5h16v11h-9.5L5 20.5V16H4z"/><path d="M8 9h8M8 12.5h5"/>',
+    search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>',
+    tag: '<path d="M3.5 11.4V4.5a1 1 0 0 1 1-1h6.9L21 13.1 13.1 21z"/><circle cx="7.8" cy="7.8" r="1.2"/>',
+    refresh: '<path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><path d="M20.5 3.5V9H15"/>',
+    folder: '<path d="M3 6.5h6L11 9h10v11.5H3z"/>',
+    download: '<path d="M12 3v11.5"/><path d="m8 11 4 4 4-4"/><path d="M4 20.5h16"/>',
+    settings: '<path d="M3.5 7.5h17M3.5 16.5h17"/><circle cx="9" cy="7.5" r="2.4"/><circle cx="15" cy="16.5" r="2.4"/>',
+    clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.3l3.4 2"/>',
+    eye: '<path d="M2.5 12S6.3 6 12 6s9.5 6 9.5 6-3.8 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/>',
+    spark: '<path d="m12 3 1.9 5.4L19.5 10l-5.6 1.6L12 17l-1.9-5.4L4.5 10l5.6-1.6z"/>',
+    comment: '<path d="M4 5h16v11H9l-5 4v-4z"/><path d="M8 9h8M8 12h5"/>',
+    branch: '<circle cx="7" cy="5" r="2"/><circle cx="17" cy="9" r="2"/><circle cx="7" cy="19" r="2"/><path d="M7 7v10M9 9h6"/>',
+    at: '<circle cx="12" cy="12" r="8.5"/><path d="M15.5 15.5V9h-3a3 3 0 1 0 3 3c0 2.2 1 3.5 2.7 3.5 1.6 0 2.8-1.4 2.8-3.5"/>',
+    close: '<path d="m5.5 5.5 13 13M18.5 5.5l-13 13"/>',
+    external: '<path d="M14 4.5h5.5V10"/><path d="M19.5 4.5 11 13"/><path d="M18 14.5v5H4.5V6h5"/>'
+  };
+  var SOURCE = {
+    twitter: '<path d="m4.5 4.5 15 15M19.5 4.5l-15 15"/>',
+    reddit: '<ellipse cx="12" cy="14" rx="8" ry="5.6"/><path d="M16 6.5 14.6 12"/><circle cx="16.6" cy="6" r="1.4"/><path d="M9.4 13.4h.01M14.6 13.4h.01"/><path d="M9.6 16.6a4.6 4.6 0 0 0 4.8 0"/>',
+    youtube: '<rect x="2.8" y="6" width="18.4" height="12" rx="3.4"/><path d="m10.3 9.8 5 2.2-5 2.2z"/>',
+    pocket: '<path d="M3.5 4.5h17v6.6a8.5 8.5 0 0 1-17 0z"/><path d="m8.3 10.2 3.7 3.6 3.7-3.6"/>',
+    hn: '<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="m8.6 8 3.4 4.4L15.4 8"/><path d="M12 12.4V16"/>',
+    rss: STROKE.rss,
+    live: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 15.5h4"/>'
+  };
+  function svg(body, size, className) {
+    return `<svg class="ico${className ? ` ${className}` : ""}" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+  }
+  function icon(name, { size = 18, className = "" } = {}) {
+    const body = STROKE[name];
+    if (!body) return "";
+    return svg(body, size, className);
+  }
+
+  // extension/shared/theme.js
+  function normalizeTheme(value) {
+    return value === "dark" ? "dark" : "coffee";
+  }
+
   // extension/content/overlay.js
   var import_meta = {};
   var GUTTER = 328;
@@ -647,8 +699,8 @@
   z-index: 2147483640; pointer-events: none;
 }
 .lp-root, .lp-float { font-family: ui-sans-serif, "Segoe UI", system-ui, sans-serif; color: #1c1712; font-size: 13px; }
-.banner, .feed-offer, .toolbar, .toast, .card { pointer-events: auto; }
-.banner[hidden], .feed-offer[hidden], .toolbar[hidden], .toast[hidden] { display: none !important; }
+.feed-offer, .toolbar, .toast, .card { pointer-events: auto; }
+.feed-offer[hidden], .toolbar[hidden], .toast[hidden] { display: none !important; }
 .toolbar {
   position: fixed; z-index: 2147483646; display: flex; gap: 4px; align-items: center;
   padding: 6px; background: #fffcf7; border: 1px solid rgba(28,23,18,0.12);
@@ -656,11 +708,10 @@
 }
 .swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(28,23,18,0.18); cursor: pointer; background: var(--lp-mark); }
 button.ghost { appearance: none; border: 0; background: transparent; color: #1c1712; padding: 6px 9px; font: inherit; cursor: pointer; border-radius: 999px; }
-.banner, .toast, .feed-offer {
+.toast, .feed-offer {
   position: fixed; z-index: 2147483646; background: #fffcf7; border: 1px solid rgba(28,23,18,0.1);
   border-radius: 14px; padding: 10px 12px; box-shadow: 0 10px 40px rgba(28,23,18,0.12);
 }
-.banner { top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; }
 .toast { bottom: 20px; left: 50%; transform: translateX(-50%); background: #1c1712; color: #f6f1e8; border-radius: 999px; }
 button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8; padding: 6px 10px; font: inherit; cursor: pointer; border-radius: 999px; font-weight: 600; }
 `;
@@ -678,13 +729,15 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
       this.floatShadow = this.floatHost.attachShadow({ mode: "open" });
       this.page = null;
       this.activeThreadId = null;
-      this.locked = false;
-      this.snapshotTexts = null;
       this.handlers = {};
       this.sendMode = "comment";
       this.threadModes = {};
       this.awaitingAgent = null;
-      this.els = { toolbar: null, banner: null, toast: null, feedOffer: null, gutter: null };
+      this.theme = "coffee";
+      this.highlightStrength = 48;
+      this.mention = null;
+      this.mentionRequest = "";
+      this.els = { toolbar: null, toast: null, feedOffer: null, gutter: null };
       this.mountFloat();
       this.bind();
       this.ready = this.render();
@@ -695,13 +748,11 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
       <style>${FALLBACK_CSS}</style>
       <div class="lp-float">
         <div class="toolbar" hidden></div>
-        <div class="banner" hidden></div>
         <div class="toast" hidden></div>
         <div class="feed-offer" hidden></div>
       </div>
     `;
       this.els.toolbar = this.floatShadow.querySelector(".toolbar");
-      this.els.banner = this.floatShadow.querySelector(".banner");
       this.els.toast = this.floatShadow.querySelector(".toast");
       this.els.feedOffer = this.floatShadow.querySelector(".feed-offer");
       this.attachHosts();
@@ -752,6 +803,7 @@ ${css}`;
       }
       document.documentElement.appendChild(this.host);
       this.attachHosts();
+      this.applyTheme();
       this.applyRail();
     }
     bind() {
@@ -790,7 +842,17 @@ ${css}`;
       }
       this.renderCards();
       this.applyRail();
-      if (this.activeThreadId) this.openThread(this.activeThreadId);
+    }
+    setPreferences(settings2 = {}) {
+      this.theme = normalizeTheme(settings2.pageTheme);
+      this.highlightStrength = Math.max(24, Math.min(68, Number(settings2.highlightStrength) || 48));
+      this.applyTheme();
+    }
+    applyTheme() {
+      this.host.dataset.theme = this.theme;
+      this.floatHost.dataset.theme = this.theme;
+      document.documentElement.classList.toggle("lp-theme-dark", this.theme === "dark");
+      document.documentElement.style.setProperty("--lp-highlight-strength", `${this.highlightStrength}%`);
     }
     applyRail() {
       const show = (this.page?.highlights || []).length > 0;
@@ -801,25 +863,6 @@ ${css}`;
       } else {
         document.documentElement.style.removeProperty("--lp-gutter");
       }
-    }
-    setLock({ locked, reason, snapshotTexts }) {
-      this.locked = locked;
-      this.snapshotTexts = snapshotTexts || null;
-      if (!this.els?.banner) return;
-      if (!locked) {
-        this.els.banner.hidden = true;
-        return;
-      }
-      this.els.banner.hidden = false;
-      this.els.banner.innerHTML = `
-      <p><strong>Infinite page.</strong> ${reason || "This page keeps growing."} Highlighting is locked until you snapshot the current view.</p>
-      <button class="solid" data-act="snapshot">Snapshot</button>
-      <button class="ghost" data-act="dismiss">Not now</button>
-    `;
-      this.els.banner.querySelector("[data-act='snapshot']").onclick = () => this.handlers.onSnapshot?.();
-      this.els.banner.querySelector("[data-act='dismiss']").onclick = () => {
-        this.els.banner.hidden = true;
-      };
     }
     offerFeed(feed, { onAdd, onDismiss } = {}) {
       const el = this.els.feedOffer;
@@ -845,30 +888,24 @@ ${css}`;
         onDismiss?.();
       };
     }
-    showToolbar(rect, { onHighlight, onComment, onSnapshot } = {}) {
+    showToolbar(rect, { onHighlight, onComment } = {}) {
       this.attachHosts();
       const bar = this.els?.toolbar;
       if (!bar) return;
       bar.hidden = false;
       bar.removeAttribute("hidden");
-      if (onSnapshot && !onHighlight) {
-        bar.innerHTML = `<button class="solid" data-act="snapshot">Snapshot to highlight</button>`;
-      } else {
-        bar.innerHTML = COLOR_IDS.map(
-          (id) => `<button class="swatch" title="${COLORS[id].name}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`
-        ).join("") + `<button class="ghost" data-act="comment">Comment</button>`;
-      }
+      bar.innerHTML = COLOR_IDS.map(
+        (id) => {
+          const hint = colorHint2(id);
+          return `<button class="swatch" title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`;
+        }
+      ).join("") + `<button class="ghost" data-act="comment">Comment</button>`;
       const top = rect.top - 44;
       const left = Math.min(rect.left, document.documentElement.clientWidth - 280);
       bar.style.top = `${Math.max(8, top)}px`;
       bar.style.left = `${Math.max(8, left)}px`;
       bar.onpointerdown = (event) => event.preventDefault();
       bar.onmousedown = (event) => event.preventDefault();
-      bar.querySelector("[data-act='snapshot']")?.addEventListener("click", (event) => {
-        event.preventDefault();
-        this.hideToolbar();
-        onSnapshot?.();
-      });
       bar.querySelectorAll(".swatch").forEach((btn) => {
         btn.onclick = (event) => {
           event.preventDefault();
@@ -896,13 +933,26 @@ ${css}`;
     }
     renderCards() {
       if (!this.page || !this.els?.gutter) return;
+      this.mention = null;
+      const previous = this.els.gutter.querySelector(".card.is-open .messages");
+      const scrollState = previous ? {
+        top: previous.scrollTop,
+        height: previous.scrollHeight,
+        atBottom: previous.scrollHeight - previous.scrollTop - previous.clientHeight < 32
+      } : null;
+      const draft = this._skipDraftOnce ? "" : this.els.gutter.querySelector(".card.is-open .composer textarea:not(.packet-md)")?.value || "";
+      this._skipDraftOnce = false;
       this.els.gutter.innerHTML = this.page.highlights.map((highlight) => this.cardHtml(highlight)).join("");
       this.els.gutter.querySelectorAll(".card").forEach((card) => this.bindCard(card));
       this.layoutCards();
       this.markActiveHighlights();
       this.applyRail();
       const open = this.els.gutter.querySelector(".card.is-open .messages");
-      if (open) open.scrollTop = open.scrollHeight;
+      const composer = this.els.gutter.querySelector(".card.is-open .composer textarea:not(.packet-md)");
+      if (composer && draft) composer.value = draft;
+      if (open && scrollState) {
+        open.scrollTop = scrollState.atBottom ? open.scrollHeight : scrollState.top;
+      }
     }
     cardHtml(highlight) {
       const thread = this.threadFor(highlight.id);
@@ -914,8 +964,8 @@ ${css}`;
         return `
         <article class="card" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
           <p class="meta-line">
-            <span>${escapeHtml(thread?.branchLabel || "note")}</span>
-            <span>${count ? `${count}` : ""}</span>
+            <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml(threadLabel(thread))}</span>
+            <span>${count ? `${count} ${count === 1 ? "message" : "messages"}` : ""}</span>
             <button type="button" class="hl-delete" data-act="delete-hl" title="Delete highlight">\xD7</button>
           </p>
           <p class="quote">${escapeHtml(clip(highlight.text, 90))}</p>
@@ -930,29 +980,38 @@ ${css}`;
         <div class="hl-toolbar">
           <div class="swatches">
             ${COLOR_IDS.map(
-        (id) => `<button type="button" class="swatch ${highlight.color === id ? "is-on" : ""}" title="${COLORS[id].name}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`
+        (id) => {
+          const hint = colorHint2(id);
+          return `<button type="button" class="swatch ${highlight.color === id ? "is-on" : ""}" title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`;
+        }
       ).join("")}
           </div>
+          <span class="color-meaning">${escapeHtml(COLORS[highlight.color]?.name || "Highlight")}</span>
           <button type="button" class="ghost" data-act="move-hl">Replace span</button>
           <button type="button" class="hl-delete" data-act="delete-hl">Delete</button>
         </div>
         <p class="quote">${escapeHtml(clip(highlight.text, 180))}</p>
         ${branches.length > 1 ? `<div class="branch-list">${branches.map(
-        (b) => `<button class="chip ${b.id === thread.id ? "is-on" : ""}" data-branch="${b.id}">${escapeHtml(
-          b.parentId ? `\u21B3 ${b.branchLabel}` : b.branchLabel
-        )}</button>`
+        (b) => `<button class="chip ${b.id === thread.id ? "is-on" : ""}" data-branch="${b.id}">${icon(
+          b.parentId ? "branch" : "comment",
+          { size: 12 }
+        )}${escapeHtml(threadLabel(b))}</button>`
       ).join("")}</div>` : ""}
         <div class="messages">
           ${this.messagesHtml(highlight, thread)}
         </div>
         <div class="composer">
-          ${thread.awaitingAgent ? `<div class="packet">
+          ${thread.awaitingAgent ? `<div class="packet ${thread.awaitingAgent.status === "pending" ? "is-working" : ""}" role="status" aria-live="polite">
                   <p class="kicker">${escapeHtml(awaitingCopy(thread.awaitingAgent))}</p>
-                  ${thread.awaitingAgent.status === "error" ? `<p class="error">${escapeHtml(thread.awaitingAgent.error || "Agent host did not reply.")}</p>
-                  <textarea class="packet-md" readonly>${escapeHtml(thread.awaitingAgent.packet || "")}</textarea>
-                  <button type="button" class="ghost" data-act="copy-packet">Copy packet</button>` : `<p class="hint">LivePage is talking to ${escapeHtml(agentName(thread.awaitingAgent.agent))}${thread.awaitingAgent.model ? ` \xB7 ${escapeHtml(thread.awaitingAgent.model)}` : ""}. The reply will land in this thread.</p>`}
+                  ${thread.awaitingAgent.status === "error" ? `<p class="error">The reply could not arrive. Check that the local agent helper is running, then try again.</p>
+                  <details><summary>Technical details</summary>
+                    <p class="error-detail">${escapeHtml(thread.awaitingAgent.error || "No response from the local agent.")}</p>
+                    <textarea class="packet-md" readonly>${escapeHtml(thread.awaitingAgent.packet || "")}</textarea>
+                    <button type="button" class="ghost" data-act="copy-packet">Copy request details</button>
+                  </details>` : `<p class="hint"><span class="working-dots"><i></i><i></i><i></i></span>${escapeHtml(agentName(thread.awaitingAgent.agent))} is reading this passage and writing a reply. You can keep reading.</p>`}
                 </div>` : ""}
           <textarea placeholder="${escapeHtml(this.composerPlaceholder(thread))}"></textarea>
+          <div class="mention-menu" hidden></div>
           <div class="send">
             <button type="button" class="solid send-main" data-act="send">${escapeHtml(this.sendLabel(thread))}</button>
             <button type="button" class="solid send-caret" data-act="menu" aria-label="Send options">\u25BE</button>
@@ -973,21 +1032,21 @@ ${css}`;
         return `
           <article class="msg ${m.role === "agent" ? "is-agent" : "is-you"}" data-msg="${m.id}">
             <div class="meta"><span>${escapeHtml(labelOf(m))}</span><span>${formatRelative(m.createdAt)}</span></div>
-            <p>${escapeHtml(m.content)}</p>
+            <p>${messageHtml(m.content)}</p>
             <div class="msg-actions">
-              <button type="button" class="fork" data-fork="${m.id}">Branch</button>
+              <button type="button" class="fork" data-fork="${m.id}">${icon("branch", { size: 12 })} Explore another angle</button>
               <button type="button" class="delete" data-delete="${m.id}">Delete</button>
             </div>
             <form class="fork-form" hidden data-fork-form="${m.id}">
-              <input type="text" name="label" value="${escapeHtml(suggested)}" placeholder="Branch name" maxlength="48" />
-              <button type="submit">Start branch</button>
+              <input type="text" name="label" value="${escapeHtml(suggested)}" placeholder="Name this angle" maxlength="48" />
+              <button type="submit">Start angle</button>
               <button type="button" data-act="cancel-fork">Cancel</button>
             </form>
           </article>
           ${forks.length ? `<div class="fork-off">
-                  <span class="fork-kicker">branched</span>
+                  <span class="fork-kicker">${icon("branch", { size: 11 })} Other angles</span>
                   ${forks.map(
-          (b) => `<button type="button" class="chip" data-branch="${b.id}">${escapeHtml(b.branchLabel)}</button>`
+          (b) => `<button type="button" class="chip" data-branch="${b.id}">${escapeHtml(threadLabel(b))}</button>`
         ).join("")}
                 </div>` : ""}`;
       }).join("");
@@ -1009,6 +1068,13 @@ ${css}`;
         btn.onclick = (event) => {
           event.stopPropagation();
           this.handlers.onRecolorHighlight?.(highlightId, btn.dataset.color);
+        };
+      });
+      card.querySelectorAll("[data-mention]").forEach((btn) => {
+        btn.onclick = (event) => {
+          event.stopPropagation();
+          const [pageId, mentionThreadId] = decodeMention(btn.dataset.mention);
+          this.handlers.onOpenMention?.(pageId, mentionThreadId);
         };
       });
       card.querySelector("[data-act='move-hl']")?.addEventListener("click", (event) => {
@@ -1033,7 +1099,7 @@ ${css}`;
           card.querySelectorAll(".fork-form").forEach((form2) => {
             form2.hidden = form2.dataset.forkForm !== btn.dataset.fork;
           });
-          const form = card.querySelector(`[data-fork-form="${CSS.escape(btn.dataset.fork)}"]`);
+          const form = card.querySelector(`[data-fork-form="${cssEscape(btn.dataset.fork)}"]`);
           const input = form?.querySelector("input");
           if (input) {
             input.focus();
@@ -1111,7 +1177,26 @@ ${css}`;
         };
       }
       if (textarea) {
+        textarea.addEventListener("input", () => this.updateMentions(card, textarea));
+        textarea.addEventListener("blur", () => this.closeMentions());
         textarea.addEventListener("keydown", (event) => {
+          if (this.mentionsOpen(textarea)) {
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              this.moveMention(event.key === "ArrowDown" ? 1 : -1);
+              return;
+            }
+            if (event.key === "Enter" || event.key === "Tab") {
+              event.preventDefault();
+              this.chooseMention(this.mention.index);
+              return;
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              this.closeMentions();
+              return;
+            }
+          }
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
             send();
@@ -1159,14 +1244,109 @@ ${css}`;
         return;
       }
       if (mode === "comment") {
-        this.handlers.onNote?.(threadId, content);
+        this.addOptimisticMessage(thread, content);
+        Promise.resolve(this.handlers.onNote?.(threadId, content)).catch(() => {
+          this.toast("That comment could not be saved. Please try again.");
+          this.handlers.onRefresh?.();
+        });
         return;
       }
       const agent = mode === "claude-code" ? "claude-code" : "cursor";
       this.threadModes[threadId] = mode;
       this.sendMode = mode;
       this.awaitingAgent = { threadId, agent };
-      this.handlers.onAgent?.(threadId, content, agent);
+      this.addOptimisticMessage(thread, content);
+      thread.awaitingAgent = {
+        agent,
+        askedAt: Date.now(),
+        status: "pending",
+        optimistic: true
+      };
+      this.renderCards();
+      Promise.resolve(this.handlers.onAgent?.(threadId, content, agent)).catch(() => {
+        this.handlers.onRefresh?.();
+      });
+    }
+    addOptimisticMessage(thread, content) {
+      thread.messages = thread.messages || [];
+      thread.messages.push({
+        id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        role: "user",
+        content,
+        createdAt: Date.now(),
+        optimistic: true
+      });
+      this._skipDraftOnce = true;
+      this.renderCards();
+    }
+    async updateMentions(card, textarea) {
+      const menu = card.querySelector(".mention-menu");
+      if (!menu) return;
+      const caret = textarea.selectionStart;
+      const match = textarea.value.slice(0, caret).match(/(?:^|\s)@([\w .'-]{0,40})$/);
+      if (!match) {
+        this.closeMentions();
+        return;
+      }
+      const query = match[1].trim();
+      const request = `${query}:${Date.now()}`;
+      this.mentionRequest = request;
+      const items = await this.handlers.onSearchMentions?.(query) || [];
+      if (this.mentionRequest !== request) return;
+      this.mention = {
+        menu,
+        textarea,
+        items,
+        index: 0,
+        start: caret - match[1].length - 1
+      };
+      menu.onmousedown = (event) => event.preventDefault();
+      this.paintMentions();
+    }
+    paintMentions() {
+      const state = this.mention;
+      if (!state) return;
+      const { menu, items, index } = state;
+      menu.innerHTML = items.length ? items.map(
+        (item, i) => `<button type="button" class="${i === index ? "is-active" : ""}" data-mention-index="${i}">
+                <span class="mention-dot" style="--lp-mark:${COLORS[item.color]?.fill || "transparent"}"></span>
+                <span class="mention-text">
+                  <strong>${escapeHtml(clip(item.passage, 46))}</strong>
+                  <small>${escapeHtml(mentionContext(item))}</small>
+                </span>
+              </button>`
+      ).join("") : `<p>No conversation matches that yet</p>`;
+      menu.hidden = false;
+      menu.querySelectorAll("[data-mention-index]").forEach((btn) => {
+        btn.onclick = (event) => {
+          event.stopPropagation();
+          this.chooseMention(Number(btn.dataset.mentionIndex));
+        };
+      });
+    }
+    moveMention(step) {
+      const state = this.mention;
+      if (!state?.items.length) return;
+      state.index = (state.index + step + state.items.length) % state.items.length;
+      this.paintMentions();
+      state.menu.querySelector(".is-active")?.scrollIntoView({ block: "nearest" });
+    }
+    chooseMention(index) {
+      const state = this.mention;
+      const item = state?.items?.[index];
+      if (!item) return;
+      const label = clip(item.passage, 34).replace(/[[\]()]/g, "");
+      const token = `@[${label}](livepage:${encodeMention(item.pageId, item.threadId)}) `;
+      state.textarea.setRangeText(token, state.start, state.textarea.selectionStart, "end");
+      this.closeMentions();
+      state.textarea.focus();
+    }
+    closeMentions() {
+      if (this.mention?.menu) this.mention.menu.hidden = true;
+      this.mention = null;
+    }
+    mentionsOpen(textarea) {
+      return Boolean(this.mention && this.mention.textarea === textarea && !this.mention.menu.hidden);
     }
     layoutCards() {
       if (!this.els?.gutter) return;
@@ -1195,7 +1375,9 @@ ${css}`;
       if (!thread) return;
       this.activeThreadId = threadId;
       this.renderCards();
-      const card = this.els.gutter.querySelector(`.card[data-thread="${CSS.escape(threadId)}"]`);
+      const card = this.els.gutter.querySelector(`.card[data-thread="${cssEscape(threadId)}"]`);
+      const messages = card?.querySelector(".messages");
+      if (messages) messages.scrollTop = messages.scrollHeight;
       const textarea = card?.querySelector("textarea");
       if (textarea) {
         requestAnimationFrame(() => textarea.focus());
@@ -1235,8 +1417,8 @@ ${css}`;
     return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
   function labelOf(message) {
-    if (message.role === "agent") return `Agent \xB7 ${message.agent || "unknown"}`;
-    if (message.role === "system") return "System";
+    if (message.role === "agent") return agentName(message.agent);
+    if (message.role === "system") return "LivePage";
     return "You";
   }
   function lastConversationAgent(thread) {
@@ -1252,16 +1434,50 @@ ${css}`;
     const siblings = (page2?.threads || []).filter(
       (t) => t.highlightId === source.highlightId && (t.parentId === source.id || t.id === source.id)
     );
-    return `branch-${siblings.length}`;
+    return `Angle ${siblings.length + 1}`;
   }
   function agentName(agent) {
-    return agent === "claude-code" ? "Claude Code" : "Cursor Agent";
+    return agent === "claude-code" ? "Claude" : "Cursor";
   }
   function awaitingCopy(awaiting) {
     if (awaiting?.status === "error") {
-      return `${agentName(awaiting.agent)} did not reply. Keep npm run agent-host running so it can call your local agent / claude CLIs.`;
+      return `${agentName(awaiting.agent)} could not reply`;
     }
-    return `Asking ${agentName(awaiting?.agent)}\u2026`;
+    return `${agentName(awaiting?.agent)} is thinking`;
+  }
+  function threadLabel(thread) {
+    if (!thread) return "Comment";
+    if (!thread.parentId || thread.branchLabel === "main") return "Original conversation";
+    if (/^branch-\d+$/i.test(thread.branchLabel || "")) {
+      const number = Number(thread.branchLabel.split("-")[1]) + 1;
+      return `Angle ${number}`;
+    }
+    return thread.branchLabel || "Another angle";
+  }
+  function colorHint2(id) {
+    const color = COLORS[id] || COLORS.lemon;
+    return `${color.name} \u2014 ${color.purpose}`;
+  }
+  function encodeMention(pageId, threadId) {
+    return `${encodeURIComponent(pageId || "")}/${encodeURIComponent(threadId || "")}`;
+  }
+  function decodeMention(value) {
+    const [pageId = "", threadId = ""] = String(value || "").split("/");
+    return [decodeURIComponent(pageId), decodeURIComponent(threadId)];
+  }
+  function messageHtml(content) {
+    const escaped = escapeHtml(content);
+    return escaped.replace(
+      /@\[([^\]]+)\]\(livepage:([^)]+)\)/g,
+      (_match, label, target) => `<button type="button" class="mention" data-mention="${escapeHtml(
+        target
+      )}" title="Open this conversation">${icon("at", { size: 12 })}${label}</button>`
+    );
+  }
+  function mentionContext(item) {
+    const where = item.samePage ? "This page" : clip(item.pageTitle, 32);
+    const count = `${item.messageCount} ${item.messageCount === 1 ? "message" : "messages"}`;
+    return `${threadLabel(item)} \xB7 ${count} \xB7 ${where}`;
   }
 
   // extension/content/selection.js
@@ -1430,7 +1646,8 @@ ${css}`;
     rss: true,
     localTweets: false,
     importSaves: true,
-    dashboardLayout: "feed"
+    articleSymbols: false,
+    dashboardLayout: "compact"
   };
   var EXPERIMENTS = {
     "dashboard-density": {
@@ -1457,8 +1674,8 @@ ${css}`;
           }
         },
         C: {
-          label: "C \xB7 compact",
-          hint: "Top nav, dense rows, detail docked beside the list. Same rooms, less chrome.",
+          label: "C \xB7 portal",
+          hint: "Rooms and tags on the left, the list in the middle, what is waiting on the right.",
           flags: {
             forYouFeed: true,
             dashboardLayout: "compact",
@@ -1470,7 +1687,7 @@ ${css}`;
   };
   var DEFAULT_EXPERIMENT = {
     id: "dashboard-density",
-    variant: "A"
+    variant: "C"
   };
   function resolveFlags(settings2 = {}) {
     const experiment = normalizeExperiment(settings2.experiment);
@@ -1488,13 +1705,419 @@ ${css}`;
       ...legacy,
       ...settings2.flags || {}
     };
-    if (!["feed", "lists", "compact"].includes(flags.dashboardLayout)) flags.dashboardLayout = "feed";
+    if (!["feed", "lists", "compact"].includes(flags.dashboardLayout)) {
+      flags.dashboardLayout = FLAG_DEFAULTS.dashboardLayout;
+    }
     return { flags, experiment };
   }
   function normalizeExperiment(value) {
     const id = value?.id && EXPERIMENTS[value.id] ? value.id : DEFAULT_EXPERIMENT.id;
-    const variant = EXPERIMENTS[id].variants[value?.variant] ? value.variant : "A";
+    const variant = EXPERIMENTS[id].variants[value?.variant] ? value.variant : DEFAULT_EXPERIMENT.variant;
     return { id, variant };
+  }
+
+  // extension/content/article-symbols.js
+  var ROOT_SELECTORS = [
+    "article",
+    "main",
+    "[role='main']",
+    ".post-content",
+    ".entry-content",
+    ".article-body",
+    "#content",
+    ".markdown-body"
+  ];
+  var BLOCK_SELECTOR = "p, li, blockquote, td, h1, h2, h3, h4";
+  var SKIP_SELECTOR = "a, button, input, textarea, select, option, pre, script, style, noscript, svg, canvas, iframe, [contenteditable], .lp-ignore, mark.lp-hl, .lp-article-symbol";
+  var STOP = new Set(
+    `a an and are as at be been being but by can could did do does doing done for from had has have
+   having he her here hers him his how i if in into is it its itself just me more most much my no
+   nor not now of off on once only or other our ours out over own same she should so some such than
+   that the their theirs them then there these they this those through to too under until up very
+   was we were what when where which while who whom why will with would you your yours
+   about after again against all also am any because before below between both during each else
+   ever few further however less like made make many may might must never new next often once
+   perhaps rather really said say see seen since still take than thing things think through thus
+   time using want way well went yet always another around away back come coming even far get gets
+   getting give given go going good great keep kept know known last later least let long look
+   looking lot maybe mean means need needed needs part put right same seem seems set show shown
+   sure tell than them themselves thought together took toward turn turned use used uses
+   want wanted whether without work worked working
+   above across along amid among around behind below beneath beside besides beyond despite
+   inside near onto outside per plus regarding since throughout toward towards underneath
+   unless unlike upon versus via within`.split(/\s+/).filter(Boolean)
+  );
+  var COMMON = new Set(
+    `above across actual actually almost alone along already although among amount answer anyone
+   anything appear applied apply approach available become becomes began begin behind believe
+   below better beyond bring build building built call called calls case cases certain chance
+   change changed changes choice choose clear clearly close common company complete consider
+   contain continue could course create created current data decide decision decisions
+   different difficult direct done double doubt during early easy effect either enough entire
+   especially essential every everyone everything exact example examples except expect
+   experience explain fact fail failed finally find finds first follow following force found
+   full future general given group grow half hand happen hard help high hold hope house
+   human idea ideas important include included including increase inside instead interest
+   issue issues keep kind known large later learn learning least leave left level likely
+   limit line little live local long longer look loss main major making manner matter member
+   might mind minute model models moment money month more moving name nature near nearly
+   need never note nothing number offer often open opinion option order others outside part
+   particular pass past people perfect person piece place plan plans point points position
+   possible power practice prefer present pretty previous private probably problem problems
+   process product products program project provide provided public purpose quality question
+   questions quick quickly quite reach read reading ready real reason reasons receive recent
+   record reduce remain remember report request require required response result results
+   return risk role room rule rules safe save saying school second section seeing sense
+   series serious service several share short side simple simply single situation size small
+   social solution someone something sometimes soon sort sound source space speak special
+   specific spend stage stand start started state step steps stop story straight strong
+   student study subject success support system systems table talk task tasks team tell term
+   terms test tests thank third though three today total track trade trouble true trust try
+   trying turning type types understand until update upon usually value various version view
+   wait walk watch water week weeks whole wide window within wonder word words world write
+   writing wrong year years
+   agent aim answer approach build context cost decision detail effort evidence failure
+   freedom gain goal history instruction job judge judgment prompt recovery response share
+   thing tool unit`.split(/\s+/).filter(Boolean)
+  );
+  var QUALIFIERS = new Set(
+    `real true actual genuine simple single whole entire basic general overall so-called
+   good great proper plain classic typical modern old first second third final
+   one two three another every each any certain particular`.split(/\s+/).filter(Boolean)
+  );
+  var MIN_PHRASE_HITS = 2;
+  var MIN_WORD_HITS = 4;
+  function extractArticleSymbols(blocks = [], limit = 32) {
+    const body = (blocks || []).filter((block) => block?.text && !block.heading);
+    const allText = (blocks || []).map((block) => block?.text || "").join(" ");
+    if (!body.length) return [];
+    const sentences = body.flatMap((block) => splitSentences(block.text));
+    const candidates = /* @__PURE__ */ new Map();
+    const add = (raw, source) => {
+      const term = trimTerm(raw);
+      const key = normalizeTerm(term);
+      if (!key || candidates.has(key) || !plausibleTerm(term)) return;
+      candidates.set(key, { term, key, source });
+    };
+    for (const sentence of sentences) {
+      for (const match of sentence.matchAll(ACRONYM)) add(match[2], "acronym");
+      for (const match of sentence.matchAll(QUOTED)) add(match[1], "quoted");
+      for (const match of sentence.matchAll(DEFINED)) add(match[1], "defined");
+    }
+    for (const phrase of repeatedPhrases(sentences)) add(phrase, "phrase");
+    for (const word of repeatedWords(sentences, candidates)) add(word, "word");
+    const symbols = [];
+    for (const candidate of candidates.values()) {
+      const support = supportFor(candidate, sentences);
+      if (!support) continue;
+      const count = countTerm(allText, candidate.term);
+      if (count < minHits(support.kind, candidate.term)) continue;
+      symbols.push({ ...candidate, ...support, count });
+    }
+    return symbols.sort((a, b) => rank(b) - rank(a) || b.count - a.count).slice(0, limit).map((symbol) => ({
+      ...symbol,
+      anchorBlockId: blockContaining(body, symbol.anchorText)?.id || null,
+      anchorBlockText: blockContaining(body, symbol.anchorText)?.text || ""
+    }));
+  }
+  function enableArticleSymbols(doc, parsed) {
+    const symbols = extractArticleSymbols(parsed?.blocks || []);
+    const root = symbols.length ? pickRoot2(doc) : null;
+    if (!root) return { count: 0, destroy() {
+    } };
+    const symbolByKey = new Map(symbols.map((symbol) => [symbol.key, symbol]));
+    const anchorByKey = locateAnchors(root, symbols);
+    const pattern = termPattern(symbols.map((symbol) => symbol.term).sort((a, b) => b.length - a.length));
+    let count = 0;
+    for (const node of textNodes(root, doc)) {
+      const matches = [...node.data.matchAll(pattern)];
+      if (!matches.length) continue;
+      const fragment = doc.createDocumentFragment();
+      let cursor = 0;
+      for (const match of matches) {
+        const start = match.index + (match[1] || "").length;
+        if (start < cursor) continue;
+        fragment.append(node.data.slice(cursor, start));
+        const span = doc.createElement("span");
+        const key = normalizeTerm(match[2]);
+        span.className = "lp-article-symbol";
+        span.dataset.lpSymbol = symbolByKey.has(key) ? key : normalizeTerm(singular(match[2]));
+        span.textContent = match[2];
+        if (anchorByKey.get(span.dataset.lpSymbol)?.contains(node)) span.dataset.lpAnchor = "true";
+        fragment.append(span);
+        cursor = start + match[2].length;
+        count += 1;
+      }
+      fragment.append(node.data.slice(cursor));
+      node.replaceWith(fragment);
+    }
+    const card = makeCard(doc);
+    doc.documentElement.append(card);
+    let hideTimer = null;
+    let origin = null;
+    const show = (span) => {
+      const symbol = symbolByKey.get(span.dataset.lpSymbol);
+      if (!symbol) return;
+      clearTimeout(hideTimer);
+      card.querySelector(".lp-symbol-name").textContent = symbol.term;
+      card.querySelector(".lp-symbol-kind").textContent = KIND_LABEL[symbol.kind];
+      card.querySelector(".lp-symbol-detail").textContent = symbol.detail;
+      card.querySelector(".lp-symbol-hint").textContent = span.dataset.lpAnchor === "true" ? `${symbol.count} mentions \xB7 you are at the source` : `${symbol.count} mentions \xB7 \u2318/Ctrl-click to jump, again to come back`;
+      card.hidden = false;
+      positionCard(card, span.getBoundingClientRect());
+    };
+    const scheduleHide = () => {
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        card.hidden = true;
+      }, 140);
+    };
+    const onPointerOver = (event) => {
+      const span = event.target.closest?.(".lp-article-symbol");
+      if (span) show(span);
+    };
+    const onPointerOut = (event) => {
+      if (event.target.closest?.(".lp-article-symbol") && !card.contains(event.relatedTarget)) scheduleHide();
+    };
+    const onClick = (event) => {
+      if (!event.metaKey && !event.ctrlKey) return;
+      const span = event.target.closest?.(".lp-article-symbol");
+      if (!span) return;
+      const anchor = anchorByKey.get(span.dataset.lpSymbol);
+      event.preventDefault();
+      if (anchor && !anchor.contains(span)) {
+        origin = span;
+        jumpTo(anchor);
+      } else if (origin?.isConnected) {
+        jumpTo(origin);
+        origin = null;
+      }
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Meta" || event.key === "Control") doc.documentElement.classList.add("lp-symbols-peek");
+    };
+    const onKeyUp = () => doc.documentElement.classList.remove("lp-symbols-peek");
+    card.addEventListener("pointerenter", () => clearTimeout(hideTimer));
+    card.addEventListener("pointerleave", scheduleHide);
+    root.addEventListener("pointerover", onPointerOver);
+    root.addEventListener("pointerout", onPointerOut);
+    root.addEventListener("click", onClick, true);
+    doc.addEventListener("keydown", onKeyDown);
+    doc.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onKeyUp);
+    return {
+      count,
+      symbols,
+      destroy() {
+        root.removeEventListener("pointerover", onPointerOver);
+        root.removeEventListener("pointerout", onPointerOut);
+        root.removeEventListener("click", onClick, true);
+        doc.removeEventListener("keydown", onKeyDown);
+        doc.removeEventListener("keyup", onKeyUp);
+        window.removeEventListener("blur", onKeyUp);
+        doc.documentElement.classList.remove("lp-symbols-peek");
+        card.remove();
+        root.querySelectorAll(".lp-article-symbol").forEach((span) => span.replaceWith(span.textContent));
+        root.normalize();
+      }
+    };
+  }
+  var ACRONYM = /\b([A-Z][A-Za-z]*(?:[\s-][A-Za-z][A-Za-z-]+){1,5})\s+\(([A-Z][A-Za-z0-9-]{1,9})\)/g;
+  var QUOTED = /[“"']([\p{L}][\p{L}\p{N}\s’'/-]{2,46})[”"']/gu;
+  var DEFINED = /\b((?:[\p{L}][\p{L}\p{N}’'/-]+)(?:\s+[\p{L}][\p{L}\p{N}’'/-]+){0,3})\s+(?:is|are|means|refers to|describes|stands for)\s+/giu;
+  var KIND_LABEL = {
+    defined: "Defined in this article",
+    acronym: "Stands for",
+    context: "First explained here"
+  };
+  function rank(symbol) {
+    if (symbol.kind === "acronym") return 3;
+    if (symbol.kind === "defined") return 2;
+    return 1;
+  }
+  function supportFor(candidate, sentences) {
+    const term = escapeRegExp(candidate.term);
+    const expands = new RegExp(`\\b([A-Z][\\w-]*(?:[\\s-][\\w-]+){1,5})\\s+\\(${term}\\)`);
+    const defines = new RegExp(
+      `^(?:the|a|an|our|your|its|their|real|true)?\\s*${term}s?\\b\\s+(?:is|are|means|refers to|describes|stands for)\\s+([^.!?]{28,220})`,
+      "i"
+    );
+    const appositive = new RegExp(`^(?:the|a|an)?\\s*${term}s?\\b\\s*(?:\u2014|\u2013|:)\\s*([^.!?]{28,220})`, "i");
+    const mentions = new RegExp(`\\b${term}s?\\b`, "i");
+    for (const sentence of sentences) {
+      const expansion = sentence.match(expands);
+      if (expansion) return { kind: "acronym", detail: cleanDetail(expansion[1]), anchorText: sentence };
+    }
+    for (const sentence of sentences) {
+      const match = sentence.match(defines) || sentence.match(appositive);
+      if (match && wordCount(match[1]) >= 6) {
+        return { kind: "defined", detail: cleanDetail(match[1]), anchorText: sentence };
+      }
+    }
+    const mention = sentences.find((sentence) => mentions.test(sentence) && wordCount(sentence) >= 10);
+    return mention ? { kind: "context", detail: clip2(cleanDetail(mention), 260), anchorText: mention } : null;
+  }
+  function repeatedPhrases(sentences) {
+    const counts = /* @__PURE__ */ new Map();
+    for (const sentence of sentences) {
+      const words = tokenize(sentence);
+      for (let size = 3; size >= 2; size -= 1) {
+        for (let i = 0; i + size <= words.length; i += 1) {
+          const slice = words.slice(i, i + size).map((word) => word.toLowerCase());
+          if (slice.some((word) => STOP.has(word) || QUALIFIERS.has(word) || word.length < 2)) continue;
+          if (slice.every((word) => COMMON.has(singular(word)))) continue;
+          const term = words.slice(i, i + size).join(" ");
+          const entry = counts.get(normalizeTerm(term)) || { term, count: 0 };
+          entry.count += 1;
+          counts.set(normalizeTerm(term), entry);
+        }
+      }
+    }
+    return [...counts.values()].filter((entry) => entry.count >= MIN_PHRASE_HITS).sort((a, b) => b.count - a.count).map((entry) => entry.term);
+  }
+  function repeatedWords(sentences, candidates) {
+    const inPhrase = /* @__PURE__ */ new Set();
+    for (const candidate of candidates.values()) {
+      for (const word of candidate.key.split(" ")) inPhrase.add(word);
+    }
+    const counts = /* @__PURE__ */ new Map();
+    for (const sentence of sentences) {
+      for (const raw of tokenize(sentence)) {
+        const word = singular(raw.toLowerCase());
+        if (word.length < 5 || STOP.has(word) || COMMON.has(word) || inPhrase.has(word)) continue;
+        const entry = counts.get(word) || { term: singular(raw), count: 0 };
+        entry.count += 1;
+        counts.set(word, entry);
+      }
+    }
+    return [...counts.values()].filter((entry) => entry.count >= MIN_WORD_HITS).sort((a, b) => b.count - a.count).map((entry) => entry.term);
+  }
+  function minHits(kind, term) {
+    if (kind === "acronym") return 2;
+    if (kind === "defined") return 1;
+    return term.includes(" ") ? MIN_PHRASE_HITS : MIN_WORD_HITS;
+  }
+  function trimTerm(value) {
+    const words = cleanTerm(value).split(/\s+/).filter(Boolean);
+    while (words.length > 1) {
+      const first = words[0].toLowerCase();
+      if (!STOP.has(first) && !QUALIFIERS.has(first)) break;
+      words.shift();
+    }
+    return words.slice(-4).join(" ");
+  }
+  function plausibleTerm(value) {
+    const term = cleanTerm(value);
+    const words = term.split(/\s+/);
+    if (term.length < 3 || term.length > 52 || words.length > 6) return false;
+    if (STOP.has(words[0].toLowerCase()) || STOP.has(words[words.length - 1].toLowerCase())) return false;
+    if (words.length === 1 && !/^[A-Z][A-Z0-9-]{1,9}$/.test(term)) {
+      const word = singular(term.toLowerCase());
+      if (word.length < 5 || COMMON.has(word) || QUALIFIERS.has(word)) return false;
+    }
+    return /[\p{L}]/u.test(term);
+  }
+  function tokenize(value) {
+    return String(value || "").match(/[\p{L}\p{N}][\p{L}\p{N}’'-]*/gu) || [];
+  }
+  function splitSentences(value) {
+    return String(value || "").split(/(?<=[.!?])\s+(?=[\p{Lu}“"'])/u).map((sentence) => sentence.trim()).filter((sentence) => sentence.length > 12);
+  }
+  function singular(value) {
+    const word = String(value || "");
+    if (/(ss|us|is|as)$/i.test(word) || word.length <= 4) return word;
+    if (/ies$/i.test(word)) return `${word.slice(0, -3)}y`;
+    if (/es$/i.test(word) && /(ch|sh|x|z|s)es$/i.test(word)) return word.slice(0, -2);
+    return /s$/i.test(word) ? word.slice(0, -1) : word;
+  }
+  function wordCount(value) {
+    return tokenize(value).length;
+  }
+  function clip2(value, max) {
+    const text = String(value || "");
+    return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}\u2026`;
+  }
+  function cleanTerm(value) {
+    return String(value || "").replace(/^[\s"'“”]+|[\s"'“”,:;.]+$/g, "").trim();
+  }
+  function cleanDetail(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().replace(/[.;:,\s]+$/, "");
+  }
+  function normalizeTerm(value) {
+    return cleanTerm(value).toLocaleLowerCase();
+  }
+  function countTerm(text, term) {
+    return [...String(text || "").matchAll(termPattern([term]))].length;
+  }
+  function termPattern(terms) {
+    const alternatives = terms.map((term) => `${escapeRegExp(term)}(?:s|es)?`).join("|");
+    return new RegExp(`(^|[^\\p{L}\\p{N}_])(${alternatives})(?=$|[^\\p{L}\\p{N}_])`, "giu");
+  }
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  function blockContaining(blocks, text) {
+    const needle = normalizeSpace(text);
+    if (!needle) return null;
+    return blocks.find((block) => normalizeSpace(block.text).includes(needle)) || null;
+  }
+  function pickRoot2(doc) {
+    for (const selector of ROOT_SELECTORS) {
+      const root = doc.querySelector(selector);
+      if (root && root.textContent.trim().length > 200) return root;
+    }
+    return null;
+  }
+  function locateAnchors(root, symbols) {
+    const blocks = [...root.querySelectorAll(BLOCK_SELECTOR)];
+    const anchors = /* @__PURE__ */ new Map();
+    for (const symbol of symbols) {
+      const needle = normalizeSpace(symbol.anchorBlockText || symbol.anchorText);
+      if (!needle) continue;
+      const target = blocks.find((block) => normalizeSpace(block.textContent).includes(needle));
+      if (target) anchors.set(symbol.key, target);
+    }
+    return anchors;
+  }
+  function textNodes(root, doc) {
+    const nodes = [];
+    const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node2) {
+        if (!node2.data.trim() || node2.parentElement?.closest(SKIP_SELECTOR)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    let node = walker.nextNode();
+    while (node) {
+      nodes.push(node);
+      node = walker.nextNode();
+    }
+    return nodes;
+  }
+  function makeCard(doc) {
+    const card = doc.createElement("aside");
+    card.className = "lp-symbol-card lp-ignore";
+    card.hidden = true;
+    card.innerHTML = '<strong class="lp-symbol-name"></strong><em class="lp-symbol-kind"></em><span class="lp-symbol-detail"></span><small class="lp-symbol-hint"></small>';
+    return card;
+  }
+  function positionCard(card, rect) {
+    const margin = 12;
+    const width = Math.min(360, window.innerWidth - margin * 2);
+    card.style.width = `${width}px`;
+    card.style.left = `${Math.min(window.innerWidth - width - margin, Math.max(margin, rect.left))}px`;
+    const below = rect.bottom + 8;
+    const fitsBelow = below + card.offsetHeight + margin <= window.innerHeight;
+    card.style.top = `${fitsBelow ? below : Math.max(margin, rect.top - card.offsetHeight - 8)}px`;
+  }
+  function jumpTo(element) {
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    element.classList.remove("lp-symbol-pulse");
+    requestAnimationFrame(() => element.classList.add("lp-symbol-pulse"));
+    setTimeout(() => element.classList.remove("lp-symbol-pulse"), 1200);
+  }
+  function normalizeSpace(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
   }
 
   // extension/content/content.js
@@ -1506,12 +2129,11 @@ ${css}`;
   var page = null;
   var settings = { defaultColor: "lemon", lockInfiniteScroll: true, allowInfiniteSnapshot: true };
   var infinite = { infinite: false, reason: null };
-  var snapshotMode = false;
+  var reachedPercent = 0;
   var savedRange = null;
   var savedRect = null;
   var gestureSelected = false;
   overlay.handlers = {
-    onSnapshot: () => snapshot(),
     onOpenHighlight: (id) => openOrCreateThread(id),
     onNote: (threadId, content) => mutate("ADD_MESSAGE", { pageId: page.id, threadId, message: { role: "user", content } }),
     onAgent: (threadId, ask, agent) => sendToAgent(threadId, ask, agent),
@@ -1526,11 +2148,18 @@ ${css}`;
     onDeleteMessage: (threadId, messageId) => mutate("DELETE_MESSAGE", { pageId: page.id, threadId, messageId }),
     onRecolorHighlight: (highlightId, color) => recolorHighlight(highlightId, color),
     onMoveHighlight: (highlightId) => moveHighlight(highlightId),
-    onDeleteHighlight: (highlightId) => deleteHighlight(highlightId)
+    onDeleteHighlight: (highlightId) => deleteHighlight(highlightId),
+    onSearchMentions: (query) => searchMentions(query),
+    onOpenMention: (pageId, threadId) => openMention(pageId, threadId),
+    onRefresh: () => refreshPage()
   };
   onBroadcast((message) => {
     if (message.kind === "CONTEXT_ACTION") handleContext(message.action);
     if (message.kind === "TOAST" && message.text) overlay.toast(message.text);
+    if (message.kind === "SETTINGS_CHANGED" && message.settings) {
+      settings = message.settings;
+      overlay.setPreferences(settings);
+    }
   });
   boot().catch((error) => console.warn("LivePage failed to start", error));
   async function boot() {
@@ -1539,6 +2168,7 @@ ${css}`;
     watchMarks();
     try {
       settings = await call("GET_SETTINGS") || settings;
+      overlay.setPreferences(settings);
     } catch (error) {
       console.warn("LivePage settings unavailable", error);
     }
@@ -1561,16 +2191,25 @@ ${css}`;
         url: location.href,
         title: document.title,
         parsed,
-        infiniteScroll: infinite.infinite
+        infiniteScroll: infinite.infinite,
+        createIfMissing: false
       });
-      if (page.snapshot) snapshotMode = true;
-      restoreHighlights(document.body, page.highlights);
-      overlay.setPage(page);
-      applyLock();
+      if (page) {
+        restoreHighlights(document.body, page.highlights);
+        overlay.setPage(page);
+        openLinkedThread();
+      }
       watchInfinite();
       watchScroll();
     } catch (error) {
       console.warn("LivePage visit failed", error);
+    }
+    if (flags.articleSymbols) {
+      try {
+        enableArticleSymbols(document, parsed);
+      } catch (error) {
+        console.warn("LivePage article symbols failed", error);
+      }
     }
     if (flags.rss) offerRssIfAny();
   }
@@ -1583,35 +2222,22 @@ ${css}`;
     });
     detector.onFlag(() => {
       infinite = { infinite: true, reason: "This page grew while you were reading." };
-      call("PATCH_PAGE", { id: page.id, patch: { infiniteScroll: true } });
-      applyLock();
+      if (page?.id) call("PATCH_PAGE", { id: page.id, patch: { infiniteScroll: true } });
     });
     detector.start();
   }
-  function applyLock() {
-    const shouldLock = Boolean(
-      settings.lockInfiniteScroll && infinite.infinite && !snapshotMode
-    );
-    overlay.setLock({
-      locked: shouldLock,
-      reason: infinite.reason,
-      snapshotTexts: snapshotMode ? (page.parsed?.blocks || []).map((b) => b.text) : null
-    });
-  }
-  async function snapshot() {
+  async function anchorInfiniteView() {
+    if (!settings.lockInfiniteScroll || !infinite.infinite) return;
     const parsed = parseDocument(document, location.href);
     page = await call("PATCH_PAGE", { id: page.id, patch: { parsed, infiniteScroll: true } });
     page = await call("SNAPSHOT_PAGE", { pageId: page.id });
-    snapshotMode = true;
-    overlay.setPage(page);
-    applyLock();
-    overlay.toast("Snapshot taken. You can annotate this view.");
   }
   function watchScroll() {
     let lastSent = 0;
     const report = () => {
-      if (!page?.id) return;
       const percent = measureScrollProgress();
+      reachedPercent = Math.max(reachedPercent, percent);
+      if (!page?.id) return;
       call("REPORT_PROGRESS", {
         pageId: page.id,
         percent,
@@ -1700,18 +2326,6 @@ ${css}`;
     const rect = rangeRect(savedRange) || savedRect;
     if (!rect) return;
     savedRect = rect;
-    const locked = settings.lockInfiniteScroll && infinite.infinite && !snapshotMode;
-    if (locked) {
-      overlay.showToolbar(rect, {
-        onSnapshot: () => overlay.handlers.onSnapshot?.()
-      });
-      return;
-    }
-    if (snapshotMode && liveHasRange && !selectionIsSafe(selection, (page?.parsed?.blocks || []).map((b) => b.text))) {
-      overlay.toast("That span arrived after the snapshot. Ignore or snapshot again.");
-      overlay.hideToolbar();
-      return;
-    }
     overlay.showToolbar(rect, {
       onHighlight: (color) => createFromSelection({ color }),
       onComment: () => createFromSelection({ color: settings.defaultColor, comment: true })
@@ -1726,6 +2340,14 @@ ${css}`;
       parsed,
       infiniteScroll: infinite.infinite
     });
+    if (reachedPercent > 0) {
+      const next = await call("REPORT_PROGRESS", {
+        pageId: page.id,
+        percent: reachedPercent,
+        scrollY: window.scrollY
+      });
+      if (next) page = next;
+    }
     overlay.setPage(page);
     return page;
   }
@@ -1741,6 +2363,7 @@ ${css}`;
     try {
       await overlay.ready;
       await ensurePage();
+      await anchorInfiniteView();
       const result = await call("ADD_HIGHLIGHT", {
         pageId: page.id,
         highlight: { color, text: quote.exact, prefix: quote.prefix, suffix: quote.suffix }
@@ -1831,7 +2454,6 @@ ${css}`;
   }
   async function sendToAgent(threadId, ask, agent) {
     try {
-      overlay.toast("Asking the agent\u2026");
       const result = await call("ASK_AGENT", {
         pageId: page.id,
         threadId,
@@ -1840,10 +2462,9 @@ ${css}`;
       });
       page = result.page;
       overlay.setPage(page);
-      overlay.openThread(result.thread.id);
-      overlay.toast("Reply landed in the thread.");
+      overlay.toast(`${agent === "claude-code" ? "Claude" : "Cursor"} replied. The conversation is ready when you are.`);
     } catch (error) {
-      overlay.toast(String(error.message || error));
+      overlay.toast("The agent could not reply. Your question is still in the conversation.");
       console.warn("LivePage agent", error);
       try {
         page = await call("GET_PAGE", { id: page.id });
@@ -1856,14 +2477,72 @@ ${css}`;
     const result = await call(type, payload);
     page = result.page || result;
     overlay.setPage(page);
-    if (result.thread) overlay.openThread(result.thread.id);
     return result;
   }
-  function handleContext(action) {
-    if (settings.lockInfiniteScroll && infinite.infinite && !snapshotMode) {
-      overlay.toast("Snapshot this page before highlighting. Infinite pages cannot keep stable anchors.");
+  async function refreshPage() {
+    if (!page?.id) return;
+    try {
+      page = await call("GET_PAGE", { id: page.id });
+      overlay.setPage(page);
+    } catch {
+    }
+  }
+  async function searchMentions(query) {
+    const needle = String(query || "").trim().toLowerCase();
+    const pages = await call("LIST_PAGES") || [];
+    const results = [];
+    for (const candidate of pages) {
+      const pageTitle = candidate.title || candidate.domain || "Saved page";
+      for (const thread of candidate.threads || []) {
+        const messages = thread.messages || [];
+        if (!messages.length) continue;
+        const highlight = (candidate.highlights || []).find((item) => item.id === thread.highlightId);
+        const passage = highlight?.text || messages[0].content || "";
+        const haystack = `${pageTitle} ${passage} ${messages[messages.length - 1].content}`.toLowerCase();
+        if (needle && !haystack.includes(needle)) continue;
+        results.push({
+          pageId: candidate.id,
+          threadId: thread.id,
+          passage,
+          pageTitle,
+          samePage: candidate.id === page?.id,
+          color: highlight?.color || "",
+          parentId: thread.parentId || null,
+          branchLabel: thread.branchLabel || "",
+          messageCount: messages.length,
+          updatedAt: candidate.updatedAt || 0
+        });
+      }
+    }
+    results.sort(
+      (a, b) => Number(b.samePage) - Number(a.samePage) || (b.updatedAt || 0) - (a.updatedAt || 0)
+    );
+    return results.slice(0, 8);
+  }
+  async function openMention(pageId, threadId) {
+    if (pageId === page?.id) {
+      overlay.openThread(threadId);
       return;
     }
+    const target = await call("GET_PAGE", { id: pageId });
+    if (!target?.url) {
+      overlay.toast("That referenced conversation is no longer available.");
+      return;
+    }
+    const url = new URL(target.url);
+    url.hash = `livepage-thread=${encodeURIComponent(threadId)}`;
+    window.open(url.href, "_blank", "noopener");
+  }
+  function openLinkedThread() {
+    const match = location.hash.match(/^#livepage-thread=([^&]+)/);
+    if (!match) return;
+    const threadId = decodeURIComponent(match[1]);
+    if (page?.threads?.some((thread) => thread.id === threadId)) {
+      overlay.openThread(threadId);
+      history.replaceState(null, "", `${location.pathname}${location.search}`);
+    }
+  }
+  function handleContext(action) {
     captureSelection();
     if (action === "comment") createFromSelection({ color: settings.defaultColor, comment: true });
     else createFromSelection({ color: settings.defaultColor || COLOR_IDS[0] });

@@ -12,7 +12,8 @@ export const FLAG_DEFAULTS = {
   rss: true,
   localTweets: false,
   importSaves: true,
-  dashboardLayout: "feed"
+  articleSymbols: false,
+  dashboardLayout: "compact"
 };
 
 export const EXPERIMENTS = {
@@ -40,8 +41,8 @@ export const EXPERIMENTS = {
         }
       },
       C: {
-        label: "C · compact",
-        hint: "Top nav, dense rows, detail docked beside the list. Same rooms, less chrome.",
+        label: "C · portal",
+        hint: "Rooms and tags on the left, the list in the middle, what is waiting on the right.",
         flags: {
           forYouFeed: true,
           dashboardLayout: "compact",
@@ -54,7 +55,7 @@ export const EXPERIMENTS = {
 
 export const DEFAULT_EXPERIMENT = {
   id: "dashboard-density",
-  variant: "A"
+  variant: "C"
 };
 
 export function resolveFlags(settings = {}) {
@@ -74,7 +75,9 @@ export function resolveFlags(settings = {}) {
     ...legacy,
     ...(settings.flags || {})
   };
-  if (!["feed", "lists", "compact"].includes(flags.dashboardLayout)) flags.dashboardLayout = "feed";
+  if (!["feed", "lists", "compact"].includes(flags.dashboardLayout)) {
+    flags.dashboardLayout = FLAG_DEFAULTS.dashboardLayout;
+  }
   return { flags, experiment };
 }
 
@@ -109,6 +112,8 @@ export function firstVisibleFilter(flags = FLAG_DEFAULTS, preferred = "home") {
 
 function normalizeExperiment(value) {
   const id = value?.id && EXPERIMENTS[value.id] ? value.id : DEFAULT_EXPERIMENT.id;
-  const variant = EXPERIMENTS[id].variants[value?.variant] ? value.variant : "A";
+  const variant = EXPERIMENTS[id].variants[value?.variant]
+    ? value.variant
+    : DEFAULT_EXPERIMENT.variant;
   return { id, variant };
 }

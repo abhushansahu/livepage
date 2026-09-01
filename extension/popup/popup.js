@@ -1,4 +1,5 @@
 import { call } from "../shared/bridge.js";
+import { applyTheme } from "../shared/theme.js";
 import { formatRelative } from "../shared/time.js";
 import { parseTagInput, suggestedTagsForHost } from "../shared/tags.js";
 import { hostnameOf } from "../shared/url.js";
@@ -19,6 +20,12 @@ document.getElementById("dashboard").onclick = () => {
 document.getElementById("options").onclick = () => {
   chrome.runtime.openOptionsPage();
 };
+
+try {
+  applyTheme((await call("GET_SETTINGS"))?.pageTheme);
+} catch {
+  /* first run, before any settings exist */
+}
 
 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 const tabUrl = tab?.url || "";

@@ -30,12 +30,41 @@
 
 .lp-root,
 .lp-float {
+  --lp-surface: rgba(255, 252, 247, 0.9);
+  --lp-surface-solid: #fffcf7;
+  --lp-surface-soft: rgba(245, 239, 229, 0.86);
+  --lp-ink: #241d17;
+  --lp-muted: #665d53;
+  --lp-faint: #83796f;
+  --lp-line: rgba(42, 33, 26, 0.15);
+  --lp-accent: #426b55;
+  --lp-accent-strong: #315342;
+  --lp-agent: rgba(69, 111, 87, 0.12);
+  --lp-user: rgba(68, 51, 37, 0.055);
+  --lp-danger: #8a3a32;
   font-family: ui-sans-serif, "Segoe UI", system-ui, -apple-system, sans-serif;
-  color: #1c1712;
+  color: var(--lp-ink);
   font-size: 13px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   height: 100%;
+}
+
+:host([data-theme="dark"]) .lp-root,
+:host([data-theme="dark"]) .lp-float {
+  color-scheme: dark;
+  --lp-surface: rgba(31, 28, 25, 0.91);
+  --lp-surface-solid: #211e1b;
+  --lp-surface-soft: rgba(44, 39, 35, 0.92);
+  --lp-ink: #eee7dd;
+  --lp-muted: #c6bdb2;
+  --lp-faint: #a99f94;
+  --lp-line: rgba(239, 230, 219, 0.16);
+  --lp-accent: #8fbaa0;
+  --lp-accent-strong: #a8cdb5;
+  --lp-agent: rgba(108, 158, 126, 0.16);
+  --lp-user: rgba(255, 245, 232, 0.07);
+  --lp-danger: #e3a098;
 }
 
 .lp-float {
@@ -47,7 +76,6 @@
   box-sizing: border-box;
 }
 
-.banner,
 .feed-offer,
 .toolbar,
 .toast,
@@ -84,39 +112,10 @@
   background: #fffcf7;
 }
 
-.banner[hidden],
 .feed-offer[hidden],
 .toolbar[hidden],
 .toast[hidden] {
   display: none !important;
-}
-
-.banner {
-  position: fixed;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 2147483646;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  max-width: min(640px, calc(100vw - 80px));
-  padding: 10px 12px;
-  background: rgba(255, 252, 247, 0.92);
-  border: 1px solid rgba(28, 23, 18, 0.1);
-  border-radius: 14px;
-  box-shadow: 0 10px 40px rgba(28, 23, 18, 0.12);
-  backdrop-filter: blur(16px);
-}
-
-.banner p {
-  margin: 0;
-  color: #5c5348;
-}
-
-.banner strong {
-  color: #1c1712;
-  font-weight: 600;
 }
 
 .gutter {
@@ -124,8 +123,8 @@
   height: 100%;
   min-height: inherit;
   padding: 8px 10px 48px;
-  border-left: 1px solid rgba(28, 23, 18, 0.08);
-  background: linear-gradient(to right, rgba(28, 23, 18, 0.03), transparent 18px);
+  border-left: 1px solid var(--lp-line);
+  background: linear-gradient(to right, color-mix(in srgb, var(--lp-ink) 3%, transparent), transparent 18px);
 }
 
 .card {
@@ -133,11 +132,12 @@
   left: 10px;
   right: 10px;
   padding: 10px 12px 10px 14px;
-  background: #fffcf7;
-  border: 1px solid rgba(28, 23, 18, 0.1);
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-line);
   border-radius: 10px;
   border-left: 3px solid var(--lp-mark, #f6e27a);
-  box-shadow: 0 1px 0 rgba(28, 23, 18, 0.04);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--lp-ink) 5%, transparent);
+  backdrop-filter: blur(12px) saturate(90%);
   cursor: pointer;
   transition: box-shadow 120ms ease, border-color 120ms ease;
 }
@@ -159,12 +159,12 @@
   font-family: "Iowan Old Style", Palatino, Georgia, serif;
   font-size: 13px;
   margin: 0 0 6px;
-  color: #1c1712;
+  color: var(--lp-ink);
 }
 
 .card .preview {
   margin: 0;
-  color: #5c5348;
+  color: var(--lp-muted);
   font-size: 12px;
 }
 
@@ -177,7 +177,25 @@
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #7a7168;
+  color: var(--lp-faint);
+}
+
+.thread-label,
+.chip,
+.fork,
+.fork-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ico {
+  flex: 0 0 auto;
+}
+
+.color-meaning {
+  color: var(--lp-muted);
+  font-size: 11px;
 }
 
 .hl-toolbar {
@@ -321,6 +339,8 @@ button.solid:hover {
   min-height: 96px;
   max-height: none;
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .messages::before {
@@ -329,14 +349,14 @@ button.solid:hover {
   left: 5px;
   top: 10px;
   bottom: 10px;
-  border-left: 1.5px dotted rgba(28, 23, 18, 0.28);
+  border-left: 1px solid var(--lp-line);
 }
 
 .msg {
   position: relative;
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(28, 23, 18, 0.04);
+  background: var(--lp-user);
   margin: 0 0 8px;
 }
 
@@ -346,17 +366,17 @@ button.solid:hover {
   left: -14px;
   top: 16px;
   width: 12px;
-  border-top: 1.5px dotted rgba(28, 23, 18, 0.28);
+  border-top: 1px solid var(--lp-line);
 }
 
 .msg.is-you {
   margin-left: 10px;
-  background: rgba(28, 23, 18, 0.05);
+  background: var(--lp-user);
 }
 
 .msg.is-agent {
   margin-right: 4px;
-  background: rgba(63, 107, 82, 0.12);
+  background: var(--lp-agent);
 }
 
 .msg .meta {
@@ -371,6 +391,9 @@ button.solid:hover {
 .msg p {
   margin: 0;
   white-space: pre-wrap;
+  color: var(--lp-ink);
+  line-height: 1.55;
+  user-select: text;
 }
 
 .msg-actions {
@@ -411,8 +434,9 @@ button.solid:hover {
   font-size: 12px;
   padding: 5px 8px;
   border-radius: 8px;
-  border: 1px dashed rgba(63, 107, 82, 0.55);
-  background: #fff;
+  border: 1px solid var(--lp-line);
+  background: var(--lp-surface-solid);
+  color: var(--lp-ink);
 }
 
 .fork-form button {
@@ -430,7 +454,7 @@ button.solid:hover {
   position: relative;
   margin: -2px 0 10px 8px;
   padding: 4px 0 8px 14px;
-  border-left: 1.5px dashed rgba(63, 107, 82, 0.5);
+  border-left: 1px solid var(--lp-line);
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -572,4 +596,235 @@ textarea {
   font-size: 16px;
   line-height: 1;
   padding: 0;
+}
+
+/* Theme-aware interaction surfaces */
+.toolbar,
+.feed-offer,
+.send-menu {
+  background: var(--lp-surface-solid);
+  border-color: var(--lp-line);
+  color: var(--lp-ink);
+}
+
+.toolbar {
+  background: var(--lp-surface);
+}
+
+button.ghost,
+.send-menu button,
+.chip {
+  color: var(--lp-ink);
+}
+
+button.ghost:hover,
+.send-menu button:hover,
+.send-menu button.is-on {
+  background: var(--lp-user);
+}
+
+button.solid {
+  background: var(--lp-accent);
+}
+
+button.solid:hover {
+  background: var(--lp-accent-strong);
+}
+
+.chip {
+  border-color: var(--lp-line);
+}
+
+.chip.is-on {
+  background: var(--lp-ink);
+  border-color: var(--lp-ink);
+  color: var(--lp-surface-solid);
+}
+
+.kicker,
+.msg .meta,
+.fork-kicker,
+.close {
+  color: var(--lp-faint);
+}
+
+.fork,
+.fork-form button {
+  color: var(--lp-accent);
+}
+
+.delete,
+.hl-delete,
+.packet .error,
+.error-detail {
+  color: var(--lp-danger);
+}
+
+textarea,
+.packet-md {
+  border-color: var(--lp-line);
+  background: var(--lp-surface-solid);
+  color: var(--lp-ink);
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  user-select: text;
+}
+
+textarea:focus,
+.fork-form input:focus {
+  outline: 2px solid color-mix(in srgb, var(--lp-accent) 45%, transparent);
+  outline-offset: 1px;
+  border-style: solid;
+}
+
+.packet {
+  padding: 9px 10px;
+  border: 1px solid var(--lp-line);
+  border-radius: 10px;
+  background: var(--lp-surface-soft);
+}
+
+.packet .hint {
+  color: var(--lp-muted);
+  line-height: 1.5;
+}
+
+.packet details summary {
+  color: var(--lp-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.error-detail {
+  font-size: 11px;
+}
+
+.working-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+
+.working-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--lp-accent);
+  animation: lp-thinking 1.2s ease-in-out infinite;
+}
+
+.working-dots i:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.working-dots i:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes lp-thinking {
+  0%, 70%, 100% { opacity: 0.3; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .working-dots i { animation: none; opacity: 0.65; }
+}
+
+.composer {
+  position: relative;
+}
+
+.mention-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% - 2px);
+  z-index: 5;
+  max-height: 230px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--lp-line);
+  border-radius: 10px;
+  background: var(--lp-surface-solid);
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--lp-ink) 16%, transparent);
+}
+
+.mention-menu[hidden] {
+  display: none !important;
+}
+
+.mention-menu button {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--lp-ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mention-menu button:hover,
+.mention-menu button.is-active {
+  background: var(--lp-user);
+}
+
+.mention-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  border: 1px solid var(--lp-line);
+  background: var(--lp-mark, transparent);
+}
+
+.mention-text {
+  min-width: 0;
+}
+
+.mention-text strong {
+  display: block;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-text small {
+  display: block;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-text small,
+.mention-menu p {
+  color: var(--lp-faint);
+  font-size: 10.5px;
+}
+
+.mention-menu p {
+  margin: 0;
+  padding: 8px;
+}
+
+.mention {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 1px;
+  padding: 1px 5px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lp-accent) 16%, transparent);
+  color: var(--lp-accent-strong);
+  font: inherit;
+  cursor: pointer;
 }

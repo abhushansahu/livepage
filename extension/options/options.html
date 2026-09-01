@@ -13,14 +13,25 @@
       <form id="form">
         <label>Default highlight
           <select name="defaultColor">
-            <option value="lemon">Lemon</option>
-            <option value="moss">Moss</option>
-            <option value="sky">Sky</option>
-            <option value="rose">Rose</option>
-            <option value="iris">Iris</option>
-            <option value="sand">Sand</option>
+            <option value="lemon">Key idea · yellow</option>
+            <option value="moss">Action · green</option>
+            <option value="sky">Question · blue</option>
+            <option value="rose">Concern · rose</option>
+            <option value="iris">Insight · purple</option>
+            <option value="sand">Evidence · sand</option>
           </select>
         </label>
+        <label>Theme
+          <select name="pageTheme">
+            <option value="coffee">Coffee (light)</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+        <p class="hint">Applies everywhere at once: notes in the page margin, this page, the popup, and the dashboard.</p>
+        <label>Highlight strength
+          <input type="range" name="highlightStrength" min="24" max="68" step="4" />
+        </label>
+        <p class="hint">How strongly a highlight tints the words underneath. Lower keeps the page easier to read.</p>
         <label>Default agent
           <select name="agentDefault">
             <option value="cursor">Cursor Agent</option>
@@ -79,7 +90,7 @@
         </label>
         <label class="check">
           <input type="checkbox" name="lockInfiniteScroll" />
-          Disallow highlighting on infinite-scrolling pages until snapshot
+          Snapshot infinite-scrolling pages before a highlight, so the anchor holds
         </label>
 
         <h2>Experiments</h2>
@@ -88,7 +99,7 @@
           <select name="experimentVariant">
             <option value="A">A · feed (timeline home)</option>
             <option value="B">B · lists (no timeline)</option>
-            <option value="C">C · compact (top nav, dense rows)</option>
+            <option value="C">C · portal (full-width, dense, colour-coded)</option>
           </select>
         </label>
         <label>Layout when For you is on
@@ -106,6 +117,7 @@
         <label class="check"><input type="checkbox" name="flagReview" /> Review</label>
         <label class="check"><input type="checkbox" name="flagLocalTweets" /> Local AI observations in For you</label>
         <label class="check"><input type="checkbox" name="flagImportSaves" /> Harvest X / Reddit / YouTube from this Chrome session</label>
+        <label class="check"><input type="checkbox" name="flagArticleSymbols" /> Article symbols: hover for meaning, ⌘/Ctrl-click for definition</label>
 
         <h2>RSS feeds</h2>
         <p class="hint">Paste one feed URL per line. Optional tags after a URL, or one shared tag set for the whole paste. You can also add a feed from a page that advertises RSS.</p>
@@ -117,6 +129,13 @@
           </div>
         </div>
         <ul id="rss-list"></ul>
+
+        <h2>Stored pages</h2>
+        <p class="hint">LivePage only keeps a page once you highlight, star, list, tag, or import it. Opening a page leaves nothing behind. Earlier builds recorded every page you opened, which buried the feed and skewed every "never opened" and "% read" number — clear those here.</p>
+        <div class="row">
+          <button type="button" id="forget-browsed">Forget browsed-only pages</button>
+        </div>
+        <p class="hint" id="forget-status"></p>
 
         <h2>Git vault</h2>
         <p class="hint" id="vault-status">Bind the cloned Obsidian vault (a git repo). LivePage writes open markdown there. Git keeps two machines in sync — Chrome cannot push.</p>

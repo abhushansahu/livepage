@@ -22,7 +22,7 @@ isProject: false
 
 # Inventing Beyond Tool Limits: Horse as Case Study for the Annotation Vision
 
-> **On ice during Week 1 self-lab.** See [`week1-self-lab.md`](week1-self-lab.md). Do not extend this note until the spark log and wedge have a week of use.
+> **On ice.** The working build is [`../README.md`](../README.md). Do not extend this note unless a lived session contradicts it.
 
 This is a **vision/invention research note**, not a build brief. It answers: (1) what Horse actually did and how they invented it; (2) where that overlaps your [intention plan](.cursor/plans/pkm_annotation_intention_d283ef1d.plan.md); (3) how to invent the *next* niche once extension/reader/bookmark limits are ignored; (4) how **Horse’s research-browser narrative/aesthetic + Cursor’s flexible UX** fuse into a makeable inspiration spine.
 

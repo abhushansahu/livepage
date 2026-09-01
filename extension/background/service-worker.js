@@ -64,6 +64,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .then((data) => {
       sendResponse({ ok: true, data });
       if (shouldRefreshBadge(message.type)) refreshBadge();
+      if (message.type === "SAVE_SETTINGS") announceSettings(data);
     })
     .catch((error) => {
       sendResponse({ ok: false, error: error.message || String(error) });
@@ -86,7 +87,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (!url) return;
     await handleMessage({
       type: "QUEUE_READING_LIST",
-      payload: { url, title }
+      payload: { url, title, visited: !info.linkUrl }
     });
     if (tab?.id) {
       await sendToTab(tab.id, { broadcast: true, kind: "TOAST", text: "Added to reading list" });
@@ -165,6 +166,21 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 chrome.notifications.onClicked.addListener(() => {
   openDashboard();
 });
+
+/** Theme and reading preferences are one choice, so every open surface follows it at once. */
+async function announceSettings(settings) {
+  if (!settings) return;
+  const message = { broadcast: true, kind: "SETTINGS_CHANGED", settings };
+  try {
+    await chrome.runtime.sendMessage(message);
+  } catch {
+    /* no extension page is listening */
+  }
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (tab.id) await sendToTab(tab.id, message);
+  }
+}
 
 async function sendToTab(tabId, message) {
   try {

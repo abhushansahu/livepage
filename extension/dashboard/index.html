@@ -15,30 +15,27 @@
         <p class="lede">
           What you meant to come back to, tagged so you can find it later. Surfaces you do not want can stay off.
         </p>
+        <p class="side-label">Rooms</p>
+        <nav id="nav"></nav>
+        <p class="side-label" id="tag-label" hidden>Tags</p>
+        <div class="tag-bar" id="tag-bar"></div>
+        <p class="side-label">Tools</p>
+        <div class="side-actions">
+          <button class="solid" id="sync-saves">Refresh from this Chrome</button>
+          <button class="ghost" id="sync-rss">Sync RSS</button>
+          <button class="ghost" id="bind-vault">Bind vault folder</button>
+          <button class="ghost" id="write-vault">Write vault</button>
+          <button class="ghost" id="export-waiting">Dump waiting</button>
+          <a class="ghost" href="../options/options.html">Settings</a>
+        </div>
         <p class="experiment" id="experiment-note"></p>
-        <nav>
-          <button class="nav is-on" data-filter="home" data-flag="forYouFeed">For you</button>
-          <button class="nav" data-filter="reading" data-flag="readingList">Reading list <span class="count"></span></button>
-          <button class="nav" data-filter="bookmarked" data-flag="bookmarks">Bookmarks <span class="count"></span></button>
-          <button class="nav" data-filter="saves" data-flag="saves">Saves <span class="count"></span></button>
-          <button class="nav" data-filter="rss" data-flag="rss">RSS <span class="count"></span></button>
-          <button class="nav" data-filter="review" data-flag="review">Review <span class="count"></span></button>
-        </nav>
-        <details class="tools" open>
-          <summary>Tools</summary>
-          <div class="side-actions">
-            <button class="solid" id="sync-saves">Refresh from this Chrome</button>
-            <button class="ghost" id="sync-rss">Sync RSS</button>
-            <button class="ghost" id="bind-vault">Bind vault folder</button>
-            <button class="ghost" id="write-vault">Write vault</button>
-            <button class="ghost" id="export-waiting">Dump waiting</button>
-            <a class="ghost" href="../options/options.html">Settings</a>
-          </div>
-        </details>
       </aside>
       <main>
         <header class="top">
-          <input id="search" type="search" placeholder="Search, or #tag" />
+          <label class="search-wrap">
+            <svg class="ico" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+            <input id="search" type="search" placeholder="Search, or #tag" />
+          </label>
           <select id="sort" aria-label="Sort">
             <option value="recent">Recent</option>
             <option value="oldest-unread">Oldest unread</option>
@@ -48,9 +45,9 @@
           </select>
           <div class="counts" id="counts"></div>
         </header>
-        <div class="tag-bar" id="tag-bar"></div>
         <div id="view"></div>
       </main>
+      <aside class="rail" id="rail" hidden></aside>
       <article id="drawer" class="drawer" hidden></article>
     </div>
     <script type="module" src="./dashboard.js"></script>

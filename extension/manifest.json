@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LivePage",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Think on the live web: highlights, margin conversations, agent packets, and Obsidian compost.",
   "minimum_chrome_version": "120",
   "icons": {

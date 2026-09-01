@@ -9,6 +9,8 @@ const DB_VERSION = 5;
 
 export const DEFAULT_SETTINGS = {
   defaultColor: "lemon",
+  pageTheme: "coffee",
+  highlightStrength: 48,
   obsidianVault: "",
   obsidianFolder: "livepage",
   reminderHour: 9,
@@ -167,11 +169,21 @@ export async function putPage(page) {
   return next;
 }
 
+/**
+ * Updates the record for a page, and creates one only when asked to. Merely
+ * loading a page passes `createIfMissing: false` so ordinary browsing leaves
+ * nothing behind; the record appears the first time you keep the page.
+ */
 export async function upsertPageFromVisit(url, meta = {}) {
   const existing = await getPageByUrl(url);
+  // Queueing a link is not opening it. Only a real visit may claim otherwise,
+  // or "never opened" stops meaning anything.
+  const visited = meta.visited !== false;
   if (existing) {
-    existing.lastVisitedAt = Date.now();
-    existing.openedAt = Date.now();
+    if (visited) {
+      existing.lastVisitedAt = Date.now();
+      existing.openedAt = Date.now();
+    }
     if (meta.title && (!existing.title || existing.title === existing.canonicalUrl)) {
       existing.title = meta.title;
     }
@@ -181,8 +193,10 @@ export async function upsertPageFromVisit(url, meta = {}) {
     }
     return putPage(existing);
   }
+  if (meta.createIfMissing === false) return null;
   const page = emptyPage(url, meta);
-  page.openedAt = Date.now();
+  page.openedAt = visited ? Date.now() : null;
+  if (!visited) page.lastVisitedAt = 0;
   if (meta.parsed) page.parsed = meta.parsed;
   if (typeof meta.infiniteScroll === "boolean") page.infiniteScroll = meta.infiniteScroll;
   return putPage(page);

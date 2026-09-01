@@ -1,8 +1,29 @@
+:root {
+  --bg: #f4efe6;
+  --paper: #fffcf7;
+  --ink: #1c1712;
+  --muted: #6b6258;
+  --line: rgba(28, 23, 18, 0.12);
+  --sage: #3f6b52;
+  --on-sage: #f4efe6;
+}
+
+html[data-theme="dark"] {
+  --bg: #17140f;
+  --paper: #221f1b;
+  --ink: #ece5db;
+  --muted: #b0a89e;
+  --line: rgba(238, 230, 219, 0.16);
+  --sage: #8fbaa0;
+  --on-sage: #14201a;
+  color-scheme: dark;
+}
+
 html, body {
   margin: 0;
   width: 320px;
-  background: #f4efe6;
-  color: #1c1712;
+  background: var(--bg);
+  color: var(--ink);
   font-family: ui-sans-serif, "Segoe UI", system-ui, sans-serif;
 }
 
@@ -12,7 +33,7 @@ body { padding: 14px; }
   letter-spacing: 0.14em;
   text-transform: uppercase;
   font-size: 10px;
-  color: #3f6b52;
+  color: var(--sage);
   margin: 0 0 8px;
 }
 
@@ -28,13 +49,13 @@ h2 {
   font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #6b6258;
+  color: var(--muted);
   margin: 16px 0 8px;
   font-weight: 600;
 }
 
 .domain, .hint, .empty, .status {
-  color: #6b6258;
+  color: var(--muted);
   font-size: 12px;
   margin: 0 0 10px;
 }
@@ -51,16 +72,16 @@ label {
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  color: #6b6258;
+  color: var(--muted);
 }
 
 input {
   font: inherit;
   padding: 8px 10px;
   border-radius: 10px;
-  border: 1px solid rgba(28,23,18,0.12);
-  background: #fffcf7;
-  color: inherit;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .item {
@@ -68,7 +89,8 @@ input {
   width: 100%;
   text-align: left;
   border: 0;
-  background: #fffcf7;
+  background: var(--paper);
+  color: var(--ink);
   border-radius: 12px;
   padding: 10px;
   margin-bottom: 8px;
@@ -76,7 +98,7 @@ input {
   font: inherit;
 }
 
-.item small { color: #6b6258; }
+.item small { color: var(--muted); }
 
 footer {
   display: flex;
@@ -87,27 +109,28 @@ footer {
 button {
   font: inherit;
   border-radius: 999px;
-  border: 1px solid rgba(28,23,18,0.12);
+  border: 1px solid var(--line);
   background: transparent;
+  color: var(--ink);
   padding: 6px 10px;
   cursor: pointer;
 }
 
 button.on {
-  background: rgba(63, 107, 82, 0.12);
-  border-color: rgba(63, 107, 82, 0.3);
+  background: color-mix(in srgb, var(--sage) 16%, transparent);
+  border-color: color-mix(in srgb, var(--sage) 40%, transparent);
 }
 
 #dashboard, #reading {
-  background: #3f6b52;
-  color: #f4efe6;
+  background: var(--sage);
+  color: var(--on-sage);
   border: 0;
 }
 
 #reading.on {
   background: transparent;
-  color: inherit;
-  border: 1px solid rgba(28,23,18,0.12);
+  color: var(--ink);
+  border: 1px solid var(--line);
 }
 
-.status { color: #3f6b52; }
+.status { color: var(--sage); }

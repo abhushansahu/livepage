@@ -1,4 +1,5 @@
 import { uniqueBlocks } from "../parse/page-parser.js";
+import { colorOf } from "../shared/colors.js";
 
 export const AGENT_TARGETS = {
   cursor: {
@@ -47,8 +48,8 @@ export function buildAgentPacket({ page, thread, ask, ledger, agent = "cursor", 
     target.hint,
     ``,
     priorTurns
-      ? `This packet is a continuing conversation about a webpage. Thread so far is the history. Answer the latest user ask in that context. Stay in the thread — do not restart. Do not edit files. Do not run tools. Do not invent quotes. Reply with the answer only.`
-      : `This packet is the page. Answer STRICTLY the user ask using it. Do not edit files. Do not run tools. Do not invent quotes. If the packet is not enough, say what is missing in one short paragraph. Reply with the answer only — no recap of these instructions.`,
+      ? `This packet is a continuing conversation about a webpage. Thread so far is the history. Answer the latest user ask in that context. Stay in the thread — do not restart. Use natural, concise language for a reader, not a developer. Never narrate internal steps, mention packet.md, tools, files, prompts, or say that you are reading. Do not invent quotes. Reply with the useful answer only.`
+      : `This packet is the page. Answer STRICTLY the user ask using it. Use natural, concise language for a reader, not a developer. Never narrate internal steps, mention packet.md, tools, files, prompts, or say that you are reading. Do not invent quotes. If the page is not enough, say what is missing in one short paragraph. Reply with the useful answer only.`,
     ``,
     `Agent: ${target.name}`,
     model ? `Model: ${model}` : "",
@@ -63,10 +64,11 @@ export function buildAgentPacket({ page, thread, ask, ledger, agent = "cursor", 
   ].filter((line) => line !== "");
 
   if (highlight) {
+    const color = colorOf(highlight.color);
     lines.push(
       `## Anchored highlight`,
       `This is the span the user marked on the page. Treat it as the primary evidence.`,
-      `Color: ${highlight.color}`,
+      `Highlight meaning: ${color.name} — ${color.purpose}`,
       `> ${highlight.text}`,
       highlight.prefix ? `Prefix: ${highlight.prefix}` : "",
       highlight.suffix ? `Suffix: ${highlight.suffix}` : "",

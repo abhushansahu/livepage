@@ -16,7 +16,7 @@ export function normalizeItem(partial = {}) {
     excerpt,
     author,
     bookmarked,
-    tags: mergeTags(partial.tags),
+    tags: mergeTags(partial.tags, [source, kind]),
     why: partial.why || whyFor(source, kind, author),
     importMeta: {
       source,

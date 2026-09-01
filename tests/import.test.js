@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 import { classifyLibraryUrl, isLibraryUrl, isRefreshSource } from "../extension/import/sources.js";
 import { itemsFromRedditListing } from "../extension/import/reddit.js";
 import { extractAssignedJson, itemsFromYtInitialData } from "../extension/import/youtube.js";
@@ -199,6 +200,67 @@ test("injected twitter scraper is a self-contained function Chrome can serialize
   const src = scrapeTwitterBookmarksFromPage.toString();
   assert.match(src, /data-testid="tweet"/);
   assert.equal(src.includes("uniqueItems"), false);
+});
+
+test("the x hook leaves binary XHR responses alone", async () => {
+  const src = await readFile(new URL("../extension/import/x-hook.js", import.meta.url), "utf8");
+
+  class FakeXHR {
+    constructor() {
+      this.handlers = [];
+    }
+    open() {}
+    send() {}
+    addEventListener(type, fn) {
+      if (type === "load") this.handlers.push(fn);
+    }
+    finish() {
+      for (const fn of this.handlers) fn.call(this);
+    }
+  }
+
+  const saved = { xhr: globalThis.XMLHttpRequest, fetch: globalThis.fetch };
+  globalThis.XMLHttpRequest = FakeXHR;
+  try {
+    new Function(src)();
+
+    const bookmarksUrl = "https://x.com/i/api/graphql/abc/Bookmarks";
+    const binary = new FakeXHR();
+    binary.open("GET", bookmarksUrl);
+    binary.send();
+    binary.responseType = "arraybuffer";
+    Object.defineProperty(binary, "responseText", {
+      get() {
+        throw new Error("InvalidStateError");
+      }
+    });
+    binary.finish();
+    assert.deepEqual(globalThis.__LP_X_BOOKMARKS, [], "binary bodies are skipped, not read");
+
+    const text = new FakeXHR();
+    text.open("GET", bookmarksUrl);
+    text.send();
+    text.responseType = "";
+    text.responseText = JSON.stringify({ data: { ok: true } });
+    text.finish();
+    assert.equal(globalThis.__LP_X_BOOKMARKS.length, 1, "text bodies still get captured");
+
+    const media = new FakeXHR();
+    media.open("GET", "https://video.twimg.com/clip.mp4");
+    media.send();
+    Object.defineProperty(media, "responseText", {
+      get() {
+        throw new Error("should never be read");
+      }
+    });
+    media.finish();
+    assert.equal(globalThis.__LP_X_BOOKMARKS.length, 1, "unrelated URLs are never read");
+  } finally {
+    globalThis.XMLHttpRequest = saved.xhr;
+    globalThis.fetch = saved.fetch;
+    delete globalThis.__LP_X_HOOK;
+    delete globalThis.__LP_X_BOOKMARKS;
+  }
 });
 
 test("refresh harvest ignores Pocket, HN, and Chrome-style lists", () => {

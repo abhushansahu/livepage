@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { collapseMap, locateQuote } from "../extension/parse/quote.js";
+import { collapseMap, cssEscape, locateQuote } from "../extension/parse/quote.js";
 import { nearbyBlocks } from "../extension/agent/packet.js";
+
+test("cssEscape keeps ids safe for attribute selectors", () => {
+  const escaped = cssEscape('hl_"x"');
+  assert.equal(escaped.includes('"') && !escaped.includes('\\"'), false);
+  assert.match(escaped, /hl_/);
+});
 
 test("collapseMap folds extra whitespace onto a single space", () => {
   const { text } = collapseMap("the   quick\n\nbrown");

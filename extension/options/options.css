@@ -1,7 +1,30 @@
+:root {
+  --bg: #f4efe6;
+  --paper: #fffcf7;
+  --ink: #1c1712;
+  --muted: #6b6258;
+  --line: rgba(28, 23, 18, 0.12);
+  --line-soft: rgba(28, 23, 18, 0.08);
+  --sage: #3f6b52;
+  --on-sage: #f4efe6;
+}
+
+html[data-theme="dark"] {
+  --bg: #17140f;
+  --paper: #221f1b;
+  --ink: #ece5db;
+  --muted: #b0a89e;
+  --line: rgba(238, 230, 219, 0.16);
+  --line-soft: rgba(238, 230, 219, 0.1);
+  --sage: #8fbaa0;
+  --on-sage: #14201a;
+  color-scheme: dark;
+}
+
 html, body {
   margin: 0;
-  background: #f4efe6;
-  color: #1c1712;
+  background: var(--bg);
+  color: var(--ink);
   font-family: ui-sans-serif, "Segoe UI", system-ui, sans-serif;
 }
 
@@ -18,7 +41,7 @@ h2 {
 }
 
 .hint {
-  color: #6b6258;
+  color: var(--muted);
   font-size: 14px;
   line-height: 1.45;
   margin: 0 0 16px;
@@ -44,8 +67,9 @@ textarea {
   font: inherit;
   padding: 8px 10px;
   border-radius: 10px;
-  border: 1px solid rgba(28,23,18,0.12);
-  background: #fffcf7;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
   width: 100%;
   min-height: 120px;
   resize: vertical;
@@ -63,26 +87,26 @@ li {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 0;
-  border-bottom: 1px solid rgba(28,23,18,0.08);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 li span, li strong { display: block; }
 
-li span { color: #6b6258; font-size: 12px; }
+li span { color: var(--muted); font-size: 12px; }
 
 li button {
   background: transparent;
-  color: #3f6b52;
-  border: 1px solid rgba(28,23,18,0.12);
+  color: var(--sage);
+  border: 1px solid var(--line);
 }
 
-.empty { color: #6b6258; }
+.empty { color: var(--muted); }
 
 .mark {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   font-size: 11px;
-  color: #3f6b52;
+  color: var(--sage);
 }
 
 h1 {
@@ -106,16 +130,30 @@ input, select {
   font: inherit;
   padding: 8px 10px;
   border-radius: 10px;
-  border: 1px solid rgba(28,23,18,0.12);
-  background: #fffcf7;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+input[type="range"] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--sage);
 }
 
 button {
-  background: #3f6b52;
-  color: #f4efe6;
+  background: var(--sage);
+  color: var(--on-sage);
   border: 0;
   border-radius: 999px;
   padding: 10px 16px;
   font: inherit;
   cursor: pointer;
+}
+
+code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--line-soft);
 }

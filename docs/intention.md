@@ -7,7 +7,7 @@ isProject: false
 
 # Exploring the Intention: Action-Driven Web Annotation as Learning Practice
 
-> **FROZEN (2026-07-10).** Do not extend this map with new sections or philosophy. Progress happens in [`week1-self-lab.md`](week1-self-lab.md) and the [`../wedge/`](../wedge/) prototype. Reopen only if a lived session contradicts something here.
+> **FROZEN (2026-07-10).** Do not extend this map with new sections or philosophy. The working build is this repo — see [`../README.md`](../README.md). Reopen only if a lived session contradicts something here.
 
 This is an idea exploration, not a solution brief. The goal is to understand what you are actually reaching for when you describe “Google Doc on any live page + smart dashboard + Obsidian,” and why that desire keeps failing against existing tool categories.
 

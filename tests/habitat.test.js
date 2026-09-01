@@ -10,13 +10,15 @@ import {
   parseTagInput,
   sortPages
 } from "../extension/shared/tags.js";
-import { isBookmark, isReadingList, isRss, isSave } from "../extension/shared/lists.js";
+import { isBookmark, isKept, isReadingList, isRss, isSave } from "../extension/shared/lists.js";
 import { firstVisibleFilter, resolveFlags } from "../extension/shared/flags.js";
 import { parseRssXml, rssItemsForFeed, parseRssUrlInput } from "../extension/import/rss.js";
 import { uniqueItems } from "../extension/import/normalize.js";
 import { buildVaultBundle } from "../extension/export/vault-format.js";
 import { pageToMarkdown } from "../extension/export/obsidian.js";
-import { reasonFor } from "../extension/shared/feed.js";
+import { feedItems, reasonFor } from "../extension/shared/feed.js";
+import { hasOpened } from "../extension/shared/progress.js";
+import { extractArticleSymbols } from "../extension/content/article-symbols.js";
 
 test("tags normalize, merge, and attach derived source/comment labels", () => {
   assert.equal(normalizeTag("#Design Systems"), "design-systems");
@@ -60,6 +62,147 @@ test("sort prefers never-opened bookmarks when asked", () => {
   ];
   assert.equal(sortPages(pages, "never-opened")[0].id, "old");
   assert.equal(sortPages(pages, "title")[0].id, "old");
+});
+
+test("only pages you acted on count as kept", () => {
+  const browsed = {
+    id: "browsed",
+    readState: "in_progress",
+    openedAt: Date.now(),
+    progress: { maxPercent: 40 },
+    highlights: [],
+    threads: [],
+    tags: []
+  };
+  assert.equal(isKept(browsed), false, "reading most of a page is not keeping it");
+  assert.equal(isKept({ ...browsed, bookmarked: true }), true);
+  assert.equal(isKept({ ...browsed, inReadingList: true }), true);
+  assert.equal(isKept({ ...browsed, tags: ["later"] }), true);
+  assert.equal(isKept({ ...browsed, highlights: [{ id: "h1" }] }), true);
+  assert.equal(isKept({ ...browsed, threads: [{ id: "t1" }] }), true);
+  assert.equal(isKept({ ...browsed, importMeta: { source: "youtube" } }), true);
+  assert.equal(isKept({ ...browsed, readState: "parked" }), true);
+  assert.equal(isKept({ ...browsed, readState: "read" }), false);
+  assert.equal(isKept(null), false);
+});
+
+test("a link you queued but never opened does not count as opened", () => {
+  // Shape produced by upsertPageFromVisit when the reading list is filled from a
+  // right-clicked link rather than the tab you are looking at.
+  const queuedLink = {
+    id: "queued",
+    inReadingList: true,
+    openedAt: null,
+    lastVisitedAt: 0,
+    progress: { maxPercent: 0 }
+  };
+  assert.equal(hasOpened(queuedLink), false);
+  assert.equal(hasOpened({ ...queuedLink, openedAt: Date.now() }), true);
+  assert.equal(hasOpened({ ...queuedLink, progress: { maxPercent: 30 } }), true);
+});
+
+test("For you keeps out pages you merely browsed and finished", () => {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const pages = [
+    {
+      id: "read-through",
+      title: "A page you browsed and finished",
+      readState: "read",
+      progress: { maxPercent: 100 },
+      openedAt: now - day,
+      lastVisitedAt: now - day
+    },
+    {
+      id: "released",
+      title: "A page you let go of",
+      readState: "released",
+      progress: { maxPercent: 4 },
+      lastVisitedAt: now - 2 * day
+    },
+    {
+      id: "stalled-save",
+      title: "A save you never opened",
+      readState: "unread",
+      progress: { maxPercent: 0 },
+      importMeta: { source: "youtube", kind: "watch_later", importedAt: now - 20 * day },
+      createdAt: now - 20 * day
+    },
+    {
+      id: "halfway",
+      title: "A page you stopped halfway through",
+      readState: "in_progress",
+      progress: { maxPercent: 46 },
+      openedAt: now - 3 * day,
+      lastVisitedAt: now - 3 * day
+    },
+    {
+      id: "snoozed",
+      title: "A save you pushed away",
+      readState: "unread",
+      snoozedUntil: now + day,
+      importMeta: { source: "reddit", kind: "saved", importedAt: now - 9 * day }
+    }
+  ];
+  const ids = feedItems(pages, now).map((item) => item.page.id);
+  assert.deepEqual([...ids].sort(), ["halfway", "stalled-save"]);
+  // The raw trail would have shown everything but the released page, which is
+  // exactly the pile the portal used to render.
+  const trail = pages.filter((page) => page.readState !== "released");
+  assert.equal(trail.length, 4);
+});
+
+test("a fresh install lands on the portal board, not the narrow timeline", () => {
+  const fresh = resolveFlags({});
+  assert.equal(fresh.experiment.variant, "C");
+  assert.equal(fresh.flags.dashboardLayout, "compact");
+  assert.equal(fresh.flags.forYouFeed, true);
+  assert.equal(fresh.flags.articleSymbols, false);
+  const junk = resolveFlags({ flags: { dashboardLayout: "nonsense" } });
+  assert.equal(junk.flags.dashboardLayout, "compact");
+});
+
+test("article symbols pick up jargon and carry supporting text from the page", () => {
+  const symbols = extractArticleSymbols([
+    { id: "h1", heading: true, text: "The model picker is a dead end" },
+    {
+      id: "b1",
+      text: "Open almost any AI product and you will find the same dropdown. The model picker is a dead end."
+    },
+    {
+      id: "b2",
+      text:
+        "Real model independence means learning how each model works best before you ship anything to people."
+    },
+    {
+      id: "b3",
+      text:
+        "That is why the control plane watches the work as it unfolds, including whether the agent is making progress."
+    },
+    {
+      id: "b4",
+      text: "The control plane also adapts the system around the model it happens to be driving."
+    },
+    {
+      id: "b5",
+      text: "A large language model (LLM) judge can rank a hollow build near the top of the pile."
+    },
+    { id: "b6", text: "We inspect the builds whenever the control plane and the LLM disagree." }
+  ]);
+  const byTerm = new Map(symbols.map((symbol) => [symbol.term.toLowerCase(), symbol]));
+
+  // Headline copy is a claim, not a definition, so it must not become a symbol.
+  assert.equal(byTerm.has("the model"), false);
+  assert.equal(byTerm.has("model picker"), false);
+
+  assert.equal(byTerm.get("llm").kind, "acronym");
+  assert.equal(byTerm.get("llm").detail, "A large language model");
+  assert.equal(byTerm.get("model independence").kind, "defined");
+  assert.match(byTerm.get("model independence").detail, /^learning how each model works best/);
+  assert.equal(byTerm.get("control plane").kind, "context");
+  assert.match(byTerm.get("control plane").detail, /watches the work as it unfolds/);
+  assert.equal(byTerm.get("control plane").count, 3);
+  assert.equal(byTerm.get("control plane").anchorBlockId, "b3");
 });
 
 test("experiment C is compact and still keeps For you", () => {
@@ -137,6 +280,9 @@ test("imported social saves are not auto-starred; rss is not either", () => {
   assert.equal(tweet.bookmarked, false);
   assert.equal(article.bookmarked, false);
   assert.ok(article.tags.includes("demo"));
+  assert.ok(tweet.tags.includes("twitter"));
+  assert.ok(tweet.tags.includes("bookmark"));
+  assert.ok(article.tags.includes("rss"));
 });
 
 test("reading list, bookmarks, and saves are separate memberships", () => {

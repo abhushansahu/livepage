@@ -1,5 +1,7 @@
 import { call } from "../shared/bridge.js";
+import { applyTheme } from "../shared/theme.js";
 import { EXPERIMENTS, resolveFlags } from "../shared/flags.js";
+import { isKept } from "../shared/lists.js";
 import { parseTagInput } from "../shared/tags.js";
 import { bindVaultFolder, vaultStatus } from "../export/vault.js";
 
@@ -13,12 +15,46 @@ if (location.protocol !== "chrome-extension:" && !globalThis.__LP_BRIDGE) {
 }
 
 let settings = await call("GET_SETTINGS");
+applyTheme(settings.pageTheme);
 fillForm(settings);
+
+form.elements.pageTheme.addEventListener("change", () => {
+  applyTheme(form.elements.pageTheme.value);
+});
 await refreshRss();
 await refreshVault();
 await refreshHost();
 
 document.getElementById("host-ping").onclick = () => refreshHost();
+
+await refreshForget();
+
+document.getElementById("forget-browsed").onclick = async () => {
+  const note = document.getElementById("forget-status");
+  try {
+    const result = await call("FORGET_BROWSED", {});
+    note.textContent = result.removed
+      ? `Forgot ${result.removed} browsed-only ${result.removed === 1 ? "page" : "pages"}. ${result.kept} kept.`
+      : "Nothing to forget — every stored page was kept on purpose.";
+  } catch (error) {
+    note.textContent = String(error.message || error);
+  }
+};
+
+async function refreshForget() {
+  const note = document.getElementById("forget-status");
+  const button = document.getElementById("forget-browsed");
+  try {
+    const pages = (await call("LIST_PAGES")) || [];
+    const stale = pages.filter((page) => !isKept(page)).length;
+    button.disabled = !stale;
+    note.textContent = stale
+      ? `${stale} of ${pages.length} stored pages show no sign you meant to keep them.`
+      : `${pages.length} stored pages, all kept on purpose.`;
+  } catch {
+    note.textContent = "";
+  }
+}
 
 form.elements.experimentVariant.addEventListener("change", () => {
   const variant = EXPERIMENTS["dashboard-density"].variants[form.elements.experimentVariant.value];
@@ -32,6 +68,7 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const patch = currentPatch();
   settings = await call("SAVE_SETTINGS", patch);
+  applyTheme(settings.pageTheme);
   if (globalThis.chrome?.runtime?.sendMessage) {
     chrome.runtime.sendMessage({ type: "RESCHEDULE_REMINDER" });
   }
@@ -79,6 +116,8 @@ document.getElementById("bind-vault").onclick = async () => {
 function currentPatch() {
   return {
     defaultColor: form.elements.defaultColor.value,
+    pageTheme: form.elements.pageTheme.value,
+    highlightStrength: Number(form.elements.highlightStrength.value || 48),
     agentDefault: form.elements.agentDefault.value,
     cursorModel: form.elements.cursorModel.value,
     claudeCodeModel: form.elements.claudeCodeModel.value,
@@ -103,6 +142,7 @@ function currentPatch() {
       review: form.elements.flagReview.checked,
       localTweets: form.elements.flagLocalTweets.checked,
       importSaves: form.elements.flagImportSaves.checked,
+      articleSymbols: form.elements.flagArticleSymbols.checked,
       dashboardLayout: form.elements.dashboardLayout.value
     }
   };
@@ -111,6 +151,8 @@ function currentPatch() {
 function fillForm(value) {
   const { flags, experiment } = resolveFlags(value);
   form.elements.defaultColor.value = value.defaultColor || "lemon";
+  form.elements.pageTheme.value = value.pageTheme || "coffee";
+  form.elements.highlightStrength.value = value.highlightStrength ?? 48;
   form.elements.agentDefault.value = value.agentDefault || "cursor";
   form.elements.cursorModel.value = value.cursorModel || "composer-2.5";
   form.elements.claudeCodeModel.value = value.claudeCodeModel || "sonnet";
@@ -133,6 +175,7 @@ function fillForm(value) {
   form.elements.flagReview.checked = flags.review !== false;
   form.elements.flagLocalTweets.checked = Boolean(flags.localTweets);
   form.elements.flagImportSaves.checked = flags.importSaves !== false;
+  form.elements.flagArticleSymbols.checked = Boolean(flags.articleSymbols);
 }
 
 async function refreshRss() {

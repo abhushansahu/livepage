@@ -1,4 +1,5 @@
-import { findQuote, quoteFromRange, unwrapHighlight, wrapRange } from "../parse/quote.js";
+import { cssEscape, findQuote, quoteFromRange, unwrapHighlight, wrapRange } from "../parse/quote.js";
+import { colorOf } from "../shared/colors.js";
 
 export function restoreHighlights(root, highlights) {
   const restored = [];
@@ -11,6 +12,7 @@ export function restoreHighlights(root, highlights) {
     });
     if (!range) continue;
     wrapRange(range, highlight);
+    describeMarks(highlight);
     restored.push(highlight.id);
   }
   return restored;
@@ -27,7 +29,9 @@ export function applyRangeHighlight(range, highlight, root = document.body) {
   });
   unwrapHighlight(root, highlight.id);
   const located = findQuote(root, quote) || range;
-  return wrapRange(located, highlight);
+  const marks = wrapRange(located, highlight);
+  describeMarks(highlight, marks);
+  return marks;
 }
 
 export function applySelectionHighlight(selection, highlight, root = document.body) {
@@ -36,13 +40,23 @@ export function applySelectionHighlight(selection, highlight, root = document.bo
 }
 
 export function marksFor(highlightId) {
-  return [...document.querySelectorAll(`mark.lp-hl[data-lp-id="${CSS.escape(highlightId)}"]`)];
+  return [...document.querySelectorAll(`mark.lp-hl[data-lp-id="${cssEscape(highlightId)}"]`)];
 }
 
 export function recolorMarks(highlightId, color) {
   marksFor(highlightId).forEach((mark) => {
     mark.dataset.lpColor = color;
+    mark.title = colorHint(color);
   });
+}
+
+function describeMarks(highlight, marks = marksFor(highlight.id)) {
+  for (const mark of marks) mark.title = colorHint(highlight.color);
+}
+
+function colorHint(color) {
+  const meta = colorOf(color);
+  return `${meta.name} — ${meta.purpose}`;
 }
 
 export function highlightRect(highlightId) {

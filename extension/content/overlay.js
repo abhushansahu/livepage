@@ -1,6 +1,9 @@
 import { COLORS, COLOR_IDS } from "../shared/colors.js";
 import { formatRelative } from "../shared/time.js";
 import { highlightRect } from "./highlights.js";
+import { cssEscape } from "../parse/quote.js";
+import { icon } from "../shared/icons.js";
+import { normalizeTheme } from "../shared/theme.js";
 
 const GUTTER = 328;
 const CARD_GAP = 10;
@@ -16,8 +19,8 @@ const FALLBACK_CSS = `
   z-index: 2147483640; pointer-events: none;
 }
 .lp-root, .lp-float { font-family: ui-sans-serif, "Segoe UI", system-ui, sans-serif; color: #1c1712; font-size: 13px; }
-.banner, .feed-offer, .toolbar, .toast, .card { pointer-events: auto; }
-.banner[hidden], .feed-offer[hidden], .toolbar[hidden], .toast[hidden] { display: none !important; }
+.feed-offer, .toolbar, .toast, .card { pointer-events: auto; }
+.feed-offer[hidden], .toolbar[hidden], .toast[hidden] { display: none !important; }
 .toolbar {
   position: fixed; z-index: 2147483646; display: flex; gap: 4px; align-items: center;
   padding: 6px; background: #fffcf7; border: 1px solid rgba(28,23,18,0.12);
@@ -25,11 +28,10 @@ const FALLBACK_CSS = `
 }
 .swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(28,23,18,0.18); cursor: pointer; background: var(--lp-mark); }
 button.ghost { appearance: none; border: 0; background: transparent; color: #1c1712; padding: 6px 9px; font: inherit; cursor: pointer; border-radius: 999px; }
-.banner, .toast, .feed-offer {
+.toast, .feed-offer {
   position: fixed; z-index: 2147483646; background: #fffcf7; border: 1px solid rgba(28,23,18,0.1);
   border-radius: 14px; padding: 10px 12px; box-shadow: 0 10px 40px rgba(28,23,18,0.12);
 }
-.banner { top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; }
 .toast { bottom: 20px; left: 50%; transform: translateX(-50%); background: #1c1712; color: #f6f1e8; border-radius: 999px; }
 button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8; padding: 6px 10px; font: inherit; cursor: pointer; border-radius: 999px; font-weight: 600; }
 `;
@@ -49,13 +51,15 @@ export class Overlay {
     this.floatShadow = this.floatHost.attachShadow({ mode: "open" });
     this.page = null;
     this.activeThreadId = null;
-    this.locked = false;
-    this.snapshotTexts = null;
     this.handlers = {};
     this.sendMode = "comment";
     this.threadModes = {};
     this.awaitingAgent = null;
-    this.els = { toolbar: null, banner: null, toast: null, feedOffer: null, gutter: null };
+    this.theme = "coffee";
+    this.highlightStrength = 48;
+    this.mention = null;
+    this.mentionRequest = "";
+    this.els = { toolbar: null, toast: null, feedOffer: null, gutter: null };
     this.mountFloat();
     this.bind();
     this.ready = this.render();
@@ -68,13 +72,11 @@ export class Overlay {
       <style>${FALLBACK_CSS}</style>
       <div class="lp-float">
         <div class="toolbar" hidden></div>
-        <div class="banner" hidden></div>
         <div class="toast" hidden></div>
         <div class="feed-offer" hidden></div>
       </div>
     `;
     this.els.toolbar = this.floatShadow.querySelector(".toolbar");
-    this.els.banner = this.floatShadow.querySelector(".banner");
     this.els.toast = this.floatShadow.querySelector(".toast");
     this.els.feedOffer = this.floatShadow.querySelector(".feed-offer");
     this.attachHosts();
@@ -127,6 +129,7 @@ export class Overlay {
     }
     document.documentElement.appendChild(this.host);
     this.attachHosts();
+    this.applyTheme();
     this.applyRail();
   }
 
@@ -168,7 +171,19 @@ export class Overlay {
     }
     this.renderCards();
     this.applyRail();
-    if (this.activeThreadId) this.openThread(this.activeThreadId);
+  }
+
+  setPreferences(settings = {}) {
+    this.theme = normalizeTheme(settings.pageTheme);
+    this.highlightStrength = Math.max(24, Math.min(68, Number(settings.highlightStrength) || 48));
+    this.applyTheme();
+  }
+
+  applyTheme() {
+    this.host.dataset.theme = this.theme;
+    this.floatHost.dataset.theme = this.theme;
+    document.documentElement.classList.toggle("lp-theme-dark", this.theme === "dark");
+    document.documentElement.style.setProperty("--lp-highlight-strength", `${this.highlightStrength}%`);
   }
 
   applyRail() {
@@ -180,27 +195,6 @@ export class Overlay {
     } else {
       document.documentElement.style.removeProperty("--lp-gutter");
     }
-  }
-
-  setLock({ locked, reason, snapshotTexts }) {
-    this.locked = locked;
-    this.snapshotTexts = snapshotTexts || null;
-    if (!this.els?.banner) return;
-    if (!locked) {
-      this.els.banner.hidden = true;
-      return;
-    }
-    this.els.banner.hidden = false;
-    this.els.banner.innerHTML = `
-      <p><strong>Infinite page.</strong> ${reason || "This page keeps growing."} Highlighting is locked until you snapshot the current view.</p>
-      <button class="solid" data-act="snapshot">Snapshot</button>
-      <button class="ghost" data-act="dismiss">Not now</button>
-    `;
-    this.els.banner.querySelector("[data-act='snapshot']").onclick = () =>
-      this.handlers.onSnapshot?.();
-    this.els.banner.querySelector("[data-act='dismiss']").onclick = () => {
-      this.els.banner.hidden = true;
-    };
   }
 
   offerFeed(feed, { onAdd, onDismiss } = {}) {
@@ -228,32 +222,25 @@ export class Overlay {
     };
   }
 
-  showToolbar(rect, { onHighlight, onComment, onSnapshot } = {}) {
+  showToolbar(rect, { onHighlight, onComment } = {}) {
     this.attachHosts();
     const bar = this.els?.toolbar;
     if (!bar) return;
     bar.hidden = false;
     bar.removeAttribute("hidden");
-    if (onSnapshot && !onHighlight) {
-      bar.innerHTML = `<button class="solid" data-act="snapshot">Snapshot to highlight</button>`;
-    } else {
-      bar.innerHTML =
-        COLOR_IDS.map(
-          (id) =>
-            `<button class="swatch" title="${COLORS[id].name}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`
-        ).join("") + `<button class="ghost" data-act="comment">Comment</button>`;
-    }
+    bar.innerHTML =
+      COLOR_IDS.map(
+        (id) => {
+          const hint = colorHint(id);
+          return `<button class="swatch" title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`;
+        }
+      ).join("") + `<button class="ghost" data-act="comment">Comment</button>`;
     const top = rect.top - 44;
     const left = Math.min(rect.left, document.documentElement.clientWidth - 280);
     bar.style.top = `${Math.max(8, top)}px`;
     bar.style.left = `${Math.max(8, left)}px`;
     bar.onpointerdown = (event) => event.preventDefault();
     bar.onmousedown = (event) => event.preventDefault();
-    bar.querySelector("[data-act='snapshot']")?.addEventListener("click", (event) => {
-      event.preventDefault();
-      this.hideToolbar();
-      onSnapshot?.();
-    });
     bar.querySelectorAll(".swatch").forEach((btn) => {
       btn.onclick = (event) => {
         event.preventDefault();
@@ -284,6 +271,19 @@ export class Overlay {
 
   renderCards() {
     if (!this.page || !this.els?.gutter) return;
+    this.mention = null;
+    const previous = this.els.gutter.querySelector(".card.is-open .messages");
+    const scrollState = previous
+      ? {
+          top: previous.scrollTop,
+          height: previous.scrollHeight,
+          atBottom: previous.scrollHeight - previous.scrollTop - previous.clientHeight < 32
+        }
+      : null;
+    const draft = this._skipDraftOnce
+      ? ""
+      : this.els.gutter.querySelector(".card.is-open .composer textarea:not(.packet-md)")?.value || "";
+    this._skipDraftOnce = false;
     this.els.gutter.innerHTML = this.page.highlights
       .map((highlight) => this.cardHtml(highlight))
       .join("");
@@ -292,7 +292,13 @@ export class Overlay {
     this.markActiveHighlights();
     this.applyRail();
     const open = this.els.gutter.querySelector(".card.is-open .messages");
-    if (open) open.scrollTop = open.scrollHeight;
+    const composer = this.els.gutter.querySelector(".card.is-open .composer textarea:not(.packet-md)");
+    if (composer && draft) composer.value = draft;
+    if (open && scrollState) {
+      open.scrollTop = scrollState.atBottom
+        ? open.scrollHeight
+        : scrollState.top;
+    }
   }
 
   cardHtml(highlight) {
@@ -305,8 +311,8 @@ export class Overlay {
       return `
         <article class="card" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
           <p class="meta-line">
-            <span>${escapeHtml(thread?.branchLabel || "note")}</span>
-            <span>${count ? `${count}` : ""}</span>
+            <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml(threadLabel(thread))}</span>
+            <span>${count ? `${count} ${count === 1 ? "message" : "messages"}` : ""}</span>
             <button type="button" class="hl-delete" data-act="delete-hl" title="Delete highlight">×</button>
           </p>
           <p class="quote">${escapeHtml(clip(highlight.text, 90))}</p>
@@ -321,10 +327,13 @@ export class Overlay {
         <div class="hl-toolbar">
           <div class="swatches">
             ${COLOR_IDS.map(
-              (id) =>
-                `<button type="button" class="swatch ${highlight.color === id ? "is-on" : ""}" title="${COLORS[id].name}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`
+              (id) => {
+                const hint = colorHint(id);
+                return `<button type="button" class="swatch ${highlight.color === id ? "is-on" : ""}" title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`;
+              }
             ).join("")}
           </div>
+          <span class="color-meaning">${escapeHtml(COLORS[highlight.color]?.name || "Highlight")}</span>
           <button type="button" class="ghost" data-act="move-hl">Replace span</button>
           <button type="button" class="hl-delete" data-act="delete-hl">Delete</button>
         </div>
@@ -334,9 +343,10 @@ export class Overlay {
             ? `<div class="branch-list">${branches
                 .map(
                   (b) =>
-                    `<button class="chip ${b.id === thread.id ? "is-on" : ""}" data-branch="${b.id}">${escapeHtml(
-                      b.parentId ? `↳ ${b.branchLabel}` : b.branchLabel
-                    )}</button>`
+                    `<button class="chip ${b.id === thread.id ? "is-on" : ""}" data-branch="${b.id}">${icon(
+                      b.parentId ? "branch" : "comment",
+                      { size: 12 }
+                    )}${escapeHtml(threadLabel(b))}</button>`
                 )
                 .join("")}</div>`
             : ""
@@ -347,19 +357,23 @@ export class Overlay {
         <div class="composer">
           ${
             thread.awaitingAgent
-              ? `<div class="packet">
+              ? `<div class="packet ${thread.awaitingAgent.status === "pending" ? "is-working" : ""}" role="status" aria-live="polite">
                   <p class="kicker">${escapeHtml(awaitingCopy(thread.awaitingAgent))}</p>
                   ${
                     thread.awaitingAgent.status === "error"
-                      ? `<p class="error">${escapeHtml(thread.awaitingAgent.error || "Agent host did not reply.")}</p>
-                  <textarea class="packet-md" readonly>${escapeHtml(thread.awaitingAgent.packet || "")}</textarea>
-                  <button type="button" class="ghost" data-act="copy-packet">Copy packet</button>`
-                      : `<p class="hint">LivePage is talking to ${escapeHtml(agentName(thread.awaitingAgent.agent))}${thread.awaitingAgent.model ? ` · ${escapeHtml(thread.awaitingAgent.model)}` : ""}. The reply will land in this thread.</p>`
+                      ? `<p class="error">The reply could not arrive. Check that the local agent helper is running, then try again.</p>
+                  <details><summary>Technical details</summary>
+                    <p class="error-detail">${escapeHtml(thread.awaitingAgent.error || "No response from the local agent.")}</p>
+                    <textarea class="packet-md" readonly>${escapeHtml(thread.awaitingAgent.packet || "")}</textarea>
+                    <button type="button" class="ghost" data-act="copy-packet">Copy request details</button>
+                  </details>`
+                      : `<p class="hint"><span class="working-dots"><i></i><i></i><i></i></span>${escapeHtml(agentName(thread.awaitingAgent.agent))} is reading this passage and writing a reply. You can keep reading.</p>`
                   }
                 </div>`
               : ""
           }
           <textarea placeholder="${escapeHtml(this.composerPlaceholder(thread))}"></textarea>
+          <div class="mention-menu" hidden></div>
           <div class="send">
             <button type="button" class="solid send-main" data-act="send">${escapeHtml(this.sendLabel(thread))}</button>
             <button type="button" class="solid send-caret" data-act="menu" aria-label="Send options">▾</button>
@@ -382,25 +396,25 @@ export class Overlay {
         return `
           <article class="msg ${m.role === "agent" ? "is-agent" : "is-you"}" data-msg="${m.id}">
             <div class="meta"><span>${escapeHtml(labelOf(m))}</span><span>${formatRelative(m.createdAt)}</span></div>
-            <p>${escapeHtml(m.content)}</p>
+            <p>${messageHtml(m.content)}</p>
             <div class="msg-actions">
-              <button type="button" class="fork" data-fork="${m.id}">Branch</button>
+              <button type="button" class="fork" data-fork="${m.id}">${icon("branch", { size: 12 })} Explore another angle</button>
               <button type="button" class="delete" data-delete="${m.id}">Delete</button>
             </div>
             <form class="fork-form" hidden data-fork-form="${m.id}">
-              <input type="text" name="label" value="${escapeHtml(suggested)}" placeholder="Branch name" maxlength="48" />
-              <button type="submit">Start branch</button>
+              <input type="text" name="label" value="${escapeHtml(suggested)}" placeholder="Name this angle" maxlength="48" />
+              <button type="submit">Start angle</button>
               <button type="button" data-act="cancel-fork">Cancel</button>
             </form>
           </article>
           ${
             forks.length
               ? `<div class="fork-off">
-                  <span class="fork-kicker">branched</span>
+                  <span class="fork-kicker">${icon("branch", { size: 11 })} Other angles</span>
                   ${forks
                     .map(
                       (b) =>
-                        `<button type="button" class="chip" data-branch="${b.id}">${escapeHtml(b.branchLabel)}</button>`
+                        `<button type="button" class="chip" data-branch="${b.id}">${escapeHtml(threadLabel(b))}</button>`
                     )
                     .join("")}
                 </div>`
@@ -429,6 +443,13 @@ export class Overlay {
         this.handlers.onRecolorHighlight?.(highlightId, btn.dataset.color);
       };
     });
+    card.querySelectorAll("[data-mention]").forEach((btn) => {
+      btn.onclick = (event) => {
+        event.stopPropagation();
+        const [pageId, mentionThreadId] = decodeMention(btn.dataset.mention);
+        this.handlers.onOpenMention?.(pageId, mentionThreadId);
+      };
+    });
     card.querySelector("[data-act='move-hl']")?.addEventListener("click", (event) => {
       event.stopPropagation();
       this.handlers.onMoveHighlight?.(highlightId);
@@ -451,7 +472,7 @@ export class Overlay {
         card.querySelectorAll(".fork-form").forEach((form) => {
           form.hidden = form.dataset.forkForm !== btn.dataset.fork;
         });
-        const form = card.querySelector(`[data-fork-form="${CSS.escape(btn.dataset.fork)}"]`);
+        const form = card.querySelector(`[data-fork-form="${cssEscape(btn.dataset.fork)}"]`);
         const input = form?.querySelector("input");
         if (input) {
           input.focus();
@@ -529,7 +550,26 @@ export class Overlay {
       };
     }
     if (textarea) {
+      textarea.addEventListener("input", () => this.updateMentions(card, textarea));
+      textarea.addEventListener("blur", () => this.closeMentions());
       textarea.addEventListener("keydown", (event) => {
+        if (this.mentionsOpen(textarea)) {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            this.moveMention(event.key === "ArrowDown" ? 1 : -1);
+            return;
+          }
+          if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            this.chooseMention(this.mention.index);
+            return;
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            this.closeMentions();
+            return;
+          }
+        }
         if (event.key === "Enter" && !event.shiftKey) {
           event.preventDefault();
           send();
@@ -581,14 +621,121 @@ export class Overlay {
       return;
     }
     if (mode === "comment") {
-      this.handlers.onNote?.(threadId, content);
+      this.addOptimisticMessage(thread, content);
+      Promise.resolve(this.handlers.onNote?.(threadId, content)).catch(() => {
+        this.toast("That comment could not be saved. Please try again.");
+        this.handlers.onRefresh?.();
+      });
       return;
     }
     const agent = mode === "claude-code" ? "claude-code" : "cursor";
     this.threadModes[threadId] = mode;
     this.sendMode = mode;
     this.awaitingAgent = { threadId, agent };
-    this.handlers.onAgent?.(threadId, content, agent);
+    this.addOptimisticMessage(thread, content);
+    thread.awaitingAgent = {
+      agent,
+      askedAt: Date.now(),
+      status: "pending",
+      optimistic: true
+    };
+    this.renderCards();
+    Promise.resolve(this.handlers.onAgent?.(threadId, content, agent)).catch(() => {
+      this.handlers.onRefresh?.();
+    });
+  }
+
+  addOptimisticMessage(thread, content) {
+    thread.messages = thread.messages || [];
+    thread.messages.push({
+      id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      role: "user",
+      content,
+      createdAt: Date.now(),
+      optimistic: true
+    });
+    this._skipDraftOnce = true;
+    this.renderCards();
+  }
+
+  async updateMentions(card, textarea) {
+    const menu = card.querySelector(".mention-menu");
+    if (!menu) return;
+    const caret = textarea.selectionStart;
+    const match = textarea.value.slice(0, caret).match(/(?:^|\s)@([\w .'-]{0,40})$/);
+    if (!match) {
+      this.closeMentions();
+      return;
+    }
+    const query = match[1].trim();
+    const request = `${query}:${Date.now()}`;
+    this.mentionRequest = request;
+    const items = (await this.handlers.onSearchMentions?.(query)) || [];
+    if (this.mentionRequest !== request) return;
+    this.mention = {
+      menu,
+      textarea,
+      items,
+      index: 0,
+      start: caret - match[1].length - 1
+    };
+    menu.onmousedown = (event) => event.preventDefault();
+    this.paintMentions();
+  }
+
+  paintMentions() {
+    const state = this.mention;
+    if (!state) return;
+    const { menu, items, index } = state;
+    menu.innerHTML = items.length
+      ? items
+          .map(
+            (item, i) =>
+              `<button type="button" class="${i === index ? "is-active" : ""}" data-mention-index="${i}">
+                <span class="mention-dot" style="--lp-mark:${COLORS[item.color]?.fill || "transparent"}"></span>
+                <span class="mention-text">
+                  <strong>${escapeHtml(clip(item.passage, 46))}</strong>
+                  <small>${escapeHtml(mentionContext(item))}</small>
+                </span>
+              </button>`
+          )
+          .join("")
+      : `<p>No conversation matches that yet</p>`;
+    menu.hidden = false;
+    menu.querySelectorAll("[data-mention-index]").forEach((btn) => {
+      btn.onclick = (event) => {
+        event.stopPropagation();
+        this.chooseMention(Number(btn.dataset.mentionIndex));
+      };
+    });
+  }
+
+  moveMention(step) {
+    const state = this.mention;
+    if (!state?.items.length) return;
+    state.index = (state.index + step + state.items.length) % state.items.length;
+    this.paintMentions();
+    state.menu.querySelector(".is-active")?.scrollIntoView({ block: "nearest" });
+  }
+
+  chooseMention(index) {
+    const state = this.mention;
+    const item = state?.items?.[index];
+    if (!item) return;
+    const label = clip(item.passage, 34).replace(/[[\]()]/g, "");
+    const token = `@[${label}](livepage:${encodeMention(item.pageId, item.threadId)}) `;
+    state.textarea.setRangeText(token, state.start, state.textarea.selectionStart, "end");
+    this.closeMentions();
+    state.textarea.focus();
+  }
+
+  closeMentions() {
+    if (this.mention?.menu) this.mention.menu.hidden = true;
+    this.mention = null;
+  }
+
+  mentionsOpen(textarea) {
+    return Boolean(this.mention && this.mention.textarea === textarea && !this.mention.menu.hidden);
   }
 
   layoutCards() {
@@ -621,7 +768,9 @@ export class Overlay {
     if (!thread) return;
     this.activeThreadId = threadId;
     this.renderCards();
-    const card = this.els.gutter.querySelector(`.card[data-thread="${CSS.escape(threadId)}"]`);
+    const card = this.els.gutter.querySelector(`.card[data-thread="${cssEscape(threadId)}"]`);
+    const messages = card?.querySelector(".messages");
+    if (messages) messages.scrollTop = messages.scrollHeight;
     const textarea = card?.querySelector("textarea");
     if (textarea) {
       requestAnimationFrame(() => textarea.focus());
@@ -671,8 +820,8 @@ function escapeHtml(value) {
 }
 
 function labelOf(message) {
-  if (message.role === "agent") return `Agent · ${message.agent || "unknown"}`;
-  if (message.role === "system") return "System";
+  if (message.role === "agent") return agentName(message.agent);
+  if (message.role === "system") return "LivePage";
   return "You";
 }
 
@@ -690,16 +839,57 @@ function nextForkLabel(page, source) {
   const siblings = (page?.threads || []).filter(
     (t) => t.highlightId === source.highlightId && (t.parentId === source.id || t.id === source.id)
   );
-  return `branch-${siblings.length}`;
+  return `Angle ${siblings.length + 1}`;
 }
 
 function agentName(agent) {
-  return agent === "claude-code" ? "Claude Code" : "Cursor Agent";
+  return agent === "claude-code" ? "Claude" : "Cursor";
 }
 
 function awaitingCopy(awaiting) {
   if (awaiting?.status === "error") {
-    return `${agentName(awaiting.agent)} did not reply. Keep npm run agent-host running so it can call your local agent / claude CLIs.`;
+    return `${agentName(awaiting.agent)} could not reply`;
   }
-  return `Asking ${agentName(awaiting?.agent)}…`;
+  return `${agentName(awaiting?.agent)} is thinking`;
+}
+
+function threadLabel(thread) {
+  if (!thread) return "Comment";
+  if (!thread.parentId || thread.branchLabel === "main") return "Original conversation";
+  if (/^branch-\d+$/i.test(thread.branchLabel || "")) {
+    const number = Number(thread.branchLabel.split("-")[1]) + 1;
+    return `Angle ${number}`;
+  }
+  return thread.branchLabel || "Another angle";
+}
+
+function colorHint(id) {
+  const color = COLORS[id] || COLORS.lemon;
+  return `${color.name} — ${color.purpose}`;
+}
+
+function encodeMention(pageId, threadId) {
+  return `${encodeURIComponent(pageId || "")}/${encodeURIComponent(threadId || "")}`;
+}
+
+function decodeMention(value) {
+  const [pageId = "", threadId = ""] = String(value || "").split("/");
+  return [decodeURIComponent(pageId), decodeURIComponent(threadId)];
+}
+
+function messageHtml(content) {
+  const escaped = escapeHtml(content);
+  return escaped.replace(
+    /@\[([^\]]+)\]\(livepage:([^)]+)\)/g,
+    (_match, label, target) =>
+      `<button type="button" class="mention" data-mention="${escapeHtml(
+        target
+      )}" title="Open this conversation">${icon("at", { size: 12 })}${label}</button>`
+  );
+}
+
+function mentionContext(item) {
+  const where = item.samePage ? "This page" : clip(item.pageTitle, 32);
+  const count = `${item.messageCount} ${item.messageCount === 1 ? "message" : "messages"}`;
+  return `${threadLabel(item)} · ${count} · ${where}`;
 }

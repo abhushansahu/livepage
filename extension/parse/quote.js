@@ -363,7 +363,7 @@ function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n));
 }
 
-function cssEscape(value) {
+export function cssEscape(value) {
   if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(value);
   return String(value).replace(/"/g, '\\"');
 }

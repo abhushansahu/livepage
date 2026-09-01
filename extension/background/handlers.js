@@ -25,6 +25,7 @@ import { pingAgentHost, runAgentAsk } from "../agent/host-client.js";
 import { obsidianNewUri, pageToMarkdown, suggestedFilename } from "../export/obsidian.js";
 import { canonicalizeUrl, pageIdFromUrl } from "../shared/url.js";
 import { applyProgress } from "../shared/progress.js";
+import { isKept } from "../shared/lists.js";
 import { uniqueItems } from "../import/normalize.js";
 import { syncSaves } from "../import/sync.js";
 import { parseRssUrlInput, syncRssFeeds } from "../import/rss.js";
@@ -44,9 +45,12 @@ export async function handleMessage(message) {
       return saveSettings(payload);
     case "VISIT_PAGE": {
       const page = await upsertPageFromVisit(payload.url, payload);
+      if (!page) return null;
       await note("open", { pageId: page.id, source: page.importMeta?.source });
       return page;
     }
+    case "FORGET_BROWSED":
+      return forgetBrowsed();
     case "GET_PAGE":
       return payload.id ? getPage(payload.id) : getPageByUrl(payload.url);
     case "LIST_PAGES":
@@ -145,6 +149,17 @@ export async function handleMessage(message) {
   }
 }
 
+/**
+ * Clears records left behind by older builds, which stored every page you
+ * opened. Only pages with no sign of intent go; anything kept stays.
+ */
+async function forgetBrowsed() {
+  const pages = await listPages();
+  const stale = pages.filter((page) => !isKept(page));
+  for (const page of stale) await deletePage(page.id);
+  return { removed: stale.length, kept: pages.length - stale.length };
+}
+
 async function patchPage(id, patch) {
   const page = await getPage(id);
   if (!page) throw new Error("Page not found");
@@ -190,7 +205,8 @@ async function ensurePage(payload) {
   const page = await upsertPageFromVisit(url, {
     title: payload.title,
     tags,
-    inReadingList: false
+    inReadingList: false,
+    visited: payload.visited
   });
   page.inReadingList = false;
   page.tags = tags;
@@ -216,7 +232,8 @@ async function queueReadingList(payload) {
   const page = await upsertPageFromVisit(url, {
     title: payload.title,
     tags,
-    inReadingList: true
+    inReadingList: true,
+    visited: payload.visited
   });
   page.inReadingList = true;
   page.tags = tags;
@@ -524,7 +541,7 @@ async function askAgentLive(payload) {
       resumeId: sameAgentSession(built.thread, agent),
       cwd: built.thread.agentSession?.workspace || ""
     });
-    const text = typeof result === "string" ? result : result.text;
+    const text = cleanAgentReply(typeof result === "string" ? result : result.text);
     const sessionId = typeof result === "string" ? "" : result.sessionId || "";
     const workspace = typeof result === "string" ? "" : result.workspace || "";
     return addMessage({
@@ -545,6 +562,19 @@ async function askAgentLive(payload) {
     }
     throw error;
   }
+}
+
+function cleanAgentReply(value) {
+  const lines = String(value || "").split("\n");
+  while (
+    lines.length &&
+    /^(reading|opening|checking|looking at|i(?:'m| am) (?:reading|checking|opening)).*(?:packet(?:\.md)?|file|page)/i.test(
+      lines[0].trim().replace(/`/g, "")
+    )
+  ) {
+    lines.shift();
+  }
+  return lines.join("\n").trim() || "I couldn’t form a useful reply from this passage.";
 }
 
 async function exportObsidian(id) {

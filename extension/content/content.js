@@ -5,12 +5,7 @@ import {
   evaluateInfiniteScroll
 } from "../parse/infinite-scroll.js";
 import { quoteFromRange, unwrapHighlight } from "../parse/quote.js";
-import {
-  applyRangeHighlight,
-  restoreHighlights,
-  selectionIsSafe,
-  recolorMarks
-} from "./highlights.js";
+import { applyRangeHighlight, restoreHighlights, recolorMarks } from "./highlights.js";
 import { Overlay } from "./overlay.js";
 import { toolbarAction, rangeRect } from "./selection.js";
 import { COLOR_IDS } from "../shared/colors.js";
@@ -18,6 +13,7 @@ import { measureScrollProgress } from "../shared/progress.js";
 import { detectFeeds } from "../import/rss.js";
 import { parseTagInput } from "../shared/tags.js";
 import { resolveFlags } from "../shared/flags.js";
+import { enableArticleSymbols } from "./article-symbols.js";
 
 if (globalThis.__LP_CONTENT_STARTED) {
   throw new Error("LivePage content already started");
@@ -28,13 +24,12 @@ const overlay = new Overlay();
 let page = null;
 let settings = { defaultColor: "lemon", lockInfiniteScroll: true, allowInfiniteSnapshot: true };
 let infinite = { infinite: false, reason: null };
-let snapshotMode = false;
+let reachedPercent = 0;
 let savedRange = null;
 let savedRect = null;
 let gestureSelected = false;
 
 overlay.handlers = {
-  onSnapshot: () => snapshot(),
   onOpenHighlight: (id) => openOrCreateThread(id),
   onNote: (threadId, content) =>
     mutate("ADD_MESSAGE", { pageId: page.id, threadId, message: { role: "user", content } }),
@@ -53,12 +48,19 @@ overlay.handlers = {
     mutate("DELETE_MESSAGE", { pageId: page.id, threadId, messageId }),
   onRecolorHighlight: (highlightId, color) => recolorHighlight(highlightId, color),
   onMoveHighlight: (highlightId) => moveHighlight(highlightId),
-  onDeleteHighlight: (highlightId) => deleteHighlight(highlightId)
+  onDeleteHighlight: (highlightId) => deleteHighlight(highlightId),
+  onSearchMentions: (query) => searchMentions(query),
+  onOpenMention: (pageId, threadId) => openMention(pageId, threadId),
+  onRefresh: () => refreshPage()
 };
 
 onBroadcast((message) => {
   if (message.kind === "CONTEXT_ACTION") handleContext(message.action);
   if (message.kind === "TOAST" && message.text) overlay.toast(message.text);
+  if (message.kind === "SETTINGS_CHANGED" && message.settings) {
+    settings = message.settings;
+    overlay.setPreferences(settings);
+  }
 });
 boot().catch((error) => console.warn("LivePage failed to start", error));
 
@@ -69,6 +71,7 @@ async function boot() {
 
   try {
     settings = (await call("GET_SETTINGS")) || settings;
+    overlay.setPreferences(settings);
   } catch (error) {
     console.warn("LivePage settings unavailable", error);
   }
@@ -89,20 +92,32 @@ async function boot() {
   }
   if (!infinite.infinite) infinite = evaluateInfiniteScroll(location.href, document);
   try {
+    // Opening a page is not an act of keeping it. This refreshes a page you
+    // already kept and returns null for one you are merely reading, which
+    // stays entirely in memory until you highlight, star, or list it.
     page = await call("VISIT_PAGE", {
       url: location.href,
       title: document.title,
       parsed,
-      infiniteScroll: infinite.infinite
+      infiniteScroll: infinite.infinite,
+      createIfMissing: false
     });
-    if (page.snapshot) snapshotMode = true;
-    restoreHighlights(document.body, page.highlights);
-    overlay.setPage(page);
-    applyLock();
+    if (page) {
+      restoreHighlights(document.body, page.highlights);
+      overlay.setPage(page);
+      openLinkedThread();
+    }
     watchInfinite();
     watchScroll();
   } catch (error) {
     console.warn("LivePage visit failed", error);
+  }
+  if (flags.articleSymbols) {
+    try {
+      enableArticleSymbols(document, parsed);
+    } catch (error) {
+      console.warn("LivePage article symbols failed", error);
+    }
   }
   if (flags.rss) offerRssIfAny();
 }
@@ -116,38 +131,31 @@ function watchInfinite() {
   });
   detector.onFlag(() => {
     infinite = { infinite: true, reason: "This page grew while you were reading." };
-    call("PATCH_PAGE", { id: page.id, patch: { infiniteScroll: true } });
-    applyLock();
+    if (page?.id) call("PATCH_PAGE", { id: page.id, patch: { infiniteScroll: true } });
   });
   detector.start();
 }
 
-function applyLock() {
-  const shouldLock = Boolean(
-    settings.lockInfiniteScroll && infinite.infinite && !snapshotMode
-  );
-  overlay.setLock({
-    locked: shouldLock,
-    reason: infinite.reason,
-    snapshotTexts: snapshotMode ? (page.parsed?.blocks || []).map((b) => b.text) : null
-  });
-}
-
-async function snapshot() {
+/**
+ * Infinite feeds only hold a stable anchor against a parsed view, so take a
+ * fresh one right before the mark lands. Nothing is announced: the highlight
+ * itself is the feedback.
+ */
+async function anchorInfiniteView() {
+  if (!settings.lockInfiniteScroll || !infinite.infinite) return;
   const parsed = parseDocument(document, location.href);
   page = await call("PATCH_PAGE", { id: page.id, patch: { parsed, infiniteScroll: true } });
   page = await call("SNAPSHOT_PAGE", { pageId: page.id });
-  snapshotMode = true;
-  overlay.setPage(page);
-  applyLock();
-  overlay.toast("Snapshot taken. You can annotate this view.");
 }
 
 function watchScroll() {
   let lastSent = 0;
   const report = () => {
-    if (!page?.id) return;
     const percent = measureScrollProgress();
+    // Held in memory for an unkept page, so a mark made at 60% does not land
+    // on a record that claims you never started.
+    reachedPercent = Math.max(reachedPercent, percent);
+    if (!page?.id) return;
     call("REPORT_PROGRESS", {
       pageId: page.id,
       percent,
@@ -239,24 +247,13 @@ function maybeToolbar() {
   const rect = rangeRect(savedRange) || savedRect;
   if (!rect) return;
   savedRect = rect;
-  const locked = settings.lockInfiniteScroll && infinite.infinite && !snapshotMode;
-  if (locked) {
-    overlay.showToolbar(rect, {
-      onSnapshot: () => overlay.handlers.onSnapshot?.()
-    });
-    return;
-  }
-  if (snapshotMode && liveHasRange && !selectionIsSafe(selection, (page?.parsed?.blocks || []).map((b) => b.text))) {
-    overlay.toast("That span arrived after the snapshot. Ignore or snapshot again.");
-    overlay.hideToolbar();
-    return;
-  }
   overlay.showToolbar(rect, {
     onHighlight: (color) => createFromSelection({ color }),
     onComment: () => createFromSelection({ color: settings.defaultColor, comment: true })
   });
 }
 
+/** The first act of keeping a page is what brings its record into being. */
 async function ensurePage() {
   if (page?.id) return page;
   const parsed = parseDocument(document, location.href);
@@ -266,6 +263,14 @@ async function ensurePage() {
     parsed,
     infiniteScroll: infinite.infinite
   });
+  if (reachedPercent > 0) {
+    const next = await call("REPORT_PROGRESS", {
+      pageId: page.id,
+      percent: reachedPercent,
+      scrollY: window.scrollY
+    });
+    if (next) page = next;
+  }
   overlay.setPage(page);
   return page;
 }
@@ -282,6 +287,7 @@ async function createFromSelection({ color, comment = false }) {
   try {
     await overlay.ready;
     await ensurePage();
+    await anchorInfiniteView();
     const result = await call("ADD_HIGHLIGHT", {
       pageId: page.id,
       highlight: { color, text: quote.exact, prefix: quote.prefix, suffix: quote.suffix }
@@ -380,7 +386,6 @@ function openOrCreateThread(highlightId) {
 
 async function sendToAgent(threadId, ask, agent) {
   try {
-    overlay.toast("Asking the agent…");
     const result = await call("ASK_AGENT", {
       pageId: page.id,
       threadId,
@@ -389,10 +394,9 @@ async function sendToAgent(threadId, ask, agent) {
     });
     page = result.page;
     overlay.setPage(page);
-    overlay.openThread(result.thread.id);
-    overlay.toast("Reply landed in the thread.");
+    overlay.toast(`${agent === "claude-code" ? "Claude" : "Cursor"} replied. The conversation is ready when you are.`);
   } catch (error) {
-    overlay.toast(String(error.message || error));
+    overlay.toast("The agent could not reply. Your question is still in the conversation.");
     console.warn("LivePage agent", error);
     try {
       page = await call("GET_PAGE", { id: page.id });
@@ -407,15 +411,82 @@ async function mutate(type, payload) {
   const result = await call(type, payload);
   page = result.page || result;
   overlay.setPage(page);
-  if (result.thread) overlay.openThread(result.thread.id);
   return result;
 }
 
-function handleContext(action) {
-  if (settings.lockInfiniteScroll && infinite.infinite && !snapshotMode) {
-    overlay.toast("Snapshot this page before highlighting. Infinite pages cannot keep stable anchors.");
+async function refreshPage() {
+  if (!page?.id) return;
+  try {
+    page = await call("GET_PAGE", { id: page.id });
+    overlay.setPage(page);
+  } catch {
+    /* keep the optimistic view so the user's text is not lost */
+  }
+}
+
+/**
+ * A conversation is recognised by the passage it hangs off, so that leads each
+ * suggestion; where it lives and how far it got are the supporting line.
+ */
+async function searchMentions(query) {
+  const needle = String(query || "").trim().toLowerCase();
+  const pages = (await call("LIST_PAGES")) || [];
+  const results = [];
+  for (const candidate of pages) {
+    const pageTitle = candidate.title || candidate.domain || "Saved page";
+    for (const thread of candidate.threads || []) {
+      const messages = thread.messages || [];
+      if (!messages.length) continue;
+      const highlight = (candidate.highlights || []).find((item) => item.id === thread.highlightId);
+      const passage = highlight?.text || messages[0].content || "";
+      const haystack = `${pageTitle} ${passage} ${messages[messages.length - 1].content}`.toLowerCase();
+      if (needle && !haystack.includes(needle)) continue;
+      results.push({
+        pageId: candidate.id,
+        threadId: thread.id,
+        passage,
+        pageTitle,
+        samePage: candidate.id === page?.id,
+        color: highlight?.color || "",
+        parentId: thread.parentId || null,
+        branchLabel: thread.branchLabel || "",
+        messageCount: messages.length,
+        updatedAt: candidate.updatedAt || 0
+      });
+    }
+  }
+  results.sort(
+    (a, b) => Number(b.samePage) - Number(a.samePage) || (b.updatedAt || 0) - (a.updatedAt || 0)
+  );
+  return results.slice(0, 8);
+}
+
+async function openMention(pageId, threadId) {
+  if (pageId === page?.id) {
+    overlay.openThread(threadId);
     return;
   }
+  const target = await call("GET_PAGE", { id: pageId });
+  if (!target?.url) {
+    overlay.toast("That referenced conversation is no longer available.");
+    return;
+  }
+  const url = new URL(target.url);
+  url.hash = `livepage-thread=${encodeURIComponent(threadId)}`;
+  window.open(url.href, "_blank", "noopener");
+}
+
+function openLinkedThread() {
+  const match = location.hash.match(/^#livepage-thread=([^&]+)/);
+  if (!match) return;
+  const threadId = decodeURIComponent(match[1]);
+  if (page?.threads?.some((thread) => thread.id === threadId)) {
+    overlay.openThread(threadId);
+    history.replaceState(null, "", `${location.pathname}${location.search}`);
+  }
+}
+
+function handleContext(action) {
   captureSelection();
   if (action === "comment") createFromSelection({ color: settings.defaultColor, comment: true });
   else createFromSelection({ color: settings.defaultColor || COLOR_IDS[0] });
