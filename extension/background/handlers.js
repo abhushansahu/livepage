@@ -21,7 +21,7 @@ import {
   listEvents
 } from "../storage/store.js";
 import { buildAgentPacket, nextLedger } from "../agent/packet.js";
-import { pingAgentHost, runAgentAsk } from "../agent/host-client.js";
+import { pairAgentHost, pingAgentHost, runAgentAsk } from "../agent/host-client.js";
 import { obsidianNewUri, pageToMarkdown, suggestedFilename } from "../export/obsidian.js";
 import { canonicalizeUrl, pageIdFromUrl } from "../shared/url.js";
 import { applyProgress } from "../shared/progress.js";
@@ -510,16 +510,37 @@ async function makePacket(payload) {
 }
 
 async function pingAgentHostStatus() {
-  const settings = await getSettings();
-  const probe = await pingAgentHost(settings);
+  const settings = await ensureAgentHostPaired();
+  let probe = await pingAgentHost(settings);
+  if (probe.status === 401 || probe.auth === false) {
+    const paired = await pairAgentHost(settings);
+    if (paired.token && paired.token !== settings.agentHostToken) {
+      const next = await saveSettings({ agentHostToken: paired.token });
+      probe = await pingAgentHost(next);
+      return {
+        ...probe,
+        url: next.agentHostUrl || "http://127.0.0.1:17321",
+        paired: Boolean(next.agentHostToken)
+      };
+    }
+  }
   return {
     ...probe,
-    url: settings.agentHostUrl || "http://127.0.0.1:17321"
+    url: settings.agentHostUrl || "http://127.0.0.1:17321",
+    paired: Boolean(settings.agentHostToken)
   };
 }
 
-async function askAgentLive(payload) {
+async function ensureAgentHostPaired() {
   const settings = await getSettings();
+  if (settings.agentHostToken) return settings;
+  const paired = await pairAgentHost(settings);
+  if (!paired.token) return settings;
+  return saveSettings({ agentHostToken: paired.token });
+}
+
+async function askAgentLive(payload) {
+  const settings = await ensureAgentHostPaired();
   const agent = payload.agent || settings.agentDefault || "cursor";
   const model =
     payload.model ||
@@ -538,8 +559,7 @@ async function askAgentLive(payload) {
       agent,
       model,
       packet: built.packet.markdown,
-      resumeId: sameAgentSession(built.thread, agent),
-      cwd: built.thread.agentSession?.workspace || ""
+      resumeId: sameAgentSession(built.thread, agent)
     });
     const text = cleanAgentReply(typeof result === "string" ? result : result.text);
     const sessionId = typeof result === "string" ? "" : result.sessionId || "";

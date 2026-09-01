@@ -24,7 +24,6 @@
     "type": "module"
   },
   "options_page": "options/options.html",
-  "chrome_url_overrides": {},
   "permissions": [
     "storage",
     "unlimitedStorage",
@@ -33,7 +32,6 @@
     "notifications",
     "contextMenus",
     "clipboardWrite",
-    "downloads",
     "scripting"
   ],
   "host_permissions": [
@@ -56,17 +54,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": [
-        "shared/*",
-        "parse/*",
-        "storage/*",
-        "agent/*",
-        "export/*",
-        "import/*",
-        "feed/*",
-        "content/*",
-        "background/*"
-      ],
+      "resources": ["content/overlay.css"],
       "matches": ["http://*/*", "https://*/*"]
     }
   ],

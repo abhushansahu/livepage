@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS = {
   cursorAgentPath: "",
   claudeCodePath: "",
   agentHostUrl: "http://127.0.0.1:17321",
+  agentHostToken: "",
   agentWorkspace: "",
   allowInfiniteSnapshot: true,
   lockInfiniteScroll: true,

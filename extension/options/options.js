@@ -121,10 +121,7 @@ function currentPatch() {
     agentDefault: form.elements.agentDefault.value,
     cursorModel: form.elements.cursorModel.value,
     claudeCodeModel: form.elements.claudeCodeModel.value,
-    cursorAgentPath: form.elements.cursorAgentPath.value.trim(),
-    claudeCodePath: form.elements.claudeCodePath.value.trim(),
     agentHostUrl: form.elements.agentHostUrl.value.trim() || "http://127.0.0.1:17321",
-    agentWorkspace: form.elements.agentWorkspace.value.trim(),
     obsidianVault: form.elements.obsidianVault.value.trim(),
     obsidianFolder: form.elements.obsidianFolder.value.trim() || "livepage",
     remindersEnabled: form.elements.remindersEnabled.checked,
@@ -156,10 +153,7 @@ function fillForm(value) {
   form.elements.agentDefault.value = value.agentDefault || "cursor";
   form.elements.cursorModel.value = value.cursorModel || "composer-2.5";
   form.elements.claudeCodeModel.value = value.claudeCodeModel || "sonnet";
-  form.elements.cursorAgentPath.value = value.cursorAgentPath || "";
-  form.elements.claudeCodePath.value = value.claudeCodePath || "";
   form.elements.agentHostUrl.value = value.agentHostUrl || "http://127.0.0.1:17321";
-  form.elements.agentWorkspace.value = value.agentWorkspace || "";
   form.elements.obsidianVault.value = value.obsidianVault || "";
   form.elements.obsidianFolder.value = value.obsidianFolder || "livepage";
   form.elements.remindersEnabled.checked = value.remindersEnabled !== false;
@@ -224,9 +218,11 @@ async function refreshHost() {
   const el = document.getElementById("host-status");
   try {
     const result = await call("PING_AGENT_HOST");
-    el.textContent = result?.ok
-      ? `Host is up. Cursor CLI: ${result.cursorOk ? result.cursor : "not found"}. Claude Code: ${result.claudeOk ? result.claude : "not found"}.`
-      : `Agent host is not running. In the LivePage repo: npm run agent-host`;
+    el.textContent = result?.ok && result.auth !== false
+      ? `Host is up and paired. Cursor CLI: ${result.cursorOk ? result.cursor : "not found"}. Claude Code: ${result.claudeOk ? result.claude : "not found"}.`
+      : result?.ok
+      ? "Agent host is up but pairing failed. Restart npm run agent-host, then check again."
+      : "Agent host is not running. In the LivePage repo: npm run agent-host";
   } catch {
     el.textContent = "Agent host is not running. In the LivePage repo: npm run agent-host";
   }

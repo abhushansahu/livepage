@@ -40,7 +40,7 @@
         </label>
 
         <h2>Agents</h2>
-        <p class="hint">LivePage calls the Cursor Agent CLI (<code>agent</code>) and Claude Code CLI (<code>claude</code>) already on this machine. No API keys. Keep <code>npm run agent-host</code> running in the LivePage repo so the extension can reach them.</p>
+        <p class="hint">LivePage calls the Cursor Agent CLI (<code>agent</code>) and Claude Code CLI (<code>claude</code>) already on this machine. No API keys. Keep <code>npm run agent-host</code> running in the LivePage repo. The host only listens on loopback and pairs with this extension; web pages cannot invoke it.</p>
         <p class="hint" id="host-status">Checking agent host…</p>
         <div class="row">
           <button type="button" id="host-ping">Check host</button>
@@ -48,6 +48,7 @@
         <label>Agent host URL
           <input name="agentHostUrl" placeholder="http://127.0.0.1:17321" />
         </label>
+        <p class="hint">Optional CLI paths when starting the host: <code>LIVEPAGE_CURSOR_BIN</code> and <code>LIVEPAGE_CLAUDE_BIN</code>. The host ignores binary paths and folders sent from the browser.</p>
         <label>Cursor model
           <select name="cursorModel">
             <option value="composer-2.5">Composer 2.5</option>
@@ -65,15 +66,6 @@
             <option value="claude-opus-4-6">Claude Opus 4.6</option>
             <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
           </select>
-        </label>
-        <label>Cursor agent binary (optional)
-          <input name="cursorAgentPath" placeholder="agent" />
-        </label>
-        <label>Claude Code binary (optional)
-          <input name="claudeCodePath" placeholder="claude" />
-        </label>
-        <label>Workspace folder (optional)
-          <input name="agentWorkspace" placeholder="empty = a temp folder" />
         </label>
         <label>Obsidian vault name
           <input name="obsidianVault" placeholder="optional, for obsidian:// fallback" />

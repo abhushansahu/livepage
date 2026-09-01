@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { constants } from "node:fs";
@@ -6,32 +7,37 @@ import { join } from "node:path";
 
 const DEFAULT_CURSOR_MODEL = "composer-2.5";
 const DEFAULT_CLAUDE_MODEL = "sonnet";
+const workspaces = new Map();
 
 export async function handleAsk(body = {}) {
   const agent = body.agent === "claude-code" ? "claude-code" : "cursor";
   const packet = String(body.packet || "").trim();
   if (!packet) throw new Error("Missing packet");
-  const workspace = await prepareWorkspace(body.cwd, packet);
-  if (agent === "claude-code") {
-    return askClaudeCode({
-      packet,
-      workspace,
-      model: body.model || DEFAULT_CLAUDE_MODEL,
-      binary: body.claudePath || "",
-      resumeId: body.resumeId || ""
-    });
-  }
-  return askCursor({
-    workspace,
-    model: body.model || DEFAULT_CURSOR_MODEL,
-    binary: body.cursorPath || "",
-    resumeId: body.resumeId || ""
-  });
+  const resumeId = String(body.resumeId || "").trim();
+  const workspace = await prepareWorkspace(packet, resumeId);
+  const result =
+    agent === "claude-code"
+      ? await askClaudeCode({
+          packet,
+          workspace,
+          model: body.model || DEFAULT_CLAUDE_MODEL,
+          resumeId
+        })
+      : await askCursor({
+          workspace,
+          model: body.model || DEFAULT_CURSOR_MODEL,
+          resumeId
+        });
+  if (result?.sessionId) workspaces.set(result.sessionId, workspace);
+  return result;
 }
 
 export async function probeClis(settings = {}) {
-  const cursor = await resolveBin(settings.cursorPath || "agent", ["agent", "cursor-agent"]);
-  const claude = await resolveBin(settings.claudePath || "claude", ["claude"]);
+  const cursor = await resolveBin(settings.cursorPath || process.env.LIVEPAGE_CURSOR_BIN || "agent", [
+    "agent",
+    "cursor-agent"
+  ]);
+  const claude = await resolveBin(settings.claudePath || process.env.LIVEPAGE_CLAUDE_BIN || "claude", ["claude"]);
   return {
     cursor: cursor.path,
     cursorOk: cursor.ok,
@@ -59,8 +65,8 @@ export async function listModels(agent) {
   ];
 }
 
-async function askCursor({ workspace, model, binary, resumeId }) {
-  const resolved = await resolveBin(binary || "agent", ["agent", "cursor-agent"]);
+async function askCursor({ workspace, model, resumeId }) {
+  const resolved = await resolveBin(process.env.LIVEPAGE_CURSOR_BIN || "agent", ["agent", "cursor-agent"]);
   if (!resolved.ok) {
     throw new Error(
       `Cursor CLI not found (${resolved.path}). Install the Cursor agent CLI and keep it on PATH (usually ~/.local/bin/agent).`
@@ -94,8 +100,8 @@ async function askCursor({ workspace, model, binary, resumeId }) {
   return { ...parsed, workspace };
 }
 
-async function askClaudeCode({ packet, workspace, model, binary, resumeId }) {
-  const resolved = await resolveBin(binary || "claude", ["claude"]);
+async function askClaudeCode({ packet, workspace, model, resumeId }) {
+  const resolved = await resolveBin(process.env.LIVEPAGE_CLAUDE_BIN || "claude", ["claude"]);
   if (!resolved.ok) {
     throw new Error(
       `Claude Code not found (${resolved.path}). Install the claude CLI and keep it on PATH.`
@@ -179,8 +185,9 @@ function looksLikeJson(text) {
   return s.startsWith("{") || s.startsWith("[");
 }
 
-async function prepareWorkspace(cwd, packet) {
-  const dir = cwd || join(tmpdir(), `livepage-agent-${Date.now()}`);
+export async function prepareWorkspace(packet, resumeId = "") {
+  const existing = resumeId ? workspaces.get(resumeId) : "";
+  const dir = existing || join(tmpdir(), `livepage-agent-${randomUUID()}`);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, "packet.md"), packet, "utf8");
   return dir;

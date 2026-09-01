@@ -62,7 +62,7 @@ The HTTP dashboard seeds a trail. The real extension uses its own IndexedDB insi
 - includes only **new unique content blocks** (already-sent blocks are omitted)
 - includes the anchored quote and the thread so far
 
-Keep `npm run agent-host` running in this repo. The extension calls the Cursor Agent CLI (`agent`) or Claude Code CLI (`claude`) on this machine — no API keys — and writes the reply into the thread. If the host is down, the packet is still there to copy, and you can paste a reply back by hand.
+Keep `npm run agent-host` running in this repo. The host binds **loopback only**, requires a pairing token (the extension fetches it from `127.0.0.1`, not from web pages), and will not take binary paths or workspace folders from the browser. It shells out to the Cursor Agent CLI (`agent`) or Claude Code CLI (`claude`) already on this machine — no API keys — and writes the reply into the thread. If the host is down, the packet is still there to copy, and you can paste a reply back by hand.
 
 **Infinite-scroll pages snapshot themselves.** Feeds (or pages that keep growing) cannot keep stable anchors against a moving DOM, so LivePage snapshots the current view the moment you make a highlight there. There is no prompt and no banner — you highlight, and the snapshot happens underneath. Known hosts include X, Reddit, LinkedIn, Instagram, TikTok, YouTube, Facebook, and HN.
 
@@ -112,7 +112,8 @@ npm test
 ## Limits (honest)
 
 - This is an extension, not a research browser. It cannot rewrite navigation the way Horse Trails does.
-- Agent replies go through a **local host** (`npm run agent-host`) that shells out to CLIs already on this machine. There is no cloud LivePage API. If the host is down, you still have the packet and paste-back.
+- Agent replies go through a **local host** (`npm run agent-host`) that shells out to CLIs already on this machine. There is no cloud LivePage API. If the host is down, you still have the packet and paste-back. Optional: `LIVEPAGE_CURSOR_BIN` / `LIVEPAGE_CLAUDE_BIN` / `LIVEPAGE_AGENT_TOKEN`.
+- The extension runs on every http(s) page because the product is “think on the live web.” Host access is `http://*/*` and `https://*/*` for that, plus harvest/RSS fetches. Pages cannot load extension JS; only `overlay.css` is web-accessible.
 - Highlights use text-quote selectors. If a page rewrites the paragraph, the mark may not restore.
 - Chrome cannot `git push`. The vault dump is files; sync is your git (or Obsidian Git).
 - Very large `obsidian://` URIs can fail; the bound folder or downloaded markdown is the reliable copy.
