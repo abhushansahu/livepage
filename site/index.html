@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LivePage — think on the live web</title>
+    <meta
+      name="description"
+      content="A Chrome extension that turns any live webpage into a writable thinking surface: highlights, margin conversations, agent threads, a dashboard of waiting pages, and an Obsidian vault dump."
+    />
+    <link rel="icon" href="./favicon.png" />
+    <link rel="apple-touch-icon" href="./icon.png" />
+    <meta name="theme-color" content="#f4efe6" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <a class="brand" href="./">
+          <img src="./icon.png" alt="" width="36" height="36" />
+          <span class="mark">LivePage</span>
+        </a>
+        <nav class="links">
+          <a href="#install">Install</a>
+          <a href="#limits">Limits</a>
+          <a href="https://github.com/abhushansahu/livepage">GitHub</a>
+          <button class="ghost" type="button" id="theme" aria-label="Toggle theme">Dark</button>
+        </nav>
+      </header>
+
+      <div class="hero">
+        <div>
+          <p class="kicker">Chrome extension · 0.2.0</p>
+          <h1>The page stays live. Your thoughts stay on it.</h1>
+          <p class="lede">
+            Colored highlights, margin conversations, forked threads with Cursor or Claude Code, a dashboard of waiting pages, and an Obsidian dump — without clipping the web into a specimen.
+          </p>
+          <div class="cta">
+            <a class="btn" href="#install">Load it unpacked</a>
+            <a class="ghost" href="https://github.com/abhushansahu/livepage">Source on GitHub</a>
+          </div>
+          <p class="note">Not on the Chrome Web Store. Load the <code>extension/</code> folder into the Chrome you already use.</p>
+        </div>
+
+        <aside class="stage" aria-label="Preview of LivePage on an article">
+          <div class="stage-bar">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span>example.com/essay</span>
+          </div>
+          <div class="page">
+            <article class="article">
+              <p class="kicker">LivePage demo</p>
+              <h2>A selection on a live page is a decision site</h2>
+              <p>
+                Most tools treat the web as something to clip and file. That misses the moment that actually matters:
+                <mark class="lemon">you are in the habitat of the page, mid-thought</mark>, and you need a cheap way to couple, mark fog, or park a why.
+              </p>
+              <p>
+                Reader views strip the visual rhetoric that steered your attention. Annotation that only works after capture is annotation of a specimen,
+                <mark class="iris">not of the living animal</mark>.
+              </p>
+              <p>
+                A margin note is not a dead sticker.
+                <mark class="sky">It is an unfinished cognitive thread.</mark>
+                It can fork when you and an agent take different readings of the same span.
+              </p>
+              <p>
+                <mark class="moss">Dump the trail into a git vault when it is cool enough to own.</mark>
+                Until then, stay on the page.
+              </p>
+            </article>
+            <div class="gutter">
+              <div class="card">
+                <div class="stripe lemon"></div>
+                <strong>Key idea</strong>
+                Stay in the habitat. Do not leave to take notes elsewhere.
+              </div>
+              <div class="card">
+                <div class="stripe sky"></div>
+                <strong>Question · <span class="who">you</span></strong>
+                What would make returning here cheaper than opening a new tab?
+              </div>
+              <div class="card">
+                <div class="stripe moss"></div>
+                <strong>Action · <span class="who">agent</span></strong>
+                Bind the vault after the first real pass, not before.
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <section id="what">
+        <h2>What it does</h2>
+        <p class="sub">Built as a layer over the Chrome you already live in. Nothing is stored just because you opened a tab.</p>
+        <div class="grid">
+          <article class="tile">
+            <h3>On the page</h3>
+            <p>Select a span. Six highlight colors and a comment. Notes sit in a reserved right margin, aligned to the quote — Google Docs / Notion style, not a floating overlay.</p>
+            <div class="swatches">
+              <span class="swatch"><span class="chip" style="background:#E8CF62"></span>Key idea</span>
+              <span class="swatch"><span class="chip" style="background:#8FC38F"></span>Action</span>
+              <span class="swatch"><span class="chip" style="background:#87BFDF"></span>Question</span>
+              <span class="swatch"><span class="chip" style="background:#DF9EAE"></span>Concern</span>
+              <span class="swatch"><span class="chip" style="background:#AF9ADA"></span>Insight</span>
+              <span class="swatch"><span class="chip" style="background:#D2AE76"></span>Evidence</span>
+            </div>
+          </article>
+          <article class="tile">
+            <h3>Threads can fork</h3>
+            <p>Any message can branch. You and an agent can take different readings of the same span without overwriting each other. Ask Cursor or Claude Code; they get a parsed packet, not a second copy of the page.</p>
+          </article>
+          <article class="tile">
+            <h3>Scroll is the truth</h3>
+            <p>Reading status is how far you actually got, not a clip checkbox. Opening a page and leaving leaves no trace. LivePage writes a record the first time you keep it: highlight, comment, star, list, tag, or import.</p>
+          </article>
+          <article class="tile">
+            <h3>Dashboard of open loops</h3>
+            <p>Untouched Watch Later, X bookmarks, Reddit saves, RSS, half-read pages, and comments still waiting keep coming back. Hide rooms that get loud. Variant A is feed-first; B starts in lists.</p>
+          </article>
+          <article class="tile">
+            <h3>This Chrome’s sessions</h3>
+            <p>Harvest X bookmarks, Reddit saved, and YouTube Watch Later from the profile you already signed into. No second login. Feeds can be added from a page that advertises RSS, or from Settings.</p>
+          </article>
+          <article class="tile">
+            <h3>Obsidian / git vault</h3>
+            <p>Bind a vault folder. Write vault dumps ordinary markdown plus <code>catalog.json</code>. GitHub is the sync bus between machines. Chrome cannot push for you.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="install">
+        <h2>Install</h2>
+        <p class="sub">Load unpacked into the Chrome you already use. Homebrew cannot inject an extension into that profile.</p>
+        <ol class="steps">
+          <li>
+            <div>
+              Clone the repo, then open <code>chrome://extensions</code>, enable Developer mode, and <strong>Load unpacked</strong> → select the <code>extension/</code> folder. Pin LivePage.
+            </div>
+          </li>
+          <li>
+            <div>
+              Browse as usual. <kbd>Alt+H</kbd> highlights a selection, <kbd>Alt+M</kbd> comments, <kbd>Alt+Shift+L</kbd> opens the dashboard.
+            </div>
+          </li>
+          <li>
+            <div>
+              For in-thread agent replies, keep <code>npm run agent-host</code> running in the repo. The host binds loopback only and pairs with this extension — web pages cannot invoke it. No cloud API keys.
+            </div>
+          </li>
+        </ol>
+        <pre><code>git clone https://github.com/abhushansahu/livepage
+cd livepage
+# chrome://extensions → Load unpacked → extension/</code></pre>
+      </section>
+
+      <section>
+        <h2>Shortcuts</h2>
+        <table>
+          <thead>
+            <tr><th>Action</th><th>Default</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Highlight selection</td><td>Alt+H</td></tr>
+            <tr><td>Comment on selection</td><td>Alt+M</td></tr>
+            <tr><td>Open dashboard</td><td>Alt+Shift+L</td></tr>
+            <tr><td>Add to reading list</td><td>Alt+Shift+R</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="limits">
+        <h2>Limits, honestly</h2>
+        <div class="limits">
+          <p>This is an extension, not a research browser. It cannot rewrite navigation the way Horse Trails does.</p>
+          <p>Highlights use text-quote selectors. If a page rewrites the paragraph, the mark may not restore. Infinite-scroll feeds snapshot themselves when you highlight, so the anchor has somewhere to live.</p>
+          <p>The extension runs on every http(s) page because the product is “think on the live web.” Harvest uses the cookies of this Chrome profile. If you are not logged into X here, LivePage cannot invent that session.</p>
+          <p>Agent replies stay on your machine. If the host is down, you still have the packet and can paste a reply back by hand.</p>
+        </div>
+      </section>
+
+      <footer>
+        <span>LivePage 0.2.0 · local-first · unpacked Chrome extension</span>
+        <a href="https://github.com/abhushansahu/livepage">abhushansahu/livepage</a>
+      </footer>
+    </div>
+    <script>
+      const root = document.documentElement;
+      const btn = document.getElementById("theme");
+      const stored = localStorage.getItem("lp-theme");
+      const preferDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const initial = stored || (preferDark ? "dark" : "coffee");
+      apply(initial);
+      btn.addEventListener("click", () => {
+        apply(root.getAttribute("data-theme") === "dark" ? "coffee" : "dark");
+      });
+      function apply(theme) {
+        if (theme === "dark") root.setAttribute("data-theme", "dark");
+        else root.removeAttribute("data-theme");
+        btn.textContent = theme === "dark" ? "Light" : "Dark";
+        localStorage.setItem("lp-theme", theme);
+        document.querySelector('meta[name="theme-color"]').setAttribute("content", theme === "dark" ? "#17140f" : "#f4efe6");
+      }
+    </script>
+  </body>
+</html>

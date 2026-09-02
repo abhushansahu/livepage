@@ -2,7 +2,7 @@
 
 A Chrome extension that turns any live webpage into a writable thinking surface: colored highlights, margin conversations, forked threads with Cursor Agent or Claude Code, a dashboard of waiting pages, and an Obsidian vault dump.
 
-The philosophy lives in [`docs/intention.md`](docs/intention.md). This is **0.2.0**: a working Chrome extension you load unpacked, not a sketch.
+Site: [abhushansahu.github.io/livepage](https://abhushansahu.github.io/livepage/). The philosophy lives in [`docs/intention.md`](docs/intention.md). This is **0.2.0**: a working Chrome extension you load unpacked, not a sketch.
 
 ## Install
 
