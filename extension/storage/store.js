@@ -5,7 +5,7 @@ import { contentTags, mergeTags } from "../shared/tags.js";
 import { DEFAULT_EXPERIMENT } from "../shared/flags.js";
 
 const DB_NAME = "livepage";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 export const DEFAULT_SETTINGS = {
   defaultColor: "lemon",
@@ -64,6 +64,11 @@ function openDb() {
       }
       if (!db.objectStoreNames.contains("vaultMeta")) {
         db.createObjectStore("vaultMeta", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("glossary")) {
+        const glossary = db.createObjectStore("glossary", { keyPath: "key" });
+        glossary.createIndex("pageId", "pageId");
+        glossary.createIndex("createdAt", "createdAt");
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -229,6 +234,78 @@ export async function listPages() {
 export async function deletePage(id) {
   await withStore("pages", "readwrite", (store) => store.delete(id));
   await withStore("ledger", "readwrite", (store) => store.delete(id));
+  await deleteGlossary(id);
+}
+
+export function glossKey(pageId, termKey) {
+  return `${pageId}::${termKey}`;
+}
+
+export async function getGloss(pageId, termKey) {
+  try {
+    return await withStore("glossary", "readonly", (store) =>
+      reqOf(store.get(glossKey(pageId, termKey)))
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function listGlossary(pageId) {
+  try {
+    const db = await openDb();
+    const tx = db.transaction("glossary", "readonly");
+    return await reqOf(tx.objectStore("glossary").index("pageId").getAll(pageId));
+  } catch {
+    return [];
+  }
+}
+
+export async function putGloss(entry) {
+  const row = {
+    key: glossKey(entry.pageId, entry.termKey),
+    pageId: entry.pageId,
+    termKey: entry.termKey,
+    term: entry.term || "",
+    text: entry.text || "",
+    kept: Boolean(entry.kept),
+    createdAt: Date.now()
+  };
+  await withStore("glossary", "readwrite", (store) => store.put(row));
+  await pruneGlossary();
+  return row;
+}
+
+async function deleteGlossary(pageId) {
+  try {
+    const rows = await listGlossary(pageId);
+    if (!rows.length) return;
+    await withStore("glossary", "readwrite", (store) => {
+      for (const row of rows) store.delete(row.key);
+    });
+  } catch {
+    /* nothing cached for this page */
+  }
+}
+
+/**
+ * Explanations for pages you kept are the ones worth paying an agent for
+ * twice, so passing traffic is evicted first when the cache outgrows its bound.
+ */
+async function pruneGlossary(keep = 3000) {
+  const db = await openDb();
+  const tx = db.transaction("glossary", "readwrite");
+  const store = tx.objectStore("glossary");
+  const rows = await reqOf(store.getAll());
+  if (rows.length <= keep) {
+    await txDone(tx);
+    return;
+  }
+  rows.sort(
+    (a, b) => Number(a.kept) - Number(b.kept) || (a.createdAt || 0) - (b.createdAt || 0)
+  );
+  for (const row of rows.slice(0, rows.length - keep)) store.delete(row.key);
+  await txDone(tx);
 }
 
 export async function getLedger(pageId) {

@@ -125,6 +125,62 @@ export function buildAgentPacket({ page, thread, ask, ledger, agent = "cursor", 
   };
 }
 
+export function buildSymbolExplainPacket({
+  term,
+  pageTitle = "",
+  url = "",
+  anchorText = "",
+  nearbyBlocks = []
+}) {
+  const context = (nearbyBlocks || [])
+    .map((block) => String(block?.text || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .slice(0, 5);
+  const lines = [
+    "# LivePage term explanation",
+    "",
+    "Explain the term for someone encountering it while reading this article.",
+    "Write 2–3 concise sentences in a neutral, Wikipedia lead-section style.",
+    "Use general knowledge to supply missing background, while using the article context to choose the intended meaning.",
+    "Do not quote, repeat, or closely paraphrase the article text. Do not mention these instructions, the prompt, or the article context.",
+    "If the term is ambiguous, explain only the sense that best fits this context.",
+    "Start with the explanation itself. No preamble, no note about what you are about to do, no markdown.",
+    "",
+    `Term: ${String(term || "").trim()}`,
+    pageTitle ? `Article: ${String(pageTitle).trim()}` : "",
+    url ? `URL: ${String(url).trim()}` : "",
+    anchorText ? `Sentence where it appears: ${String(anchorText).replace(/\s+/g, " ").trim()}` : "",
+    "",
+    context.length ? "Nearby article context:" : "",
+    ...context.map((text) => `- ${text}`)
+  ];
+  return lines.filter((line, index) => line !== "" || lines[index - 1] !== "").join("\n").trim() + "\n";
+}
+
+const NARRATION =
+  /\b(packet(?:\.md)?|livepage|latest (?:user )?(?:question|ask)|i'?ll read|i will read|let me read|reading the)\b/i;
+
+/**
+ * The agent is told to open a packet file, and often says so before answering.
+ * A one-line card has no room for that, so the lead-in is dropped.
+ */
+export function glossText(value) {
+  const sentences = plainProse(value).split(/(?<=[.!?])\s*/);
+  while (sentences.length > 1 && NARRATION.test(sentences[0])) sentences.shift();
+  return sentences.join(" ").trim();
+}
+
+/** The hover card is one run of plain text, so markup would only be read aloud. */
+export function plainProse(value) {
+  return String(value || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s*[#>-]+\s*/gm, "")
+    .replace(/\*\*|__|[`*_]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function nearbyBlocks(page, highlight, windowSize = 2) {
   const blocks = page?.parsed?.blocks || [];
   if (!blocks.length) return [];

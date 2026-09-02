@@ -17,10 +17,18 @@ import {
   upsertPageFromVisit,
   getMind,
   saveMind,
+  getGloss,
+  listGlossary,
+  putGloss,
   recordEvent,
   listEvents
 } from "../storage/store.js";
-import { buildAgentPacket, nextLedger } from "../agent/packet.js";
+import {
+  buildAgentPacket,
+  buildSymbolExplainPacket,
+  glossText,
+  nextLedger
+} from "../agent/packet.js";
 import { pairAgentHost, pingAgentHost, runAgentAsk } from "../agent/host-client.js";
 import { obsidianNewUri, pageToMarkdown, suggestedFilename } from "../export/obsidian.js";
 import { canonicalizeUrl, pageIdFromUrl } from "../shared/url.js";
@@ -96,6 +104,10 @@ export async function handleMessage(message) {
       return makePacket(payload);
     case "ASK_AGENT":
       return askAgentLive(payload);
+    case "EXPLAIN_SYMBOL":
+      return explainSymbol(payload);
+    case "GET_GLOSSARY":
+      return readGlossary(payload);
     case "PING_AGENT_HOST":
       return pingAgentHostStatus();
     case "RESET_LEDGER":
@@ -582,6 +594,59 @@ async function askAgentLive(payload) {
     }
     throw error;
   }
+}
+
+/**
+ * An explanation costs a full agent turn, so it is written down against the
+ * page it was asked on and never bought twice.
+ */
+async function explainSymbol(payload) {
+  const term = String(payload.term || "").trim();
+  const termKey = String(payload.termKey || term).trim().toLocaleLowerCase();
+  if (!term || !termKey) throw new Error("Term required");
+  const pageId = glossaryPageId(payload);
+  const cached = await getGloss(pageId, termKey);
+  if (cached?.text) return { text: cached.text, cached: true };
+
+  const settings = await ensureAgentHostPaired();
+  const agent = settings.agentDefault || "cursor";
+  const model =
+    (agent === "claude-code" ? settings.claudeCodeModel : settings.cursorModel) ||
+    "";
+  const packet = buildSymbolExplainPacket({
+    term: term.slice(0, 80),
+    pageTitle: String(payload.pageTitle || "").slice(0, 300),
+    url: String(payload.url || "").slice(0, 2000),
+    anchorText: String(payload.anchorText || "").slice(0, 800),
+    nearbyBlocks: (payload.nearbyBlocks || []).slice(0, 5)
+  });
+  const result = await runAgentAsk({ settings, agent, model, packet });
+  const text = glossText(cleanAgentReply(typeof result === "string" ? result : result.text));
+  if (!text) throw new Error("The agent returned nothing to explain that term with.");
+  await putGloss({
+    pageId,
+    termKey,
+    term,
+    text,
+    kept: Boolean(await getPage(pageId))
+  });
+  return { text, cached: false, agent, model };
+}
+
+async function readGlossary(payload) {
+  const rows = await listGlossary(glossaryPageId(payload));
+  const entries = {};
+  for (const row of rows) {
+    if (row?.termKey && row.text) entries[row.termKey] = row.text;
+  }
+  return { entries };
+}
+
+function glossaryPageId(payload) {
+  if (payload.pageId) return payload.pageId;
+  const url = String(payload.url || "").trim();
+  if (!url) throw new Error("pageId or url required");
+  return pageIdFromUrl(canonicalizeUrl(url));
 }
 
 function cleanAgentReply(value) {

@@ -114,7 +114,12 @@ async function boot() {
   }
   if (flags.articleSymbols) {
     try {
-      enableArticleSymbols(document, parsed);
+      enableArticleSymbols(document, parsed, {
+        call,
+        pageTitle: document.title,
+        url: location.href,
+        prefetch: Boolean(page)
+      });
     } catch (error) {
       console.warn("LivePage article symbols failed", error);
     }

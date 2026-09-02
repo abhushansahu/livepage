@@ -74,7 +74,15 @@ html.lp-symbols-peek .lp-article-symbol {
   text-transform: uppercase;
   color: #3f6b52;
 }
+.lp-symbol-card.lp-symbol-waiting em {
+  animation: lp-symbol-blink 1.3s ease-in-out infinite;
+}
 .lp-symbol-card span { color: #494139; }
+
+@keyframes lp-symbol-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
 .lp-symbol-card small { color: #756b61; font-size: 11px; }
 
 html.lp-theme-dark .lp-symbol-card {

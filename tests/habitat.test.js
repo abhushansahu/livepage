@@ -18,7 +18,8 @@ import { buildVaultBundle } from "../extension/export/vault-format.js";
 import { pageToMarkdown } from "../extension/export/obsidian.js";
 import { feedItems, reasonFor } from "../extension/shared/feed.js";
 import { hasOpened } from "../extension/shared/progress.js";
-import { extractArticleSymbols } from "../extension/content/article-symbols.js";
+import { extractArticleSymbols, shouldExplainWithAi } from "../extension/content/article-symbols.js";
+import { buildSymbolExplainPacket, glossText, plainProse } from "../extension/agent/packet.js";
 
 test("tags normalize, merge, and attach derived source/comment labels", () => {
   assert.equal(normalizeTag("#Design Systems"), "design-systems");
@@ -203,6 +204,69 @@ test("article symbols pick up jargon and carry supporting text from the page", (
   assert.match(byTerm.get("control plane").detail, /watches the work as it unfolds/);
   assert.equal(byTerm.get("control plane").count, 3);
   assert.equal(byTerm.get("control plane").anchorBlockId, "b3");
+});
+
+test("only terms the article never explains are worth an agent turn", () => {
+  const symbols = extractArticleSymbols([
+    {
+      id: "b1",
+      text: "Real model independence means learning how each model works best before you ship anything."
+    },
+    {
+      id: "b2",
+      text: "That is why the control plane watches the work as it unfolds, including whether it is making progress."
+    },
+    { id: "b3", text: "The control plane also adapts the system around the model it drives." },
+    { id: "b4", text: "A large language model (LLM) judge can rank a hollow build near the top." },
+    { id: "b5", text: "We inspect the builds whenever the control plane and the LLM disagree." }
+  ]);
+  const byTerm = new Map(symbols.map((symbol) => [symbol.term.toLowerCase(), symbol]));
+
+  // The article defines these itself, so its own words are the honest answer.
+  assert.equal(shouldExplainWithAi(byTerm.get("model independence")), false);
+  assert.equal(shouldExplainWithAi(byTerm.get("llm")), false);
+  // Leaned on three times, never explained: this is the one that repeats today.
+  assert.equal(shouldExplainWithAi(byTerm.get("control plane")), true);
+
+  assert.equal(shouldExplainWithAi(null), false);
+  assert.equal(shouldExplainWithAi({ kind: "context", term: "own" }), false);
+  assert.equal(shouldExplainWithAi({ kind: "context", term: "the very same thing" }), false);
+});
+
+test("agent prose is flattened and stripped of its lead-in before it reaches the card", () => {
+  assert.equal(
+    plainProse("**Control plane** is the `management` layer.\n\n- It [coordinates](https://x) work."),
+    "Control plane is the management layer. It coordinates work."
+  );
+  // Both narration shapes the Cursor CLI produced against a real host.
+  assert.equal(
+    glossText("I'll read the LivePage packet and answer only the latest question from it.A control plane is the management layer."),
+    "A control plane is the management layer."
+  );
+  assert.equal(
+    glossText("Reading `packet.md` to find the latest user question.\nA control plane coordinates work."),
+    "A control plane coordinates work."
+  );
+  // An explanation that merely mentions a page is not narration.
+  assert.equal(glossText("A landing page is the first screen a visitor sees."), "A landing page is the first screen a visitor sees.");
+});
+
+test("symbol explanation packet asks for contextual knowledge without repeating the article", () => {
+  const packet = buildSymbolExplainPacket({
+    term: "control plane",
+    pageTitle: "Adaptive agents",
+    url: "https://example.com/agents",
+    anchorText: "The control plane watches the work as it unfolds.",
+    nearbyBlocks: [
+      { text: "Agents use tools to complete long-running tasks." },
+      { text: "The control plane watches the work as it unfolds." }
+    ]
+  });
+  assert.match(packet, /Term: control plane/);
+  assert.match(packet, /Wikipedia lead-section style/);
+  assert.match(packet, /general knowledge to supply missing background/);
+  assert.match(packet, /Do not quote, repeat, or closely paraphrase/);
+  assert.match(packet, /Agents use tools/);
 });
 
 test("experiment C is compact and still keeps For you", () => {

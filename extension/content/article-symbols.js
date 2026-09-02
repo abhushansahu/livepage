@@ -89,12 +89,15 @@ const QUALIFIERS = new Set(
 
 const MIN_PHRASE_HITS = 2;
 const MIN_WORD_HITS = 4;
+const PREFETCH_LIMIT = 4;
+const glosses = new Map();
+const failures = new Map();
 
 /**
  * Finds the terms an article treats as jargon: acronyms it expands, phrases it
  * quotes or explicitly defines, and multi-word or uncommon terms it leans on
- * repeatedly. Every symbol carries supporting text taken from the article
- * itself — nothing is invented, and a term with nothing to say is dropped.
+ * repeatedly. Article text supplies instant fallback context; the hover card
+ * can replace it with a contextual AI explanation.
  */
 export function extractArticleSymbols(blocks = [], limit = 32) {
   const body = (blocks || []).filter((block) => block?.text && !block.heading);
@@ -138,7 +141,7 @@ export function extractArticleSymbols(blocks = [], limit = 32) {
     }));
 }
 
-export function enableArticleSymbols(doc, parsed) {
+export function enableArticleSymbols(doc, parsed, options = {}) {
   const symbols = extractArticleSymbols(parsed?.blocks || []);
   const root = symbols.length ? pickRoot(doc) : null;
   if (!root) return { count: 0, destroy() {} };
@@ -175,20 +178,34 @@ export function enableArticleSymbols(doc, parsed) {
   doc.documentElement.append(card);
   let hideTimer = null;
   let origin = null;
+  let activeKey = "";
 
-  const show = (span) => {
-    const symbol = symbolByKey.get(span.dataset.lpSymbol);
-    if (!symbol) return;
-    clearTimeout(hideTimer);
+  const render = (symbol, span) => {
+    const gloss = glosses.get(glossKey(options.url, symbol.key));
     card.querySelector(".lp-symbol-name").textContent = symbol.term;
-    card.querySelector(".lp-symbol-kind").textContent = KIND_LABEL[symbol.kind];
-    card.querySelector(".lp-symbol-detail").textContent = symbol.detail;
+    card.querySelector(".lp-symbol-kind").textContent = statusLabel(symbol, gloss);
+    card.classList.toggle("lp-symbol-waiting", gloss?.status === "pending");
+    card.querySelector(".lp-symbol-detail").textContent = gloss?.text || symbol.detail;
     card.querySelector(".lp-symbol-hint").textContent =
       span.dataset.lpAnchor === "true"
         ? `${symbol.count} mentions · you are at the source`
         : `${symbol.count} mentions · ⌘/Ctrl-click to jump, again to come back`;
     card.hidden = false;
     positionCard(card, span.getBoundingClientRect());
+  };
+
+  const show = (span) => {
+    const symbol = symbolByKey.get(span.dataset.lpSymbol);
+    if (!symbol) return;
+    clearTimeout(hideTimer);
+    activeKey = symbol.key;
+    // The answer is worth waiting for even once the card is gone: it is cached
+    // against the page, so the hover that follows is instant.
+    const pending = loadGloss(symbol, parsed, options);
+    render(symbol, span);
+    pending?.then(() => {
+      if (activeKey === symbol.key && span.isConnected) render(symbol, span);
+    });
   };
 
   const scheduleHide = () => {
@@ -226,6 +243,8 @@ export function enableArticleSymbols(doc, parsed) {
   };
   const onKeyUp = () => doc.documentElement.classList.remove("lp-symbols-peek");
 
+  warmGlosses(options).then(() => prefetchGlosses(symbols, parsed, options));
+
   card.addEventListener("pointerenter", () => clearTimeout(hideTimer));
   card.addEventListener("pointerleave", scheduleHide);
   root.addEventListener("pointerover", onPointerOver);
@@ -261,8 +280,111 @@ const DEFINED =
 const KIND_LABEL = {
   defined: "Defined in this article",
   acronym: "Stands for",
-  context: "First explained here"
+  context: "Context from this article"
 };
+
+/**
+ * A term the article itself spells out already has a real explanation on the
+ * page, so only the ones it leans on without ever explaining are worth an
+ * agent turn.
+ */
+export function shouldExplainWithAi(symbol) {
+  if (!symbol || symbol.kind !== "context") return false;
+  const term = String(symbol.term || "").trim();
+  if (term.length < 4) return false;
+  const words = term.split(/\s+/);
+  if (words.length > 4) return false;
+  return !words.every((word) => {
+    const lower = singular(word.toLowerCase());
+    return COMMON.has(lower) || STOP.has(lower) || QUALIFIERS.has(lower);
+  });
+}
+
+function statusLabel(symbol, gloss) {
+  if (gloss?.text) return "Explanation";
+  if (gloss?.status === "pending") return "Explaining…";
+  if (gloss?.status === "error") return `${KIND_LABEL[symbol.kind]} · explanation unavailable`;
+  return KIND_LABEL[symbol.kind];
+}
+
+function loadGloss(symbol, parsed, options) {
+  if (typeof options.call !== "function" || !shouldExplainWithAi(symbol)) return null;
+  // One dead agent host should cost a couple of slow hovers, not one per term.
+  if ((failures.get(String(options.url)) || 0) >= 2) return null;
+  const key = glossKey(options.url, symbol.key);
+  const existing = glosses.get(key);
+  if (existing?.promise) return existing.promise;
+  if (existing?.text || existing?.status === "error") return null;
+
+  const entry = { status: "pending", text: "" };
+  const promise = options
+    .call("EXPLAIN_SYMBOL", {
+      term: symbol.term,
+      termKey: symbol.key,
+      pageTitle: options.pageTitle || "",
+      url: options.url || "",
+      anchorText: symbol.anchorText,
+      nearbyBlocks: contextBlocks(parsed?.blocks || [], symbol.anchorBlockId)
+    })
+    .then((result) => {
+      const text = String(result?.text || "").replace(/\s+/g, " ").trim();
+      glosses.set(key, text ? { status: "done", text } : { status: "error", text: "" });
+      return text;
+    })
+    .catch((error) => {
+      console.warn("LivePage could not explain", symbol.term, error);
+      failures.set(String(options.url), (failures.get(String(options.url)) || 0) + 1);
+      glosses.set(key, { status: "error", text: "" });
+      return "";
+    });
+  entry.promise = promise;
+  glosses.set(key, entry);
+  return promise;
+}
+
+/**
+ * Explanations already paid for on an earlier visit come back before the first
+ * hover, so a page you kept never asks for the same term twice.
+ */
+async function warmGlosses(options) {
+  if (typeof options.call !== "function") return;
+  try {
+    const { entries } = (await options.call("GET_GLOSSARY", { url: options.url })) || {};
+    for (const [termKey, text] of Object.entries(entries || {})) {
+      if (text) glosses.set(glossKey(options.url, termKey), { status: "done", text });
+    }
+  } catch (error) {
+    console.warn("LivePage glossary unavailable", error);
+  }
+}
+
+/**
+ * Pages you kept are read closely enough to be worth explaining ahead of the
+ * hover; passing traffic only pays for the terms you actually stop on.
+ */
+async function prefetchGlosses(symbols, parsed, options) {
+  if (!options.prefetch) return;
+  const queue = symbols
+    .filter((symbol) => shouldExplainWithAi(symbol))
+    .filter((symbol) => !glosses.get(glossKey(options.url, symbol.key))?.text)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, PREFETCH_LIMIT);
+  for (const symbol of queue) {
+    const text = await loadGloss(symbol, parsed, options);
+    if (!text) return;
+  }
+}
+
+function glossKey(url, termKey) {
+  return `${String(url || location.href)}::${termKey}`;
+}
+
+function contextBlocks(blocks, anchorBlockId, windowSize = 2) {
+  const body = blocks.filter((block) => block?.text && !block.heading);
+  const index = body.findIndex((block) => block.id === anchorBlockId);
+  if (index < 0) return body.slice(0, 3);
+  return body.slice(Math.max(0, index - windowSize), index + windowSize + 1);
+}
 
 function rank(symbol) {
   if (symbol.kind === "acronym") return 3;
