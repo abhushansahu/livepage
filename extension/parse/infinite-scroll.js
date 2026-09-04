@@ -30,6 +30,34 @@ export function hostLooksInfinite(url) {
   return KNOWN_HOSTS.some((known) => host === known || host.endsWith(`.${known}`));
 }
 
+/**
+ * Long-form documents that happen to live on a feed host.
+ *
+ * x.com is a feed, but an X article is a finished piece with a stable URL and
+ * a body that does not move. Judging it by hostname alone snapshots it like a
+ * timeline and gives up on re-anchoring early, which is exactly wrong for the
+ * one kind of page on that host worth reading slowly.
+ *
+ * Single tweets are deliberately not here: /status/ is short, threaded, and
+ * grows replies underneath, so the feed treatment is right for it.
+ */
+const STABLE_PATHS = [{ hosts: ["x.com", "twitter.com"], pattern: /^\/[^/]+\/article\/\d+/ }];
+
+export function looksLikeStableDocument(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.replace(/^www\./i, "");
+  return STABLE_PATHS.some(
+    (rule) =>
+      rule.hosts.some((known) => host === known || host.endsWith(`.${known}`)) &&
+      rule.pattern.test(parsed.pathname)
+  );
+}
+
 export function domLooksInfinite(doc = document) {
   return HINT_SELECTORS.some((selector) => doc.querySelector(selector));
 }
@@ -92,6 +120,9 @@ export function createInfiniteScrollDetector(options = {}) {
 }
 
 export function evaluateInfiniteScroll(url, doc, extras = {}) {
+  if (looksLikeStableDocument(url)) {
+    return { infinite: false, reason: null };
+  }
   if (hostLooksInfinite(url)) {
     return { infinite: true, reason: "This looks like a feed that keeps growing." };
   }

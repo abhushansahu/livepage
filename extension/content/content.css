@@ -117,3 +117,18 @@ mark.lp-hl.is-unsure {
   text-decoration: underline dashed currentColor 1px;
   text-underline-offset: 3px;
 }
+
+/* A passage an agent suggested, not one you marked.
+   Drawn as an underline rather than a fill: it points at the sentence without
+   claiming the page the way your own highlights do, and it stays legible when
+   it sits next to one. */
+mark.lp-hl.lp-mark-ai {
+  background: none;
+  cursor: pointer;
+  box-shadow: inset 0 -0.42em 0 color-mix(in srgb, var(--lp-mark, #e8cf62) 26%, transparent);
+  border-bottom: 1px dotted color-mix(in srgb, var(--lp-mark, #e8cf62) 90%, #1c1712);
+}
+
+mark.lp-hl.lp-mark-ai:hover {
+  box-shadow: inset 0 -0.42em 0 color-mix(in srgb, var(--lp-mark, #e8cf62) 46%, transparent);
+}

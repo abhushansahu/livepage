@@ -13,6 +13,9 @@ import {
   saveSettings,
   searchPages,
   searchHighlights,
+  getMarkup,
+  putMarkup,
+  deleteMarkup,
   unreadPages,
   upsertImportedPages,
   upsertPageFromVisit,
@@ -31,6 +34,12 @@ import {
   nextLedger
 } from "../agent/packet.js";
 import { pairAgentHost, pingAgentHost, runAgentAsk } from "../agent/host-client.js";
+import {
+  anchorMarkup,
+  articleIsWorthMarking,
+  buildMarkupPacket,
+  parseMarkupReply
+} from "../agent/markup.js";
 import { obsidianNewUri, pageToMarkdown, suggestedFilename } from "../export/obsidian.js";
 import { canonicalizeUrl, pageIdFromUrl } from "../shared/url.js";
 import { mergeAnchorVerdict } from "../shared/anchors.js";
@@ -110,6 +119,14 @@ export async function handleMessage(message) {
       return makePacket(payload);
     case "ASK_AGENT":
       return askAgentLive(payload);
+    case "MARKUP_PAGE":
+      return markupPage(payload);
+    case "GET_MARKUP":
+      return readMarkup(payload);
+    case "CLEAR_MARKUP":
+      return { cleared: await deleteMarkup(glossaryPageId(payload)) };
+    case "KEEP_MARK":
+      return keepMark(payload);
     case "EXPLAIN_SYMBOL":
       return explainSymbol(payload);
     case "GET_GLOSSARY":
@@ -647,6 +664,88 @@ async function askAgentLive(payload) {
  * An explanation costs a full agent turn, so it is written down against the
  * page it was asked on and never bought twice.
  */
+/**
+ * Reads an article ahead of you and marks the few passages worth stopping at.
+ *
+ * Cached against the page and its content hash, so it runs once per version of
+ * an article however often you come back. Nothing here creates a page record:
+ * a machine reading a page on your behalf is still not you keeping it.
+ */
+async function markupPage(payload) {
+  const pageId = glossaryPageId(payload);
+  const parsed = payload.parsed || {};
+  const contentHash = parsed.contentHash || "";
+
+  const cached = await getMarkup(pageId, contentHash);
+  if (cached) return { ...cached, cached: true };
+  if (!articleIsWorthMarking(parsed)) return { pageId, contentHash, marks: [], skipped: "short" };
+
+  const settings = await ensureAgentHostPaired();
+  const agent = settings.agentDefault || "cursor";
+  const model = (agent === "claude-code" ? settings.claudeCodeModel : settings.cursorModel) || "";
+  const packet = buildMarkupPacket({
+    pageTitle: String(payload.pageTitle || "").slice(0, 300),
+    url: String(payload.url || "").slice(0, 2000),
+    blocks: parsed.blocks || []
+  });
+
+  const result = await runAgentAsk({ settings, agent, model, packet });
+  const reply = cleanAgentReply(typeof result === "string" ? result : result.text);
+  // Anchoring is the trust boundary: a quote the article does not contain is
+  // dropped here rather than painted somewhere approximate.
+  const marks = anchorMarkup(parseMarkupReply(reply), parsed.blocks || []).map((mark) => ({
+    ...mark,
+    id: uid("am")
+  }));
+
+  return {
+    ...(await putMarkup({ pageId, contentHash, url: payload.url || "", agent, marks })),
+    cached: false
+  };
+}
+
+async function readMarkup(payload) {
+  const pageId = glossaryPageId(payload);
+  const row = await getMarkup(pageId, payload.contentHash || "");
+  return row || { pageId, contentHash: payload.contentHash || "", marks: [] };
+}
+
+/**
+ * Turns one of the machine's marks into your own highlight.
+ *
+ * This is the moment the page becomes kept — engaging with a suggestion is an
+ * act of keeping, where merely having it suggested to you was not. The mark
+ * leaves the markup set so the same passage is not shown twice.
+ */
+async function keepMark(payload) {
+  const mark = payload.mark || {};
+  if (!mark.text) throw new Error("Nothing to keep");
+  if (!payload.url) throw new Error("URL required");
+  // The record may not exist: nothing was written while the page was merely
+  // read, or merely marked up. Keeping one of the marks is what creates it.
+  const owner = await ensurePage({ url: payload.url, title: payload.pageTitle, visited: true });
+  const result = await addHighlight({
+    pageId: owner.id,
+    highlight: {
+      color: mark.color || "lemon",
+      text: mark.text,
+      prefix: mark.prefix || "",
+      suffix: mark.suffix || ""
+    },
+    comment: mark.why ? `Marked by ${payload.agent || "an agent"}: ${mark.why}` : ""
+  });
+
+  const pageId = result.page.id;
+  const row = await getMarkup(pageId, payload.contentHash || "");
+  if (row) {
+    await putMarkup({
+      ...row,
+      marks: (row.marks || []).filter((item) => item.id !== mark.id)
+    });
+  }
+  return result;
+}
+
 async function explainSymbol(payload) {
   const term = String(payload.term || "").trim();
   const termKey = String(payload.termKey || term).trim().toLocaleLowerCase();

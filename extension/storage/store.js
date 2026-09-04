@@ -6,7 +6,7 @@ import { highlightMatches, pageMatchesQuery } from "../shared/search.js";
 import { DEFAULT_EXPERIMENT } from "../shared/flags.js";
 
 const DB_NAME = "livepage";
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 export const DEFAULT_SETTINGS = {
   defaultColor: "lemon",
@@ -65,6 +65,11 @@ function openDb() {
       }
       if (!db.objectStoreNames.contains("vaultMeta")) {
         db.createObjectStore("vaultMeta", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("markup")) {
+        const markup = db.createObjectStore("markup", { keyPath: "key" });
+        markup.createIndex("pageId", "pageId");
+        markup.createIndex("at", "at");
       }
       if (!db.objectStoreNames.contains("glossary")) {
         const glossary = db.createObjectStore("glossary", { keyPath: "key" });
@@ -530,6 +535,70 @@ async function trimEvents(keep = 400) {
   rows.sort((a, b) => (a.at || 0) - (b.at || 0));
   for (const row of rows.slice(0, rows.length - keep)) store.delete(row.id);
   await txDone(tx);
+}
+
+/**
+ * What an agent marked up on a page, kept away from the page record.
+ *
+ * Reading a page is not keeping it, and a machine reading it on your behalf
+ * is not either — writing these into `pages` would give every article you
+ * opened a record, bury the trail, and make "never opened" meaningless. So
+ * markup lives here until you actually engage with a mark, at which point it
+ * becomes an ordinary highlight on an ordinary page record.
+ *
+ * Keyed by page and content hash together, so a rewritten article is marked
+ * up again rather than showing marks for text it no longer has.
+ */
+export function markupKey(pageId, contentHash) {
+  return `${pageId}::${contentHash || "none"}`;
+}
+
+export async function getMarkup(pageId, contentHash) {
+  try {
+    return await withStore("markup", "readonly", (store) =>
+      reqOf(store.get(markupKey(pageId, contentHash)))
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function putMarkup(row) {
+  const next = { ...row, key: markupKey(row.pageId, row.contentHash), at: row.at || Date.now() };
+  await withStore("markup", "readwrite", (store) => {
+    store.put(next);
+  });
+  await pruneMarkup();
+  return next;
+}
+
+export async function deleteMarkup(pageId) {
+  try {
+    const rows = await withStore("markup", "readonly", (store) =>
+      reqOf(store.index("pageId").getAll(pageId))
+    );
+    await withStore("markup", "readwrite", (store) => {
+      for (const row of rows) store.delete(row.key);
+    });
+    return rows.length;
+  } catch {
+    return 0;
+  }
+}
+
+/** Marks are a convenience, not a record. Old ones are not worth the space. */
+async function pruneMarkup(keep = 400) {
+  try {
+    const rows = await withStore("markup", "readonly", (store) => reqOf(store.getAll()));
+    if (rows.length <= keep) return;
+    rows.sort((a, b) => (a.at || 0) - (b.at || 0));
+    const drop = rows.slice(0, rows.length - keep);
+    await withStore("markup", "readwrite", (store) => {
+      for (const row of drop) store.delete(row.key);
+    });
+  } catch {
+    /* pruning is best effort */
+  }
 }
 
 export async function getVaultMeta() {

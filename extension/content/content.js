@@ -13,6 +13,7 @@ import {
   selectionIsSafe
 } from "./highlights.js";
 import { createReanchorLoop, watchUrl } from "./reanchor.js";
+import { clearMarks, nextMark, paintMarks, scrollToMark, unwrapMark } from "./markup-marks.js";
 import { Overlay } from "./overlay.js";
 import { toolbarAction, rangeRect } from "./selection.js";
 import { COLOR_IDS } from "../shared/colors.js";
@@ -46,6 +47,8 @@ let reattaching = null;
 let symbols = null;
 let symbolLoop = null;
 let symbolsFlag = false;
+let markupFlag = false;
+let markup = { marks: [], contentHash: "" };
 
 overlay.handlers = {
   onOpenHighlight: (id) => openOrCreateThread(id),
@@ -77,6 +80,8 @@ overlay.handlers = {
 onBroadcast((message) => {
   if (message.kind === "CONTEXT_ACTION") handleContext(message.action);
   if (message.kind === "TOAST" && message.text) overlay.toast(message.text);
+  if (message.kind === "CLEAR_MARKUP") clearAllMarks();
+  if (message.kind === "JUMP_MARK") jumpMark(message.direction || 1);
   if (message.kind === "SETTINGS_CHANGED" && message.settings) {
     settings = message.settings;
     overlay.setPreferences(settings);
@@ -98,6 +103,7 @@ async function boot() {
   const { flags } = resolveFlags(settings);
   anchorFlag = flags.orphanRecovery !== false;
   symbolsFlag = Boolean(flags.articleSymbols);
+  markupFlag = flags.autoMarkup !== false;
 
   try {
     await overlay.ready;
@@ -132,6 +138,7 @@ async function boot() {
     console.warn("LivePage visit failed", error);
   }
   if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
+  if (markupFlag) runMarkup(parsed);
   if (flags.rss) offerRssIfAny();
 }
 
@@ -158,7 +165,14 @@ function watchInfinite() {
  */
 function anchorNow() {
   if (!page) return;
+  // Your highlights are anchored on a page with no suggestions painted on it.
+  // wrapRange refuses to nest inside an existing mark, so a suggestion sitting
+  // over the same words would stop your own highlight from restoring and send
+  // it to the orphan dock. Suggestions go back on afterwards, around yours.
+  const painted = markup.marks.length;
+  if (painted) clearMarks(document, markup.marks);
   anchors = anchorHighlights(document.body, page.highlights, { verdicts: anchors });
+  if (painted) paintMarks(document.body, markup.marks);
   if (anchorFlag) {
     overlay.setAnchors(anchors);
     queueAnchorReport();
@@ -215,6 +229,82 @@ async function flushAnchorReport() {
   } catch (error) {
     console.warn("LivePage anchor report failed", error);
   }
+}
+
+/**
+ * Has an agent read the article ahead of you and mark what is worth stopping
+ * at, so the rest can be skimmed.
+ *
+ * Never on a feed — a timeline has no argument to mark — and never on a page
+ * too short to skim. The answer is cached against the article's content, so
+ * this costs one call per version of a piece however often you return to it.
+ */
+async function runMarkup(parsed) {
+  if (infinite.infinite) return;
+  clearMarks(document, markup.marks);
+  markup = { marks: [], contentHash: parsed?.contentHash || "" };
+  try {
+    const row = await call("MARKUP_PAGE", {
+      url: location.href,
+      pageTitle: document.title,
+      parsed
+    });
+    markup = { marks: row?.marks || [], contentHash: row?.contentHash || "", agent: row?.agent };
+    if (!markup.marks.length) return;
+    paintMarks(document.body, markup.marks);
+    if (markup.marks.length) {
+      const n = markup.marks.length;
+      overlay.toast(`${n} passage${n === 1 ? "" : "s"} marked · Alt+J to move between them`);
+    }
+  } catch (error) {
+    // The host being down is the ordinary case, not an incident. Stay quiet.
+    console.warn("LivePage markup unavailable", error);
+  }
+}
+
+/** Moves the reader between the marks. The whole point of making them. */
+function jumpMark(direction) {
+  if (!markup.marks.length) return;
+  const target = nextMark(markup.marks, direction);
+  if (target) scrollToMark(target.id);
+}
+
+/**
+ * Turns one of the machine's marks into a highlight of your own. Engaging
+ * with a suggestion is what makes the page worth keeping.
+ */
+async function keepMark(markId) {
+  const mark = markup.marks.find((item) => item.id === markId);
+  if (!mark) return;
+  try {
+    const result = await call("KEEP_MARK", {
+      url: location.href,
+      pageTitle: document.title,
+      contentHash: markup.contentHash,
+      agent: markup.agent,
+      mark
+    });
+    markup.marks = markup.marks.filter((item) => item.id !== markId);
+    unwrapMark(document, markId);
+    page = result.page;
+    anchorNow();
+    overlay.setPage(page);
+    overlay.toast("Kept as your highlight.");
+  } catch (error) {
+    overlay.toast("Could not keep that one.");
+    console.warn("LivePage keep mark", error);
+  }
+}
+
+async function clearAllMarks() {
+  clearMarks(document, markup.marks);
+  markup = { marks: [], contentHash: markup.contentHash };
+  try {
+    await call("CLEAR_MARKUP", { url: location.href });
+  } catch (error) {
+    console.warn("LivePage clear markup", error);
+  }
+  overlay.toast("Cleared the suggested marks.");
 }
 
 /**
@@ -288,6 +378,8 @@ function watchNavigation() {
     for (const highlight of page?.highlights || []) {
       unwrapHighlight(document, highlight.id);
     }
+    clearMarks(document, markup.marks);
+    markup = { marks: [], contentHash: "" };
     symbolLoop?.stop();
     symbolLoop = null;
     try {
@@ -338,6 +430,7 @@ async function revisit() {
   }
   watchInfinite();
   if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
+  if (markupFlag) runMarkup(parsed);
 }
 
 /**
@@ -415,6 +508,14 @@ function watchSelection() {
       gestureSelected = false;
       cancelReattach();
       overlay.hideToolbar();
+      return;
+    }
+    if (event.altKey && (event.key === "j" || event.key === "J")) {
+      jumpMark(1);
+      return;
+    }
+    if (event.altKey && (event.key === "k" || event.key === "K")) {
+      jumpMark(-1);
       return;
     }
     if (event.shiftKey || event.key.startsWith("Arrow")) finishGesture();
@@ -655,6 +756,13 @@ async function deleteHighlight(highlightId) {
 }
 
 function watchMarks() {
+  document.addEventListener("click", (event) => {
+    const span = event.target.closest?.("mark.lp-mark-ai");
+    if (!span) return;
+    event.preventDefault();
+    event.stopPropagation();
+    keepMark(span.dataset.lpMark);
+  }, true);
   document.addEventListener("click", (event) => {
     const mark = event.target.closest?.("mark.lp-hl");
     if (!mark) return;

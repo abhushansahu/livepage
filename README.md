@@ -54,6 +54,8 @@ The HTTP dashboard seeds a trail. The real extension uses its own IndexedDB insi
 
 **On the page.** Select a span. A quiet toolbar offers six highlight colors and a comment. Highlights restore when you return. Comments live **inline in a reserved right margin**, aligned to the span — Google Docs / Notion style — not a floating overlay. Click a highlight or its margin card to expand the thread in place.
 
+**An agent marks the article before you read it.** On an article long enough to skim, LivePage has the agent read it and mark only the passages worth stopping at, in the same six colours. There is no target count — the prompt says so explicitly, because asking for a number produces padding — and an article that makes no point worth marking gets nothing. Every quote is checked against the article text before it becomes a mark, so a paraphrase or an invention is thrown away rather than painted somewhere approximate. Suggestions are drawn as a dotted underline, not a fill: they are not your highlights. `Alt+J` / `Alt+K` move between them, and clicking one keeps it as your own. Marks live outside the page record, so an article the agent read is still not an article you kept. Settings → Experiments turns it off.
+
 **Threads can fork.** Any message can branch. You and an agent can take different readings of the same span without overwriting each other.
 
 **Agents get a parsed packet, not a second copy of the page.** **Ask Cursor** / **Ask Claude Code** builds a markdown packet that:
@@ -99,6 +101,7 @@ That layout is ordinary files. You, an agent, or a second laptop can walk the re
 | --- | --- |
 | Highlight selection | `Alt+H` |
 | Comment on selection | `Alt+M` |
+| Next / previous marked passage | `Alt+J` / `Alt+K` |
 | Open dashboard | `Alt+Shift+L` |
 
 Right-click a selection for the same actions. Right-click a page to add its RSS feed.

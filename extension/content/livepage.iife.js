@@ -151,6 +151,19 @@
     }
     return KNOWN_HOSTS.some((known) => host === known || host.endsWith(`.${known}`));
   }
+  var STABLE_PATHS = [{ hosts: ["x.com", "twitter.com"], pattern: /^\/[^/]+\/article\/\d+/ }];
+  function looksLikeStableDocument(url) {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return false;
+    }
+    const host = parsed.hostname.replace(/^www\./i, "");
+    return STABLE_PATHS.some(
+      (rule) => rule.hosts.some((known) => host === known || host.endsWith(`.${known}`)) && rule.pattern.test(parsed.pathname)
+    );
+  }
   function domLooksInfinite(doc = document) {
     return HINT_SELECTORS.some((selector) => doc.querySelector(selector));
   }
@@ -208,6 +221,9 @@
     };
   }
   function evaluateInfiniteScroll(url, doc, extras = {}) {
+    if (looksLikeStableDocument(url)) {
+      return { infinite: false, reason: null };
+    }
     if (hostLooksInfinite(url)) {
       return { infinite: true, reason: "This looks like a feed that keeps growing." };
     }
@@ -842,6 +858,57 @@
       window.removeEventListener("popstate", fire);
       window.removeEventListener("hashchange", fire);
     };
+  }
+
+  // extension/content/markup-marks.js
+  var CLASS = "lp-mark-ai";
+  function paintMarks(root, marks) {
+    const painted = [];
+    for (const mark of marks || []) {
+      unwrapMark(root, mark.id);
+      const range = findQuote(root, {
+        exact: mark.text,
+        prefix: mark.prefix,
+        suffix: mark.suffix
+      });
+      if (!range) continue;
+      const spans = wrapRange(range, { id: mark.id, color: mark.color, threadId: "" });
+      if (!spans.length) continue;
+      for (const span of spans) {
+        span.classList.add(CLASS);
+        span.dataset.lpMark = mark.id;
+        span.title = mark.why ? `${mark.why} \u2014 click to keep` : "Click to keep this highlight";
+      }
+      painted.push(mark.id);
+    }
+    return painted;
+  }
+  function unwrapMark(root, markId) {
+    unwrapHighlight(root, markId);
+  }
+  function clearMarks(root, marks) {
+    for (const mark of marks || []) unwrapMark(root, mark.id);
+  }
+  function markSpans(markId) {
+    return [...document.querySelectorAll(`mark[data-lp-mark="${cssEscape(markId)}"]`)];
+  }
+  function nextMark(marks, direction = 1, fromY = window.scrollY) {
+    const placed = (marks || []).map((mark) => {
+      const span = markSpans(mark.id)[0];
+      if (!span) return null;
+      return { mark, top: span.getBoundingClientRect().top + window.scrollY };
+    }).filter(Boolean).sort((a, b) => a.top - b.top);
+    if (!placed.length) return null;
+    const edge = fromY + 8;
+    if (direction > 0) return (placed.find((item) => item.top > edge) || placed[0]).mark;
+    const before = placed.filter((item) => item.top < fromY - 8);
+    return (before.length ? before[before.length - 1] : placed[placed.length - 1]).mark;
+  }
+  function scrollToMark(markId) {
+    const span = markSpans(markId)[0];
+    if (!span) return false;
+    window.scrollTo({ top: span.getBoundingClientRect().top + window.scrollY - 120, behavior: "smooth" });
+    return true;
   }
 
   // extension/shared/time.js
@@ -2084,6 +2151,7 @@ ${css}`;
     importSaves: true,
     articleSymbols: false,
     orphanRecovery: true,
+    autoMarkup: true,
     dashboardLayout: "compact"
   };
   var EXPERIMENTS = {
@@ -2670,6 +2738,8 @@ ${css}`;
   var symbols = null;
   var symbolLoop = null;
   var symbolsFlag = false;
+  var markupFlag = false;
+  var markup = { marks: [], contentHash: "" };
   overlay.handlers = {
     onOpenHighlight: (id) => openOrCreateThread(id),
     onNote: (threadId, content) => mutate("ADD_MESSAGE", { pageId: page.id, threadId, message: { role: "user", content } }),
@@ -2695,6 +2765,8 @@ ${css}`;
   onBroadcast((message) => {
     if (message.kind === "CONTEXT_ACTION") handleContext(message.action);
     if (message.kind === "TOAST" && message.text) overlay.toast(message.text);
+    if (message.kind === "CLEAR_MARKUP") clearAllMarks();
+    if (message.kind === "JUMP_MARK") jumpMark(message.direction || 1);
     if (message.kind === "SETTINGS_CHANGED" && message.settings) {
       settings = message.settings;
       overlay.setPreferences(settings);
@@ -2714,6 +2786,7 @@ ${css}`;
     const { flags } = resolveFlags(settings);
     anchorFlag = flags.orphanRecovery !== false;
     symbolsFlag = Boolean(flags.articleSymbols);
+    markupFlag = flags.autoMarkup !== false;
     try {
       await overlay.ready;
     } catch (error) {
@@ -2743,6 +2816,7 @@ ${css}`;
       console.warn("LivePage visit failed", error);
     }
     if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
+    if (markupFlag) runMarkup(parsed);
     if (flags.rss) offerRssIfAny();
   }
   function watchInfinite() {
@@ -2760,7 +2834,10 @@ ${css}`;
   }
   function anchorNow() {
     if (!page) return;
+    const painted = markup.marks.length;
+    if (painted) clearMarks(document, markup.marks);
     anchors = anchorHighlights(document.body, page.highlights, { verdicts: anchors });
+    if (painted) paintMarks(document.body, markup.marks);
     if (anchorFlag) {
       overlay.setAnchors(anchors);
       queueAnchorReport();
@@ -2809,6 +2886,64 @@ ${css}`;
     } catch (error) {
       console.warn("LivePage anchor report failed", error);
     }
+  }
+  async function runMarkup(parsed) {
+    if (infinite.infinite) return;
+    clearMarks(document, markup.marks);
+    markup = { marks: [], contentHash: parsed?.contentHash || "" };
+    try {
+      const row = await call("MARKUP_PAGE", {
+        url: location.href,
+        pageTitle: document.title,
+        parsed
+      });
+      markup = { marks: row?.marks || [], contentHash: row?.contentHash || "", agent: row?.agent };
+      if (!markup.marks.length) return;
+      paintMarks(document.body, markup.marks);
+      if (markup.marks.length) {
+        const n = markup.marks.length;
+        overlay.toast(`${n} passage${n === 1 ? "" : "s"} marked \xB7 Alt+J to move between them`);
+      }
+    } catch (error) {
+      console.warn("LivePage markup unavailable", error);
+    }
+  }
+  function jumpMark(direction) {
+    if (!markup.marks.length) return;
+    const target = nextMark(markup.marks, direction);
+    if (target) scrollToMark(target.id);
+  }
+  async function keepMark(markId) {
+    const mark = markup.marks.find((item) => item.id === markId);
+    if (!mark) return;
+    try {
+      const result = await call("KEEP_MARK", {
+        url: location.href,
+        pageTitle: document.title,
+        contentHash: markup.contentHash,
+        agent: markup.agent,
+        mark
+      });
+      markup.marks = markup.marks.filter((item) => item.id !== markId);
+      unwrapMark(document, markId);
+      page = result.page;
+      anchorNow();
+      overlay.setPage(page);
+      overlay.toast("Kept as your highlight.");
+    } catch (error) {
+      overlay.toast("Could not keep that one.");
+      console.warn("LivePage keep mark", error);
+    }
+  }
+  async function clearAllMarks() {
+    clearMarks(document, markup.marks);
+    markup = { marks: [], contentHash: markup.contentHash };
+    try {
+      await call("CLEAR_MARKUP", { url: location.href });
+    } catch (error) {
+      console.warn("LivePage clear markup", error);
+    }
+    overlay.toast("Cleared the suggested marks.");
   }
   function mountSymbols(parsed) {
     try {
@@ -2865,6 +3000,8 @@ ${css}`;
       for (const highlight of page?.highlights || []) {
         unwrapHighlight(document, highlight.id);
       }
+      clearMarks(document, markup.marks);
+      markup = { marks: [], contentHash: "" };
       symbolLoop?.stop();
       symbolLoop = null;
       try {
@@ -2913,6 +3050,7 @@ ${css}`;
     }
     watchInfinite();
     if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
+    if (markupFlag) runMarkup(parsed);
   }
   async function anchorInfiniteView() {
     if (!settings.lockInfiniteScroll || !infinite.infinite) return;
@@ -2979,6 +3117,14 @@ ${css}`;
         gestureSelected = false;
         cancelReattach();
         overlay.hideToolbar();
+        return;
+      }
+      if (event.altKey && (event.key === "j" || event.key === "J")) {
+        jumpMark(1);
+        return;
+      }
+      if (event.altKey && (event.key === "k" || event.key === "K")) {
+        jumpMark(-1);
         return;
       }
       if (event.shiftKey || event.key.startsWith("Arrow")) finishGesture();
@@ -3188,6 +3334,13 @@ ${css}`;
     }
   }
   function watchMarks() {
+    document.addEventListener("click", (event) => {
+      const span = event.target.closest?.("mark.lp-mark-ai");
+      if (!span) return;
+      event.preventDefault();
+      event.stopPropagation();
+      keepMark(span.dataset.lpMark);
+    }, true);
     document.addEventListener("click", (event) => {
       const mark = event.target.closest?.("mark.lp-hl");
       if (!mark) return;
