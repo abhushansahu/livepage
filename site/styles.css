@@ -509,3 +509,19 @@ kbd {
 table kbd {
   font-size: 0.9em;
 }
+
+/*
+ * Maths, set the way the extension sets it: a serif italic, because that is
+ * what makes a variable look like a variable rather than like a word.
+ */
+.math {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.math sub,
+.math sup {
+  font-size: 0.72em;
+  line-height: 0;
+}

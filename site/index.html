@@ -95,7 +95,9 @@
               <div class="card">
                 <div class="stripe moss"></div>
                 <strong>Action · <span class="who">agent</span></strong>
-                Bind the vault after the first real pass, not before.
+                Linear in <span class="math">θ</span> means the prediction
+                <span class="math">h<sub>θ</sub>(x) = θ<sup>⊤</sup>ϕ(x)</span> is a weighted sum,
+                whatever <span class="math">ϕ</span> does.
               </div>
             </div>
           </div>
@@ -147,6 +149,11 @@
           <article class="tile">
             <h3>Threads can fork</h3>
             <p>Any message can branch. You and an agent can take different readings of the same span without overwriting each other. Ask Cursor or Claude Code; they get a parsed packet, not a second copy of the page.</p>
+          </article>
+          <article class="tile">
+            <h3>What comes back is readable</h3>
+            <p>Agents answer in markdown with LaTeX in it, because that is how anything mathematical gets written. So <code>h_\theta(x) = \theta^\top x</code> arrives as <span class="math">h<sub>θ</sub>(x) = θ<sup>⊤</sup>x</span> — greek, sub- and superscripts, fractions and the common operators, with lists and code kept as lists and code.</p>
+            <p class="fine">A CLI agent narrates what it is about to do. “I’ll read <code>packet.md</code> to find the latest question” never reaches the thread, and so never reaches the vault.</p>
           </article>
           <article class="tile">
             <h3>When the page changes underneath</h3>
