@@ -99,10 +99,14 @@ onBroadcast((message) => {
   if (message.kind === "SETTINGS_CHANGED" && message.settings) {
     settings = message.settings;
     overlay.setPreferences(settings);
+    const next = resolveFlags(settings).flags;
+    symbolsFlag = Boolean(next.articleSymbols);
+    markupFlag = next.markup !== false;
+    minimapFlag = next.minimap !== false;
     // Another tab on this site may have just muted it. Anything else saved in
     // Settings is none of our business — re-parsing the page for it would be
     // rebuilding every symbol on the page for no reason.
-    if (symbolsFlag && symbolsMutedHere(settings, location.href) !== symbolsMuted) {
+    if (symbolsMutedHere(settings, location.href) !== symbolsMuted || symbolsFlag !== Boolean(symbols)) {
       applySymbols(freshParse());
     }
   }
@@ -123,7 +127,7 @@ async function boot() {
   const { flags } = resolveFlags(settings);
   anchorFlag = flags.orphanRecovery !== false;
   symbolsFlag = Boolean(flags.articleSymbols);
-  markupFlag = flags.autoMarkup !== false;
+  markupFlag = flags.markup !== false;
   minimapFlag = flags.minimap !== false;
 
   try {
@@ -159,7 +163,9 @@ async function boot() {
     console.warn("LivePage visit failed", error);
   }
   applySymbols(parsed);
-  if (markupFlag) runMarkup(parsed);
+  // Marking up costs a real agent call, so it waits to be asked. Anything
+  // already marked is painted back without one.
+  runMarkup(parsed, { cachedOnly: true });
   if (flags.rss) offerRssIfAny();
 }
 
@@ -261,11 +267,14 @@ async function flushAnchorReport() {
  * too short to skim. The answer is cached against the article's content, so
  * this costs one call per version of a piece however often you return to it.
  */
-async function runMarkup(parsed) {
-  if (infinite.infinite) return;
+async function runMarkup(parsed, { cachedOnly = false, manual = false } = {}) {
+  if (!markupFlag || infinite.infinite) return;
   clearMarks(document, markup.marks);
   markup = { marks: [], contentHash: parsed?.contentHash || "" };
-  if (!articleIsWorthMarking(parsed)) return;
+  if (!articleIsWorthMarking(parsed)) {
+    if (manual) overlay.toast("This page is too short to be worth marking up.");
+    return;
+  }
 
   // A cached answer comes back at once, so say nothing for a moment first —
   // a spinner that flashes and vanishes is worse than no spinner at all.
@@ -274,22 +283,25 @@ async function runMarkup(parsed) {
     const row = await call("MARKUP_PAGE", {
       url: location.href,
       pageTitle: document.title,
-      parsed
+      parsed,
+      // Opening a page must never spend an agent call. Loading only repaints
+      // what is already there; asking is what pays for a new pass.
+      cachedOnly
     });
     clearTimeout(announce);
     markup = { marks: row?.marks || [], contentHash: row?.contentHash || "", agent: row?.agent };
+    const fresh = row?.cached === false;
     if (!markup.marks.length) {
       // Saying so matters: it means the agent read the page and found nothing,
       // not that anything is broken.
-      overlay.markupStatus(row?.cached === false ? "empty" : null);
+      overlay.markupStatus(fresh || manual ? "empty" : null);
       return;
     }
-    const fresh = row?.cached === false;
     paintMarks(document.body, markup.marks, { reveal: fresh });
     refreshMinimap();
-    // Only announce a pass that just happened. Coming back to an article you
-    // have already read should not be narrated at you every time.
-    overlay.markupStatus(fresh ? "done" : null, { count: markup.marks.length });
+    // Announce a pass that just happened, and any pass you asked for. Merely
+    // arriving on an article you already marked should not be narrated at you.
+    overlay.markupStatus(fresh || manual ? "done" : null, { count: markup.marks.length });
   } catch (error) {
     clearTimeout(announce);
     // The host being down is the ordinary case, not an incident. Stay quiet.
@@ -360,6 +372,19 @@ function refreshMinimap() {
     percent: (window.scrollY / Math.max(1, docHeight - window.innerHeight)) * 100,
     maxPercent: reachedPercent
   });
+}
+
+/** Asks for a pass over this article, and pays for one if there is none. */
+function markupNow() {
+  if (!markupFlag) {
+    overlay.toast("Marking up is off in Settings.");
+    return;
+  }
+  if (infinite.infinite) {
+    overlay.toast("This is a feed, not an article.");
+    return;
+  }
+  runMarkup(freshParse(), { manual: true });
 }
 
 /** Moves the reader between the marks. The whole point of making them. */
@@ -573,7 +598,7 @@ async function revisit() {
   }
   watchInfinite();
   applySymbols(parsed);
-  if (markupFlag) runMarkup(parsed);
+  runMarkup(parsed, { cachedOnly: true });
 }
 
 /**
@@ -673,6 +698,7 @@ function watchSelection() {
     // Option produces a character on macOS, so the page would otherwise get a
     // stray "ß" as well as us getting the shortcut.
     event.preventDefault();
+    if (action === "markup") markupNow();
     if (action === "symbols") toggleSymbolsHere();
     if (action === "next-mark") jumpMark(1);
     if (action === "prev-mark") jumpMark(-1);

@@ -27,7 +27,7 @@ export function rangeRect(range) {
  * the Alt key and composes a character with it — Option+S is "ß", Option+J is
  * "∆" — so matching on `key` means the shortcut silently never fires there.
  */
-const SHORTCUTS = { KeyS: "symbols", KeyJ: "next-mark", KeyK: "prev-mark" };
+const SHORTCUTS = { KeyA: "markup", KeyS: "symbols", KeyJ: "next-mark", KeyK: "prev-mark" };
 
 export function shortcutAction(event, { typing = false } = {}) {
   if (!event?.altKey || event.ctrlKey || event.metaKey) return null;

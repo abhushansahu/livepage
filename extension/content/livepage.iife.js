@@ -2228,7 +2228,7 @@ ${css}`;
       return null;
     }
   }
-  var SHORTCUTS = { KeyS: "symbols", KeyJ: "next-mark", KeyK: "prev-mark" };
+  var SHORTCUTS = { KeyA: "markup", KeyS: "symbols", KeyJ: "next-mark", KeyK: "prev-mark" };
   function shortcutAction(event, { typing = false } = {}) {
     if (!event?.altKey || event.ctrlKey || event.metaKey) return null;
     if (event.repeat) return null;
@@ -2341,7 +2341,7 @@ ${css}`;
     importSaves: true,
     articleSymbols: false,
     orphanRecovery: true,
-    autoMarkup: true,
+    markup: true,
     minimap: true,
     dashboardLayout: "compact"
   };
@@ -2964,7 +2964,11 @@ ${css}`;
     if (message.kind === "SETTINGS_CHANGED" && message.settings) {
       settings = message.settings;
       overlay.setPreferences(settings);
-      if (symbolsFlag && symbolsMutedHere(settings, location.href) !== symbolsMuted) {
+      const next = resolveFlags(settings).flags;
+      symbolsFlag = Boolean(next.articleSymbols);
+      markupFlag = next.markup !== false;
+      minimapFlag = next.minimap !== false;
+      if (symbolsMutedHere(settings, location.href) !== symbolsMuted || symbolsFlag !== Boolean(symbols)) {
         applySymbols(freshParse());
       }
     }
@@ -2983,7 +2987,7 @@ ${css}`;
     const { flags } = resolveFlags(settings);
     anchorFlag = flags.orphanRecovery !== false;
     symbolsFlag = Boolean(flags.articleSymbols);
-    markupFlag = flags.autoMarkup !== false;
+    markupFlag = flags.markup !== false;
     minimapFlag = flags.minimap !== false;
     try {
       await overlay.ready;
@@ -3014,7 +3018,7 @@ ${css}`;
       console.warn("LivePage visit failed", error);
     }
     applySymbols(parsed);
-    if (markupFlag) runMarkup(parsed);
+    runMarkup(parsed, { cachedOnly: true });
     if (flags.rss) offerRssIfAny();
   }
   function watchInfinite() {
@@ -3086,28 +3090,34 @@ ${css}`;
       console.warn("LivePage anchor report failed", error);
     }
   }
-  async function runMarkup(parsed) {
-    if (infinite.infinite) return;
+  async function runMarkup(parsed, { cachedOnly = false, manual = false } = {}) {
+    if (!markupFlag || infinite.infinite) return;
     clearMarks(document, markup.marks);
     markup = { marks: [], contentHash: parsed?.contentHash || "" };
-    if (!articleIsWorthMarking(parsed)) return;
+    if (!articleIsWorthMarking(parsed)) {
+      if (manual) overlay.toast("This page is too short to be worth marking up.");
+      return;
+    }
     const announce = setTimeout(() => overlay.markupStatus("working"), 450);
     try {
       const row = await call("MARKUP_PAGE", {
         url: location.href,
         pageTitle: document.title,
-        parsed
+        parsed,
+        // Opening a page must never spend an agent call. Loading only repaints
+        // what is already there; asking is what pays for a new pass.
+        cachedOnly
       });
       clearTimeout(announce);
       markup = { marks: row?.marks || [], contentHash: row?.contentHash || "", agent: row?.agent };
+      const fresh = row?.cached === false;
       if (!markup.marks.length) {
-        overlay.markupStatus(row?.cached === false ? "empty" : null);
+        overlay.markupStatus(fresh || manual ? "empty" : null);
         return;
       }
-      const fresh = row?.cached === false;
       paintMarks(document.body, markup.marks, { reveal: fresh });
       refreshMinimap();
-      overlay.markupStatus(fresh ? "done" : null, { count: markup.marks.length });
+      overlay.markupStatus(fresh || manual ? "done" : null, { count: markup.marks.length });
     } catch (error) {
       clearTimeout(announce);
       overlay.markupStatus(null);
@@ -3169,6 +3179,17 @@ ${css}`;
       percent: window.scrollY / Math.max(1, docHeight - window.innerHeight) * 100,
       maxPercent: reachedPercent
     });
+  }
+  function markupNow() {
+    if (!markupFlag) {
+      overlay.toast("Marking up is off in Settings.");
+      return;
+    }
+    if (infinite.infinite) {
+      overlay.toast("This is a feed, not an article.");
+      return;
+    }
+    runMarkup(freshParse(), { manual: true });
   }
   function jumpMark(direction) {
     if (!markup.marks.length) return;
@@ -3344,7 +3365,7 @@ ${css}`;
     }
     watchInfinite();
     applySymbols(parsed);
-    if (markupFlag) runMarkup(parsed);
+    runMarkup(parsed, { cachedOnly: true });
   }
   async function anchorInfiniteView() {
     if (!settings.lockInfiniteScroll || !infinite.infinite) return;
@@ -3431,6 +3452,7 @@ ${css}`;
       });
       if (!action) return;
       event.preventDefault();
+      if (action === "markup") markupNow();
       if (action === "symbols") toggleSymbolsHere();
       if (action === "next-mark") jumpMark(1);
       if (action === "prev-mark") jumpMark(-1);

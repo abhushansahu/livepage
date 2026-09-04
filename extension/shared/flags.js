@@ -14,7 +14,7 @@ export const FLAG_DEFAULTS = {
   importSaves: true,
   articleSymbols: false,
   orphanRecovery: true,
-  autoMarkup: true,
+  markup: true,
   minimap: true,
   dashboardLayout: "compact"
 };

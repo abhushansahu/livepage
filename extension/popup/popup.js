@@ -3,6 +3,8 @@ import { applyTheme } from "../shared/theme.js";
 import { formatRelative } from "../shared/time.js";
 import { parseTagInput, suggestedTagsForHost } from "../shared/tags.js";
 import { hostnameOf } from "../shared/url.js";
+import { resolveFlags } from "../shared/flags.js";
+import { symbolsMutedHere, toggleSymbolsForSite } from "../shared/site-prefs.js";
 
 const list = document.getElementById("list");
 const titleEl = document.getElementById("title");
@@ -11,6 +13,8 @@ const readingBtn = document.getElementById("reading");
 const starBtn = document.getElementById("star");
 const tagsInput = document.getElementById("tags");
 const status = document.getElementById("status");
+const switches = document.getElementById("switches");
+const siteNote = document.getElementById("site-note");
 
 document.getElementById("dashboard").onclick = () => {
   chrome.runtime.sendMessage({ type: "OPEN_DASHBOARD" });
@@ -21,8 +25,10 @@ document.getElementById("options").onclick = () => {
   chrome.runtime.openOptionsPage();
 };
 
+let settings = {};
 try {
-  applyTheme((await call("GET_SETTINGS"))?.pageTheme);
+  settings = (await call("GET_SETTINGS")) || {};
+  applyTheme(settings.pageTheme);
 } catch {
   /* first run, before any settings exist */
 }
@@ -43,6 +49,7 @@ if (/^https?:/i.test(tabUrl)) {
   }
 }
 renderPage();
+renderSwitches();
 
 readingBtn.onclick = async () => {
   if (!/^https?:/i.test(tabUrl)) {
@@ -117,6 +124,93 @@ function renderPage() {
     tagsInput.placeholder = suggested.length
       ? `${suggested[0]}, later`
       : "machine learning, later";
+  }
+}
+
+/**
+ * What is on for this page, and the key that changes it.
+ *
+ * The shortcuts are the fast path; this is the one you reach for when you
+ * cannot remember them, so every row names its own key rather than hiding it
+ * in Settings.
+ */
+function renderSwitches() {
+  if (!switches) return;
+  const { flags } = resolveFlags(settings);
+  const article = /^https?:/i.test(tabUrl);
+  const symbolsOff = symbolsMutedHere(settings, tabUrl);
+
+  const rows = [
+    {
+      id: "markup",
+      on: flags.markup !== false,
+      key: "⌥A",
+      label: "Mark the passages worth stopping at",
+      sub: flags.markup === false ? "Off everywhere" : "Press ⌥A on an article to run it"
+    },
+    {
+      id: "symbols",
+      on: flags.articleSymbols && !symbolsOff,
+      key: "⌥S",
+      label: "Explain unfamiliar terms",
+      sub: !flags.articleSymbols
+        ? "Off everywhere"
+        : symbolsOff
+          ? `Off for ${host}`
+          : `On for ${host}`
+    },
+    {
+      id: "minimap",
+      on: flags.minimap !== false,
+      key: "",
+      label: "Show marked passages down the edge"
+    }
+  ];
+
+  switches.innerHTML = rows
+    .map(
+      (row) => `
+      <button type="button" class="switch ${row.on ? "on" : ""}" data-switch="${row.id}">
+        <span class="dot"></span>
+        <span class="label">${escapeHtml(row.label)}${row.sub ? `<span class="sub">${escapeHtml(row.sub)}</span>` : ""}</span>
+        <span class="key">${row.key}</span>
+      </button>`
+    )
+    .join("");
+
+  switches.querySelectorAll("[data-switch]").forEach((btn) => {
+    btn.onclick = () => onSwitch(btn.dataset.switch);
+  });
+
+  siteNote.textContent = article
+    ? "⌥J and ⌥K move between marked passages."
+    : "LivePage only works on http and https pages.";
+}
+
+async function onSwitch(id) {
+  const { flags } = resolveFlags(settings);
+  try {
+    if (id === "symbols") {
+      // Symbols are muted per site, so this row means "here", not everywhere —
+      // unless they are off globally, in which case there is nothing to mute.
+      if (!flags.articleSymbols) {
+        settings = await call("SAVE_SETTINGS", {
+          flags: { ...(settings.flags || {}), articleSymbols: true }
+        });
+      } else {
+        const next = toggleSymbolsForSite(settings, tabUrl);
+        settings = await call("SAVE_SETTINGS", { symbolsOffHosts: next.symbolsOffHosts });
+      }
+    } else {
+      const key = id === "markup" ? "markup" : "minimap";
+      settings = await call("SAVE_SETTINGS", {
+        flags: { ...(settings.flags || {}), [key]: flags[key] === false }
+      });
+    }
+    renderSwitches();
+    flash("Saved. Reload the page to see it there.");
+  } catch (error) {
+    flash(String(error.message || error));
   }
 }
 

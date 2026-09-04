@@ -679,6 +679,9 @@ async function markupPage(payload) {
 
   const cached = await getMarkup(pageId, contentHash);
   if (cached) return { ...cached, cached: true };
+  // Loading a page may repaint an earlier pass but must never buy a new one.
+  // An agent call is something you ask for.
+  if (payload.cachedOnly) return { pageId, contentHash, marks: [], skipped: "not-asked" };
   if (!articleIsWorthMarking(parsed)) return { pageId, contentHash, marks: [], skipped: "short" };
 
   const settings = await ensureAgentHostPaired();

@@ -373,3 +373,15 @@ test("an ordinary paragraph is not a typing target", () => {
   const event = { target: { closest: () => null } };
   assert.equal(isTypingTarget(event, () => false), false);
 });
+
+test("marking up has its own key, and it is the physical one", () => {
+  assert.equal(shortcutAction(macOption("KeyA", "å")), "markup");
+  assert.equal(shortcutAction({ altKey: true, code: "KeyA", key: "a" }), "markup");
+});
+
+test("every shortcut is a distinct action, so none shadows another", () => {
+  const codes = ["KeyA", "KeyS", "KeyJ", "KeyK"];
+  const actions = codes.map((code) => shortcutAction({ altKey: true, code }));
+  assert.equal(new Set(actions).size, codes.length);
+  assert.ok(actions.every(Boolean));
+});
