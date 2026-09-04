@@ -1461,7 +1461,7 @@ ${css}`;
       }
       el.hidden = false;
       el.className = "markup-status";
-      el.innerHTML = state === "empty" ? `<span>Nothing here worth marking</span>` : `<span class="pulse is-done"></span><span>${count} passage${count === 1 ? "" : "s"} marked \xB7 Alt+J to move between them</span>`;
+      el.innerHTML = state === "empty" ? `<span>Nothing here worth marking</span>` : `<span class="pulse is-done"></span><span>${count} passage${count === 1 ? "" : "s"} marked \xB7 \u2325J to move between them</span>`;
       this._markupHide = setTimeout(() => {
         el.hidden = true;
       }, state === "empty" ? 2600 : 5200);
@@ -2227,6 +2227,19 @@ ${css}`;
     } catch {
       return null;
     }
+  }
+  var SHORTCUTS = { KeyS: "symbols", KeyJ: "next-mark", KeyK: "prev-mark" };
+  function shortcutAction(event, { typing = false } = {}) {
+    if (!event?.altKey || event.ctrlKey || event.metaKey) return null;
+    if (event.repeat) return null;
+    if (typing) return null;
+    return SHORTCUTS[event.code] || null;
+  }
+  function isTypingTarget(event, ownsEvent) {
+    if (ownsEvent?.(event)) return true;
+    const el = event?.target;
+    if (!el || typeof el.closest !== "function") return false;
+    return Boolean(el.closest("input, textarea, select, [contenteditable]"));
   }
 
   // extension/shared/progress.js
@@ -3242,7 +3255,7 @@ ${css}`;
     if (next.muted) stopSymbols();
     else applySymbols(freshParse());
     overlay.toast(
-      next.muted ? `Symbols off for ${next.host} \xB7 Alt+S to bring them back` : `Symbols on for ${next.host}`
+      next.muted ? `Symbols off for ${next.host} \xB7 \u2325S to bring them back` : `Symbols on for ${next.host}`
     );
     try {
       await call("SAVE_SETTINGS", { symbolsOffHosts: next.symbolsOffHosts });
@@ -3410,19 +3423,17 @@ ${css}`;
         overlay.hideToolbar();
         return;
       }
-      if (event.altKey && (event.key === "s" || event.key === "S")) {
-        toggleSymbolsHere();
-        return;
-      }
-      if (event.altKey && (event.key === "j" || event.key === "J")) {
-        jumpMark(1);
-        return;
-      }
-      if (event.altKey && (event.key === "k" || event.key === "K")) {
-        jumpMark(-1);
-        return;
-      }
       if (event.shiftKey || event.key.startsWith("Arrow")) finishGesture();
+    });
+    document.addEventListener("keydown", (event) => {
+      const action = shortcutAction(event, {
+        typing: isTypingTarget(event, (e) => overlay.ownsEvent?.(e))
+      });
+      if (!action) return;
+      event.preventDefault();
+      if (action === "symbols") toggleSymbolsHere();
+      if (action === "next-mark") jumpMark(1);
+      if (action === "prev-mark") jumpMark(-1);
     });
     document.addEventListener("selectionchange", () => {
       const selection = window.getSelection();

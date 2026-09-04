@@ -11,6 +11,7 @@ import {
 import { looksLikeStableDocument, evaluateInfiniteScroll } from "../extension/parse/infinite-scroll.js";
 import { minimapTicks } from "../extension/content/minimap.js";
 import { symbolsMutedHere, toggleSymbolsForSite } from "../extension/shared/site-prefs.js";
+import { shortcutAction, isTypingTarget } from "../extension/content/selection.js";
 
 const blocks = [
   { id: "b1", tag: "h2", text: "Methodology", heading: true },
@@ -320,4 +321,55 @@ test("a page with no host cannot be muted, and does not corrupt the list", () =>
 test("no setting at all reads as nothing muted", () => {
   assert.equal(symbolsMutedHere({}, "https://example.com/a"), false);
   assert.equal(symbolsMutedHere(undefined, "https://example.com/a"), false);
+});
+
+// On macOS, Option is the Alt key and composes a character with it, so the
+// letter never arrives as itself. These are the events Chrome actually emits
+// there; matching on `key` is why the shortcuts silently did nothing.
+const macOption = (code, key) => ({ altKey: true, code, key });
+
+test("Option+S reaches the toggle on a Mac, where the key is not an s at all", () => {
+  assert.equal(shortcutAction(macOption("KeyS", "ß")), "symbols");
+  assert.equal(shortcutAction(macOption("KeyJ", "∆")), "next-mark");
+  assert.equal(shortcutAction(macOption("KeyK", "˚")), "prev-mark");
+});
+
+test("the same physical keys still work where Alt does not compose", () => {
+  assert.equal(shortcutAction({ altKey: true, code: "KeyS", key: "s" }), "symbols");
+  assert.equal(shortcutAction({ altKey: true, code: "KeyJ", key: "j" }), "next-mark");
+});
+
+test("a layout that puts another letter on that key is unaffected", () => {
+  // Dvorak reports code KeyS for the physical key labelled o.
+  assert.equal(shortcutAction({ altKey: true, code: "KeyS", key: "o" }), "symbols");
+});
+
+test("plain typing is never a shortcut", () => {
+  assert.equal(shortcutAction({ altKey: false, code: "KeyS", key: "s" }), null);
+  assert.equal(shortcutAction({ altKey: true, code: "KeyQ", key: "q" }), null);
+});
+
+test("other modifiers on the same key belong to the page or the browser", () => {
+  assert.equal(shortcutAction({ altKey: true, metaKey: true, code: "KeyS" }), null);
+  assert.equal(shortcutAction({ altKey: true, ctrlKey: true, code: "KeyS" }), null);
+});
+
+test("holding the key does not toggle over and over", () => {
+  assert.equal(shortcutAction({ altKey: true, code: "KeyS", repeat: true }), null);
+});
+
+test("writing a comment wins over the shortcut", () => {
+  assert.equal(shortcutAction(macOption("KeyS", "ß"), { typing: true }), null);
+});
+
+test("the margin composer counts as writing, through the shadow boundary", () => {
+  const host = { name: "overlay-host" };
+  const event = { altKey: true, code: "KeyS", target: host, composedPath: () => [host] };
+  const ownsEvent = (e) => (e.composedPath?.() || []).includes(host);
+  assert.equal(isTypingTarget(event, ownsEvent), true);
+});
+
+test("an ordinary paragraph is not a typing target", () => {
+  const event = { target: { closest: () => null } };
+  assert.equal(isTypingTarget(event, () => false), false);
 });

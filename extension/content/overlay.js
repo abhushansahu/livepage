@@ -324,7 +324,7 @@ export class Overlay {
     el.innerHTML =
       state === "empty"
         ? `<span>Nothing here worth marking</span>`
-        : `<span class="pulse is-done"></span><span>${count} passage${count === 1 ? "" : "s"} marked \u00b7 Alt+J to move between them</span>`;
+        : `<span class="pulse is-done"></span><span>${count} passage${count === 1 ? "" : "s"} marked \u00b7 \u2325J to move between them</span>`;
     // It has said its piece; the page belongs to the reader again.
     this._markupHide = setTimeout(() => {
       el.hidden = true;

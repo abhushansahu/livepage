@@ -26,7 +26,7 @@ import { articleIsWorthMarking } from "../agent/markup.js";
 import { createMinimap, minimapTicks } from "./minimap.js";
 import { symbolsMutedHere, toggleSymbolsForSite } from "../shared/site-prefs.js";
 import { Overlay } from "./overlay.js";
-import { toolbarAction, rangeRect } from "./selection.js";
+import { toolbarAction, rangeRect, shortcutAction, isTypingTarget } from "./selection.js";
 import { COLOR_IDS } from "../shared/colors.js";
 import { measureScrollProgress } from "../shared/progress.js";
 import { detectFeeds } from "../import/rss.js";
@@ -473,7 +473,7 @@ async function toggleSymbolsHere() {
   else applySymbols(freshParse());
   overlay.toast(
     next.muted
-      ? `Symbols off for ${next.host} · Alt+S to bring them back`
+      ? `Symbols off for ${next.host} · ⌥S to bring them back`
       : `Symbols on for ${next.host}`
   );
   try {
@@ -663,19 +663,19 @@ function watchSelection() {
       overlay.hideToolbar();
       return;
     }
-    if (event.altKey && (event.key === "s" || event.key === "S")) {
-      toggleSymbolsHere();
-      return;
-    }
-    if (event.altKey && (event.key === "j" || event.key === "J")) {
-      jumpMark(1);
-      return;
-    }
-    if (event.altKey && (event.key === "k" || event.key === "K")) {
-      jumpMark(-1);
-      return;
-    }
     if (event.shiftKey || event.key.startsWith("Arrow")) finishGesture();
+  });
+  document.addEventListener("keydown", (event) => {
+    const action = shortcutAction(event, {
+      typing: isTypingTarget(event, (e) => overlay.ownsEvent?.(e))
+    });
+    if (!action) return;
+    // Option produces a character on macOS, so the page would otherwise get a
+    // stray "ß" as well as us getting the shortcut.
+    event.preventDefault();
+    if (action === "symbols") toggleSymbolsHere();
+    if (action === "next-mark") jumpMark(1);
+    if (action === "prev-mark") jumpMark(-1);
   });
   document.addEventListener("selectionchange", () => {
     const selection = window.getSelection();
