@@ -38,6 +38,7 @@ import {
   anchorMarkup,
   articleIsWorthMarking,
   buildMarkupPacket,
+  markCeiling,
   parseMarkupReply
 } from "../agent/markup.js";
 import { obsidianNewUri, pageToMarkdown, suggestedFilename } from "../export/obsidian.js";
@@ -686,14 +687,18 @@ async function markupPage(payload) {
   const packet = buildMarkupPacket({
     pageTitle: String(payload.pageTitle || "").slice(0, 300),
     url: String(payload.url || "").slice(0, 2000),
-    blocks: parsed.blocks || []
+    blocks: parsed.blocks || [],
+    wordCount: parsed.wordCount || 0
   });
 
   const result = await runAgentAsk({ settings, agent, model, packet });
   const reply = cleanAgentReply(typeof result === "string" ? result : result.text);
   // Anchoring is the trust boundary: a quote the article does not contain is
   // dropped here rather than painted somewhere approximate.
-  const marks = anchorMarkup(parseMarkupReply(reply), parsed.blocks || []).map((mark) => ({
+  const marks = anchorMarkup(
+    parseMarkupReply(reply, markCeiling(parsed.wordCount || 0)),
+    parsed.blocks || []
+  ).map((mark) => ({
     ...mark,
     id: uid("am")
   }));

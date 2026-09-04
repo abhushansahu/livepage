@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   MAX_MARKS,
+  markCeiling,
   anchorMarkup,
   articleIsWorthMarking,
   buildMarkupPacket,
   parseMarkupReply
 } from "../extension/agent/markup.js";
 import { looksLikeStableDocument, evaluateInfiniteScroll } from "../extension/parse/infinite-scroll.js";
+import { minimapTicks } from "../extension/content/minimap.js";
 
 const blocks = [
   { id: "b1", tag: "h2", text: "Methodology", heading: true },
@@ -33,7 +35,37 @@ test("the prompt refuses to name a target, and says none is a real answer", () =
   assert.match(packet, /verbatim|exactly/i);
   // A quota anywhere in the prompt is what produces padding; the only number
   // allowed is the runaway guard, and it must read as a ceiling.
-  assert.match(packet, new RegExp(`Never mark more than ${MAX_MARKS}`));
+  assert.match(packet, /Never mark more than \d+; if you are near that, you are padding/);
+});
+
+test("the ceiling grows with the article instead of starving a long one", () => {
+  assert.equal(markCeiling(900), 4);
+  assert.equal(markCeiling(2000), 4);
+  assert.ok(markCeiling(8000) > markCeiling(2000));
+  assert.ok(markCeiling(15000) > markCeiling(8000));
+  // Still a ceiling, not a licence to mark a book.
+  assert.equal(markCeiling(400000), MAX_MARKS);
+  assert.equal(markCeiling(0), 4);
+});
+
+test("a long article is told it may need more, a short one told not to reach", () => {
+  const long = buildMarkupPacket({ blocks, wordCount: 9000 });
+  assert.match(long, /9000 words/);
+  assert.match(long, /stranded in the middle/);
+  assert.match(long, new RegExp(`Never mark more than ${markCeiling(9000)}`));
+
+  const short = buildMarkupPacket({ blocks, wordCount: 700 });
+  assert.match(short, /Do not look for more than are there/);
+  assert.doesNotMatch(short, /stranded in the middle/);
+});
+
+test("the reply is cut at the article's own ceiling, not a flat one", () => {
+  const reply = Array.from(
+    { length: 40 },
+    (_, i) => `lemon | a distinct quoted passage number ${i} here | reason`
+  ).join("\n");
+  assert.equal(parseMarkupReply(reply, markCeiling(900)).length, 4);
+  assert.equal(parseMarkupReply(reply, markCeiling(15000)).length, markCeiling(15000));
 });
 
 test("the prompt carries the colour vocabulary the product already uses", () => {
@@ -170,4 +202,72 @@ test("an X article is a document, while the timeline stays a feed", () => {
   // A single tweet grows replies underneath it, so the feed treatment is right.
   assert.equal(evaluateInfiniteScroll("https://x.com/someone/status/123", doc).infinite, true);
   assert.equal(evaluateInfiniteScroll("https://twitter.com/a/article/9", doc).infinite, false);
+});
+
+test("ticks land at the depth of the passage they point at", () => {
+  const ticks = minimapTicks(
+    [
+      { id: "a", kind: "highlight", color: "lemon", top: 0 },
+      { id: "b", kind: "mark", color: "sand", top: 500 },
+      { id: "c", kind: "highlight", color: "rose", top: 1000 }
+    ],
+    1000
+  );
+  assert.deepEqual(
+    ticks.map((t) => t.pct),
+    [0, 50, 100]
+  );
+});
+
+test("ticks are ordered down the page however they arrived", () => {
+  const ticks = minimapTicks(
+    [
+      { id: "late", kind: "mark", color: "lemon", top: 900 },
+      { id: "early", kind: "highlight", color: "sand", top: 100 }
+    ],
+    1000
+  );
+  assert.deepEqual(
+    ticks.map((t) => t.id),
+    ["early", "late"]
+  );
+});
+
+test("a passage with no place on the page gets no tick", () => {
+  const ticks = minimapTicks(
+    [
+      { id: "placed", kind: "highlight", color: "lemon", top: 200 },
+      { id: "orphan", kind: "highlight", color: "lemon", top: null },
+      { id: "missing", kind: "mark", color: "lemon" }
+    ],
+    1000
+  );
+  assert.deepEqual(
+    ticks.map((t) => t.id),
+    ["placed"],
+    "an unplaced passage must not pile up at the top of the rail"
+  );
+});
+
+test("a mark measured past the end of the document stays on the rail", () => {
+  const [tick] = minimapTicks([{ id: "a", kind: "mark", color: "lemon", top: 5000 }], 1000);
+  assert.equal(tick.pct, 100);
+});
+
+test("nothing to show means no rail at all", () => {
+  assert.deepEqual(minimapTicks([], 1000), []);
+  assert.deepEqual(minimapTicks([{ id: "a", kind: "mark", color: "lemon", top: 10 }], 0), []);
+});
+
+test("a tick remembers which kind it is, so the rail can tell them apart", () => {
+  const ticks = minimapTicks(
+    [
+      { id: "mine", kind: "highlight", color: "rose", top: 10 },
+      { id: "theirs", kind: "mark", color: "sand", top: 20, why: "the authors' own limit" }
+    ],
+    100
+  );
+  assert.equal(ticks[0].kind, "highlight");
+  assert.equal(ticks[1].kind, "mark");
+  assert.equal(ticks[1].why, "the authors' own limit");
 });

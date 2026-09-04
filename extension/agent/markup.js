@@ -13,8 +13,20 @@ import { normalizeText } from "../parse/page-parser.js";
  * answer for an article that makes no point worth stopping at.
  */
 
-/** Not a target. A guard against a runaway reply, set far above a sane one. */
-export const MAX_MARKS = 12;
+/**
+ * A ceiling, never a target — and it moves with the article.
+ *
+ * A 12,000-word essay carries more argument than a 900-word note, so holding
+ * both to one number either starves the long piece or invites padding in the
+ * short one. This scales with length and still sits well above what a good
+ * reply needs, so it binds only on a runaway.
+ */
+export function markCeiling(wordCount = 0) {
+  return Math.max(4, Math.min(24, Math.ceil((wordCount || 0) / 700)));
+}
+
+/** The most any reply may contain, whatever the article. */
+export const MAX_MARKS = 24;
 
 /** Below this there is nothing to skim, and the call is not worth making. */
 export const MIN_WORDS = 320;
@@ -22,7 +34,9 @@ export const MIN_WORDS = 320;
 const MAX_QUOTE = 300;
 const MIN_QUOTE = 16;
 
-export function buildMarkupPacket({ pageTitle = "", url = "", blocks = [] } = {}) {
+export function buildMarkupPacket({ pageTitle = "", url = "", blocks = [], wordCount = 0 } = {}) {
+  const ceiling = markCeiling(wordCount);
+  const long = wordCount >= 2500;
   const body = blocks
     .filter((block) => block?.text)
     .map((block) => (block.heading ? `## ${block.text}` : block.text))
@@ -50,7 +64,15 @@ export function buildMarkupPacket({ pageTitle = "", url = "", blocks = [] } = {}
     `an announcement, a listing, boilerplate — gets **zero**, and returning`,
     `nothing is the correct answer there. Padding to look thorough is the one`,
     `way to fail this: every extra mark makes the real ones harder to see.`,
-    `Never mark more than ${MAX_MARKS}; if you are near that, you are padding.`,
+    ``,
+    wordCount
+      ? `This piece runs about ${wordCount} words. ${
+          long
+            ? `A piece this long usually carries several distinct points, and a reader skimming it needs enough marks to follow the argument from one end to the other — a long piece marked in three places leaves them stranded in the middle. Mark each point that carries it, including the evidence a point stands on where losing that evidence would leave the claim unsupported.`
+            : `A piece this short usually carries one or two points. Do not look for more than are there.`
+        }`
+      : null,
+    `Never mark more than ${ceiling}; if you are near that, you are padding.`,
     ``,
     `## Colours`,
     ``,
@@ -96,7 +118,7 @@ export function buildMarkupPacket({ pageTitle = "", url = "", blocks = [] } = {}
  * rather than guessed at — a mark in the wrong place is worse than a missing
  * one, because the reader trusts it.
  */
-export function parseMarkupReply(reply) {
+export function parseMarkupReply(reply, ceiling = MAX_MARKS) {
   const text = String(reply || "").trim();
   if (!text || /^none\.?$/i.test(text)) return [];
   const marks = [];
@@ -119,7 +141,7 @@ export function parseMarkupReply(reply) {
     seen.add(key);
 
     marks.push({ color, quote, why: normalizeText(parts.slice(2).join(" | ")).slice(0, 120) });
-    if (marks.length >= MAX_MARKS) break;
+    if (marks.length >= Math.min(ceiling, MAX_MARKS)) break;
   }
   return marks;
 }

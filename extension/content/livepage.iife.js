@@ -921,6 +921,96 @@
     return (parsed?.wordCount || 0) >= MIN_WORDS && (parsed?.blocks || []).length >= 3;
   }
 
+  // extension/content/minimap.js
+  function minimapTicks(items, docHeight) {
+    const height = docHeight || 0;
+    if (height <= 0) return [];
+    return (items || []).filter((item) => typeof item.top === "number" && item.top >= 0).map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      color: item.color,
+      why: item.why || "",
+      text: item.text || "",
+      // Clamped, because a mark inside a fixed header can measure past the end.
+      pct: Math.max(0, Math.min(100, item.top / height * 100))
+    })).sort((a, b) => a.pct - b.pct);
+  }
+  function createMinimap() {
+    const host = document.createElement("div");
+    host.className = "lp-ignore lp-minimap";
+    host.setAttribute("data-lp", "minimap");
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `<style>${CSS2}</style><div class="rail"><div class="read"></div><div class="here"></div></div>`;
+    const rail = shadow.querySelector(".rail");
+    const read = shadow.querySelector(".read");
+    const here = shadow.querySelector(".here");
+    let onJump = null;
+    return {
+      host,
+      attach() {
+        if (host.parentNode !== document.documentElement) {
+          document.documentElement.appendChild(host);
+        }
+        document.documentElement.style.setProperty("--lp-minimap", "12px");
+      },
+      onJump(fn) {
+        onJump = fn;
+      },
+      render(ticks) {
+        rail.querySelectorAll(".tick").forEach((el) => el.remove());
+        host.hidden = !ticks.length;
+        if (!ticks.length) return;
+        for (const tick of ticks) {
+          const el = document.createElement("button");
+          el.type = "button";
+          el.className = `tick is-${tick.kind}`;
+          el.style.top = `${tick.pct}%`;
+          el.style.setProperty("--lp-mark", COLORS[tick.color]?.fill || "#e8cf62");
+          el.title = tick.why || tick.text.slice(0, 90);
+          el.onclick = () => onJump?.(tick);
+          rail.append(el);
+        }
+      },
+      /** How far down you are, and how much you have actually been past. */
+      setProgress({ percent = 0, maxPercent = 0 } = {}) {
+        here.style.top = `${Math.max(0, Math.min(100, percent))}%`;
+        read.style.height = `${Math.max(0, Math.min(100, maxPercent))}%`;
+      },
+      destroy() {
+        document.documentElement.style.removeProperty("--lp-minimap");
+        host.remove();
+      }
+    };
+  }
+  var CSS2 = `
+:host { all: initial; }
+.rail {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 12px;
+  z-index: 2147483643; pointer-events: none;
+}
+.read {
+  position: absolute; top: 0; left: 0; right: 0;
+  background: color-mix(in srgb, #3f6b52 12%, transparent);
+}
+.here {
+  position: absolute; left: 0; right: 0; height: 2px;
+  background: color-mix(in srgb, #3f6b52 60%, transparent);
+}
+.tick {
+  position: absolute; right: 2px; width: 8px; height: 4px;
+  margin-top: -2px; padding: 0; border: 0; border-radius: 2px;
+  background: var(--lp-mark); cursor: pointer; pointer-events: auto;
+  transition: width 90ms ease, right 90ms ease;
+}
+.tick:hover, .tick:focus-visible { width: 12px; right: 0; outline: none; }
+/* A suggestion is hollow; something you kept is solid. */
+.tick.is-mark {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--lp-mark);
+}
+@media (prefers-reduced-motion: reduce) { .tick { transition: none; } }
+`;
+
   // extension/shared/time.js
   function formatRelative(ts, from = Date.now()) {
     if (!ts) return "never";
@@ -2210,6 +2300,7 @@ ${css}`;
     articleSymbols: false,
     orphanRecovery: true,
     autoMarkup: true,
+    minimap: true,
     dashboardLayout: "compact"
   };
   var EXPERIMENTS = {
@@ -2798,6 +2889,8 @@ ${css}`;
   var symbolsFlag = false;
   var markupFlag = false;
   var markup = { marks: [], contentHash: "" };
+  var minimap = null;
+  var minimapFlag = true;
   overlay.handlers = {
     onOpenHighlight: (id) => openOrCreateThread(id),
     onNote: (threadId, content) => mutate("ADD_MESSAGE", { pageId: page.id, threadId, message: { role: "user", content } }),
@@ -2845,6 +2938,7 @@ ${css}`;
     anchorFlag = flags.orphanRecovery !== false;
     symbolsFlag = Boolean(flags.articleSymbols);
     markupFlag = flags.autoMarkup !== false;
+    minimapFlag = flags.minimap !== false;
     try {
       await overlay.ready;
     } catch (error) {
@@ -2900,6 +2994,7 @@ ${css}`;
       overlay.setAnchors(anchors);
       queueAnchorReport();
     }
+    refreshMinimap();
   }
   function unresolvedCount() {
     let count = 0;
@@ -2965,12 +3060,69 @@ ${css}`;
       }
       const fresh = row?.cached === false;
       paintMarks(document.body, markup.marks, { reveal: fresh });
+      refreshMinimap();
       overlay.markupStatus(fresh ? "done" : null, { count: markup.marks.length });
     } catch (error) {
       clearTimeout(announce);
       overlay.markupStatus(null);
+      minimap?.destroy();
+      minimap = null;
       console.warn("LivePage markup unavailable", error);
     }
+  }
+  function refreshMinimap() {
+    if (!minimapFlag) return;
+    const items = [];
+    for (const highlight of page?.highlights || []) {
+      const rect = highlightRect(highlight.id);
+      if (!rect) continue;
+      items.push({
+        id: highlight.id,
+        kind: "highlight",
+        color: highlight.color,
+        text: highlight.text || "",
+        top: rect.top + window.scrollY
+      });
+    }
+    for (const mark of markup.marks) {
+      const span = markSpans(mark.id)[0];
+      if (!span) continue;
+      items.push({
+        id: mark.id,
+        kind: "mark",
+        color: mark.color,
+        text: mark.text || "",
+        why: mark.why || "",
+        top: span.getBoundingClientRect().top + window.scrollY
+      });
+    }
+    if (!items.length && !minimap) return;
+    if (!minimap) {
+      minimap = createMinimap();
+      minimap.onJump((tick) => {
+        if (tick.kind === "mark") scrollToMark(tick.id);
+        else {
+          const mark = marksFor(tick.id)[0];
+          if (mark) {
+            window.scrollTo({
+              top: mark.getBoundingClientRect().top + window.scrollY - 120,
+              behavior: "smooth"
+            });
+          }
+        }
+      });
+    }
+    minimap.attach();
+    const docHeight = Math.max(
+      document.documentElement.scrollHeight,
+      document.body?.scrollHeight || 0,
+      window.innerHeight
+    );
+    minimap.render(minimapTicks(items, docHeight));
+    minimap.setProgress({
+      percent: window.scrollY / Math.max(1, docHeight - window.innerHeight) * 100,
+      maxPercent: reachedPercent
+    });
   }
   function jumpMark(direction) {
     if (!markup.marks.length) return;
@@ -3124,6 +3276,16 @@ ${css}`;
     page = await call("SNAPSHOT_PAGE", { pageId: page.id });
   }
   function watchScroll() {
+    let minimapTick = null;
+    const nudge = () => {
+      if (minimapTick) return;
+      minimapTick = setTimeout(() => {
+        minimapTick = null;
+        refreshMinimap();
+      }, 200);
+    };
+    window.addEventListener("scroll", nudge, { passive: true });
+    window.addEventListener("resize", nudge, { passive: true });
     let lastSent = 0;
     const report = () => {
       const percent = measureScrollProgress();

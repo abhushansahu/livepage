@@ -8,13 +8,22 @@ import { quoteFromRange, unwrapHighlight } from "../parse/quote.js";
 import {
   anchorHighlights,
   applyRangeHighlight,
+  highlightRect,
   marksFor,
   recolorMarks,
   selectionIsSafe
 } from "./highlights.js";
 import { createReanchorLoop, watchUrl } from "./reanchor.js";
-import { clearMarks, nextMark, paintMarks, scrollToMark, unwrapMark } from "./markup-marks.js";
+import {
+  clearMarks,
+  markSpans,
+  nextMark,
+  paintMarks,
+  scrollToMark,
+  unwrapMark
+} from "./markup-marks.js";
 import { articleIsWorthMarking } from "../agent/markup.js";
+import { createMinimap, minimapTicks } from "./minimap.js";
 import { Overlay } from "./overlay.js";
 import { toolbarAction, rangeRect } from "./selection.js";
 import { COLOR_IDS } from "../shared/colors.js";
@@ -50,6 +59,8 @@ let symbolLoop = null;
 let symbolsFlag = false;
 let markupFlag = false;
 let markup = { marks: [], contentHash: "" };
+let minimap = null;
+let minimapFlag = true;
 
 overlay.handlers = {
   onOpenHighlight: (id) => openOrCreateThread(id),
@@ -105,6 +116,7 @@ async function boot() {
   anchorFlag = flags.orphanRecovery !== false;
   symbolsFlag = Boolean(flags.articleSymbols);
   markupFlag = flags.autoMarkup !== false;
+  minimapFlag = flags.minimap !== false;
 
   try {
     await overlay.ready;
@@ -178,6 +190,7 @@ function anchorNow() {
     overlay.setAnchors(anchors);
     queueAnchorReport();
   }
+  refreshMinimap();
 }
 
 function unresolvedCount() {
@@ -265,6 +278,7 @@ async function runMarkup(parsed) {
     }
     const fresh = row?.cached === false;
     paintMarks(document.body, markup.marks, { reveal: fresh });
+    refreshMinimap();
     // Only announce a pass that just happened. Coming back to an article you
     // have already read should not be narrated at you every time.
     overlay.markupStatus(fresh ? "done" : null, { count: markup.marks.length });
@@ -272,8 +286,72 @@ async function runMarkup(parsed) {
     clearTimeout(announce);
     // The host being down is the ordinary case, not an incident. Stay quiet.
     overlay.markupStatus(null);
+    minimap?.destroy();
+    minimap = null;
     console.warn("LivePage markup unavailable", error);
   }
+}
+
+/**
+ * Draws the article's shape down the edge of the window: every marked passage
+ * at its own depth, and how far you have actually read behind them.
+ *
+ * Rebuilt rather than patched, because a mark only has a position once it is
+ * on the page, and that changes as the page settles and as you keep things.
+ */
+function refreshMinimap() {
+  if (!minimapFlag) return;
+  const items = [];
+  for (const highlight of page?.highlights || []) {
+    const rect = highlightRect(highlight.id);
+    if (!rect) continue;
+    items.push({
+      id: highlight.id,
+      kind: "highlight",
+      color: highlight.color,
+      text: highlight.text || "",
+      top: rect.top + window.scrollY
+    });
+  }
+  for (const mark of markup.marks) {
+    const span = markSpans(mark.id)[0];
+    if (!span) continue;
+    items.push({
+      id: mark.id,
+      kind: "mark",
+      color: mark.color,
+      text: mark.text || "",
+      why: mark.why || "",
+      top: span.getBoundingClientRect().top + window.scrollY
+    });
+  }
+  if (!items.length && !minimap) return;
+  if (!minimap) {
+    minimap = createMinimap();
+    minimap.onJump((tick) => {
+      if (tick.kind === "mark") scrollToMark(tick.id);
+      else {
+        const mark = marksFor(tick.id)[0];
+        if (mark) {
+          window.scrollTo({
+            top: mark.getBoundingClientRect().top + window.scrollY - 120,
+            behavior: "smooth"
+          });
+        }
+      }
+    });
+  }
+  minimap.attach();
+  const docHeight = Math.max(
+    document.documentElement.scrollHeight,
+    document.body?.scrollHeight || 0,
+    window.innerHeight
+  );
+  minimap.render(minimapTicks(items, docHeight));
+  minimap.setProgress({
+    percent: (window.scrollY / Math.max(1, docHeight - window.innerHeight)) * 100,
+    maxPercent: reachedPercent
+  });
 }
 
 /** Moves the reader between the marks. The whole point of making them. */
@@ -461,6 +539,16 @@ async function anchorInfiniteView() {
 }
 
 function watchScroll() {
+  let minimapTick = null;
+  const nudge = () => {
+    if (minimapTick) return;
+    minimapTick = setTimeout(() => {
+      minimapTick = null;
+      refreshMinimap();
+    }, 200);
+  };
+  window.addEventListener("scroll", nudge, { passive: true });
+  window.addEventListener("resize", nudge, { passive: true });
   let lastSent = 0;
   const report = () => {
     const percent = measureScrollProgress();

@@ -15,6 +15,7 @@ export const FLAG_DEFAULTS = {
   articleSymbols: false,
   orphanRecovery: true,
   autoMarkup: true,
+  minimap: true,
   dashboardLayout: "compact"
 };
 

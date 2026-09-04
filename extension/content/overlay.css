@@ -130,7 +130,8 @@
 .card {
   position: absolute;
   left: 10px;
-  right: 10px;
+  /* Steps aside for the minimap rail when one is up. */
+  right: calc(10px + var(--lp-minimap, 0px));
   padding: 10px 12px 10px 14px;
   background: var(--lp-surface);
   border: 1px solid var(--lp-line);

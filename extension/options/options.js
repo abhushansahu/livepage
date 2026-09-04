@@ -142,6 +142,7 @@ function currentPatch() {
       articleSymbols: form.elements.flagArticleSymbols.checked,
       orphanRecovery: form.elements.flagOrphanRecovery.checked,
       autoMarkup: form.elements.flagAutoMarkup.checked,
+      minimap: form.elements.flagMinimap.checked,
       dashboardLayout: form.elements.dashboardLayout.value
     }
   };
@@ -174,6 +175,7 @@ function fillForm(value) {
   form.elements.flagArticleSymbols.checked = Boolean(flags.articleSymbols);
   form.elements.flagOrphanRecovery.checked = flags.orphanRecovery !== false;
   form.elements.flagAutoMarkup.checked = flags.autoMarkup !== false;
+  form.elements.flagMinimap.checked = flags.minimap !== false;
 }
 
 async function refreshRss() {
