@@ -162,3 +162,38 @@ body {
 .notice b {
   color: var(--sage);
 }
+
+/*
+ * How far the document has downloaded. A PDF reader that shows nothing for two
+ * seconds reads as broken; one that shows a bar reads as working.
+ */
+.loading {
+  flex: none;
+  width: 84px;
+  height: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.loading[hidden] { display: none; }
+
+.loading i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--sage);
+  transition: width 120ms linear;
+}
+
+/* Length unknown, so sweep rather than lie about the proportion. */
+.loading.is-indeterminate i {
+  width: 40%;
+  animation: lp-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes lp-sweep {
+  0% { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}

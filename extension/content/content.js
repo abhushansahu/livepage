@@ -762,8 +762,9 @@ function watchSelection() {
 
 function captureSelection(selection = window.getSelection()) {
   if (!selection || selection.isCollapsed || !selection.rangeCount) return false;
-  if (selection.anchorNode && overlay.host?.contains(selection.anchorNode)) return false;
-  if (selection.anchorNode && overlay.floatHost?.contains(selection.anchorNode)) return false;
+  // Crosses the shadow boundary, which `contains` does not — otherwise text
+  // selected inside a margin card reads as a selection of the page.
+  if (overlay.ownsNode(selection.anchorNode) || overlay.ownsNode(selection.focusNode)) return false;
   savedRange = selection.getRangeAt(0).cloneRange();
   savedRect = rangeRect(savedRange);
   return true;

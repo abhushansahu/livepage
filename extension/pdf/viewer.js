@@ -39,6 +39,7 @@ const viewerEl = document.getElementById("viewer");
 const titleEl = document.getElementById("title");
 const whereEl = document.getElementById("where");
 const noticeEl = document.getElementById("notice");
+const loadingEl = document.getElementById("loading");
 
 const overlay = new Overlay({ view: containerView(container) });
 
@@ -107,19 +108,6 @@ async function boot() {
   watchSelection();
   watchMarks();
 
-  try {
-    settings = (await call("GET_SETTINGS")) || {};
-    overlay.setPreferences(settings);
-    applyTheme(settings.pageTheme);
-  } catch {
-    /* first run, before any settings exist */
-  }
-  try {
-    await overlay.ready;
-  } catch (error) {
-    console.warn("LivePage overlay failed", error);
-  }
-
   if (!sourceUrl) {
     titleEl.textContent = "No PDF";
     notice("<b>No document.</b> Open a PDF from the LivePage popup, or right-click a link to one.");
@@ -134,7 +122,23 @@ async function boot() {
   }
 
   titleEl.textContent = titleFromUrl(sourceUrl);
-  await openDocument();
+  progress(0);
+
+  // The document goes first and everything else catches up. Waiting on the
+  // service worker to wake and answer GET_SETTINGS before so much as asking
+  // for the PDF was most of the gap between this and Chrome's own viewer.
+  const opening = openDocument();
+
+  try {
+    settings = (await call("GET_SETTINGS")) || {};
+    overlay.setPreferences(settings);
+    applyTheme(settings.pageTheme);
+  } catch {
+    /* first run, before any settings exist */
+  }
+  overlay.ready.catch((error) => console.warn("LivePage overlay failed", error));
+
+  await opening;
 }
 
 /* ---------------------------------------------------------------- pdf.js -- */
@@ -145,9 +149,22 @@ async function openDocument() {
   // what the dynamic import buys us — a static one would be hoisted above it.
   const pdfjsLib = await import("../vendor/pdfjs/pdf.mjs");
   globalThis.pdfjsLib = pdfjsLib;
-  const { EventBus, PDFLinkService, PDFViewer } = await import("../vendor/pdfjs/pdf_viewer.mjs");
-
   pdfjsLib.GlobalWorkerOptions.workerSrc = asset("vendor/pdfjs/pdf.worker.mjs");
+
+  // Started here, before the viewer module is even imported. This is the one
+  // that matters: it spawns the worker and puts the PDF on the wire while the
+  // remaining quarter-megabyte of viewer code is still being evaluated.
+  const task = pdfjsLib.getDocument({
+    url: sourceUrl,
+    withCredentials: true,
+    isEvalSupported: false,
+    cMapUrl: asset("vendor/pdfjs/cmaps/"),
+    cMapPacked: true,
+    standardFontDataUrl: asset("vendor/pdfjs/standard_fonts/")
+  });
+  task.onProgress = ({ loaded, total }) => progress(total ? loaded / total : 0);
+
+  const { EventBus, PDFLinkService, PDFViewer } = await import("../vendor/pdfjs/pdf_viewer.mjs");
 
   const eventBus = new EventBus();
   const linkService = new PDFLinkService({ eventBus, externalLinkTarget: 2 });
@@ -169,6 +186,7 @@ async function openDocument() {
   linkService.setViewer(pdfViewer);
 
   eventBus.on("pagesinit", () => {
+    progress(1);
     pdfViewer.currentScaleValue = "page-width";
     const wanted = requestedPage(sourceUrl);
     if (wanted) pdfViewer.currentPageNumber = Math.min(wanted, pdfViewer.pagesCount);
@@ -189,16 +207,8 @@ async function openDocument() {
     reportProgress();
   });
 
-  const task = pdfjsLib.getDocument({
-    url: sourceUrl,
-    withCredentials: true,
-    isEvalSupported: false,
-    cMapUrl: asset("vendor/pdfjs/cmaps/"),
-    cMapPacked: true,
-    standardFontDataUrl: asset("vendor/pdfjs/standard_fonts/")
-  });
-
   pdfDocument = await task.promise;
+  progress(1);
   pdfViewer.setDocument(pdfDocument);
   linkService.setDocument(pdfDocument, null);
 
@@ -575,8 +585,9 @@ function watchSelection() {
 
 function captureSelection(selection = window.getSelection()) {
   if (!selection || selection.isCollapsed || !selection.rangeCount) return false;
-  if (selection.anchorNode && overlay.host?.contains(selection.anchorNode)) return false;
-  if (selection.anchorNode && overlay.floatHost?.contains(selection.anchorNode)) return false;
+  // Crosses the shadow boundary, which `contains` does not — otherwise text
+  // selected inside a margin card reads as a selection of the page.
+  if (overlay.ownsNode(selection.anchorNode) || overlay.ownsNode(selection.focusNode)) return false;
   savedRange = selection.getRangeAt(0).cloneRange();
   savedRect = rangeRect(savedRange);
   return true;
@@ -909,6 +920,26 @@ function zoom(factor) {
   pdfViewer.currentScale = Math.max(0.25, Math.min(6, pdfViewer.currentScale * factor));
   // The pages just changed size, so every mark moved with them.
   overlay.layoutCards();
+}
+
+/**
+ * How far the download has got, 0 to 1. Anything at or past 1 puts it away.
+ *
+ * Servers that do not send a length leave `total` at 0, and pdf.js passes that
+ * straight through — so the bar sweeps instead of claiming a proportion it
+ * does not know.
+ */
+function progress(fraction) {
+  if (!loadingEl) return;
+  if (fraction >= 1) {
+    loadingEl.hidden = true;
+    return;
+  }
+  loadingEl.hidden = false;
+  const bar = loadingEl.firstElementChild;
+  const known = fraction > 0;
+  loadingEl.classList.toggle("is-indeterminate", !known);
+  if (bar && known) bar.style.width = `${Math.round(fraction * 100)}%`;
 }
 
 function updateWhere() {

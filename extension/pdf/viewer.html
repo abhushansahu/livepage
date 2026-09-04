@@ -3,6 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <title>LivePage</title>
+    <!--
+      Both pdf.js modules start downloading while this file is still being
+      parsed. Without these the second one is not even requested until the
+      first has finished evaluating, and the PDF itself waits behind both.
+    -->
+    <link rel="modulepreload" href="../vendor/pdfjs/pdf.mjs" />
+    <link rel="modulepreload" href="../vendor/pdfjs/pdf_viewer.mjs" />
     <link rel="stylesheet" href="../vendor/pdfjs/pdf_viewer.css" />
     <link rel="stylesheet" href="../content/content.css" />
     <link rel="stylesheet" href="./viewer.css" />
@@ -12,6 +19,7 @@
       <span class="mark">LivePage</span>
       <h1 id="title">Opening…</h1>
       <span class="where" id="where"></span>
+      <span class="loading" id="loading" hidden><i></i></span>
       <div class="tools">
         <button type="button" id="zoom-out" title="Zoom out">−</button>
         <button type="button" id="zoom-in" title="Zoom in">+</button>

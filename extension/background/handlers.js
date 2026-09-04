@@ -34,6 +34,7 @@ import {
   nextLedger
 } from "../agent/packet.js";
 import { pairAgentHost, pingAgentHost, runAgentAsk } from "../agent/host-client.js";
+import { cleanAgentReply } from "../agent/reply.js";
 import {
   anchorMarkup,
   articleIsWorthMarking,
@@ -813,19 +814,6 @@ function glossaryPageId(payload) {
   const url = String(payload.url || "").trim();
   if (!url) throw new Error("pageId or url required");
   return pageIdFromUrl(canonicalizeUrl(url));
-}
-
-function cleanAgentReply(value) {
-  const lines = String(value || "").split("\n");
-  while (
-    lines.length &&
-    /^(reading|opening|checking|looking at|i(?:'m| am) (?:reading|checking|opening)).*(?:packet(?:\.md)?|file|page)/i.test(
-      lines[0].trim().replace(/`/g, "")
-    )
-  ) {
-    lines.shift();
-  }
-  return lines.join("\n").trim() || "I couldn’t form a useful reply from this passage.";
 }
 
 async function exportObsidian(id) {

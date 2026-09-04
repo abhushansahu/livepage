@@ -66,7 +66,7 @@
     const source = doc.cloneNode(true);
     source.querySelectorAll(STRIP_SELECTORS).forEach((el) => el.remove());
     const root = pickRoot(source) || source.body || source.documentElement;
-    const blocks = [];
+    const blocks2 = [];
     const headings = [];
     const seen = /* @__PURE__ */ new Set();
     const walker = source.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
@@ -87,7 +87,7 @@
       if (!seen.has(id)) {
         seen.add(id);
         const tag = node.tagName.toLowerCase();
-        blocks.push({
+        blocks2.push({
           id,
           tag,
           text,
@@ -97,8 +97,8 @@
       }
       node = walker.nextNode();
     }
-    const excerpt = blocks.filter((b) => !b.heading).slice(0, 3).map((b) => b.text).join(" ").slice(0, 420);
-    const allText = blocks.map((b) => b.text).join(" ");
+    const excerpt = blocks2.filter((b) => !b.heading).slice(0, 3).map((b) => b.text).join(" ").slice(0, 420);
+    const allText = blocks2.map((b) => b.text).join(" ");
     const wordCount2 = allText ? allText.split(/\s+/).length : 0;
     return {
       url,
@@ -107,7 +107,7 @@
       headings,
       wordCount: wordCount2,
       contentHash: blockIdFromText(allText),
-      blocks
+      blocks: blocks2
     };
   }
   function pickRoot(doc) {
@@ -647,15 +647,15 @@
     return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
   }
   function blocksAround(page2, text, windowSize = 2) {
-    const blocks = page2?.parsed?.blocks || [];
-    if (!blocks.length) return [];
+    const blocks2 = page2?.parsed?.blocks || [];
+    if (!blocks2.length) return [];
     const needle = normalizeLoose(text);
     if (!needle) return [];
-    const index = blocks.findIndex(
+    const index = blocks2.findIndex(
       (block) => normalizeLoose(block.text).includes(needle.slice(0, 80))
     );
     if (index < 0) return [];
-    return blocks.slice(Math.max(0, index - windowSize), index + windowSize + 1);
+    return blocks2.slice(Math.max(0, index - windowSize), index + windowSize + 1);
   }
   function stateForConfidence(confidence) {
     if (!confidence) return "missing";
@@ -1227,6 +1227,387 @@
     }
   };
 
+  // extension/shared/markdown.js
+  var GREEK = {
+    alpha: "\u03B1",
+    beta: "\u03B2",
+    gamma: "\u03B3",
+    delta: "\u03B4",
+    epsilon: "\u03F5",
+    varepsilon: "\u03B5",
+    zeta: "\u03B6",
+    eta: "\u03B7",
+    theta: "\u03B8",
+    vartheta: "\u03D1",
+    iota: "\u03B9",
+    kappa: "\u03BA",
+    lambda: "\u03BB",
+    mu: "\u03BC",
+    nu: "\u03BD",
+    xi: "\u03BE",
+    pi: "\u03C0",
+    rho: "\u03C1",
+    sigma: "\u03C3",
+    varsigma: "\u03C2",
+    tau: "\u03C4",
+    upsilon: "\u03C5",
+    phi: "\u03D5",
+    varphi: "\u03C6",
+    chi: "\u03C7",
+    psi: "\u03C8",
+    omega: "\u03C9",
+    Gamma: "\u0393",
+    Delta: "\u0394",
+    Theta: "\u0398",
+    Lambda: "\u039B",
+    Xi: "\u039E",
+    Pi: "\u03A0",
+    Sigma: "\u03A3",
+    Upsilon: "\u03A5",
+    Phi: "\u03A6",
+    Psi: "\u03A8",
+    Omega: "\u03A9"
+  };
+  var SYMBOLS = {
+    ...GREEK,
+    times: "\xD7",
+    cdot: "\xB7",
+    div: "\xF7",
+    pm: "\xB1",
+    mp: "\u2213",
+    ast: "\u2217",
+    star: "\u22C6",
+    circ: "\u2218",
+    approx: "\u2248",
+    neq: "\u2260",
+    ne: "\u2260",
+    leq: "\u2264",
+    le: "\u2264",
+    geq: "\u2265",
+    ge: "\u2265",
+    ll: "\u226A",
+    gg: "\u226B",
+    equiv: "\u2261",
+    propto: "\u221D",
+    sim: "\u223C",
+    simeq: "\u2243",
+    cong: "\u2245",
+    in: "\u2208",
+    notin: "\u2209",
+    ni: "\u220B",
+    subset: "\u2282",
+    subseteq: "\u2286",
+    supset: "\u2283",
+    supseteq: "\u2287",
+    cup: "\u222A",
+    cap: "\u2229",
+    setminus: "\u2216",
+    emptyset: "\u2205",
+    forall: "\u2200",
+    exists: "\u2203",
+    neg: "\xAC",
+    lnot: "\xAC",
+    land: "\u2227",
+    lor: "\u2228",
+    to: "\u2192",
+    rightarrow: "\u2192",
+    Rightarrow: "\u21D2",
+    leftarrow: "\u2190",
+    Leftarrow: "\u21D0",
+    leftrightarrow: "\u2194",
+    Leftrightarrow: "\u21D4",
+    mapsto: "\u21A6",
+    implies: "\u27F9",
+    iff: "\u27FA",
+    sum: "\u2211",
+    prod: "\u220F",
+    int: "\u222B",
+    oint: "\u222E",
+    partial: "\u2202",
+    nabla: "\u2207",
+    infty: "\u221E",
+    top: "\u22A4",
+    bot: "\u22A5",
+    perp: "\u22A5",
+    angle: "\u2220",
+    ldots: "\u2026",
+    cdots: "\u22EF",
+    dots: "\u2026",
+    vdots: "\u22EE",
+    prime: "\u2032",
+    ell: "\u2113",
+    hbar: "\u210F",
+    langle: "\u27E8",
+    rangle: "\u27E9",
+    lceil: "\u2308",
+    rceil: "\u2309",
+    lfloor: "\u230A",
+    rfloor: "\u230B",
+    vert: "|",
+    Vert: "\u2016",
+    argmax: "argmax",
+    argmin: "argmin",
+    max: "max",
+    min: "min",
+    log: "log",
+    ln: "ln",
+    exp: "exp",
+    sin: "sin",
+    cos: "cos",
+    tan: "tan",
+    det: "det",
+    dim: "dim",
+    ker: "ker",
+    deg: "deg",
+    gcd: "gcd",
+    lim: "lim",
+    sup: "sup",
+    inf: "inf",
+    Pr: "Pr",
+    quad: " ",
+    qquad: "  "
+  };
+  var BLACKBOARD = {
+    R: "\u211D",
+    N: "\u2115",
+    Z: "\u2124",
+    Q: "\u211A",
+    C: "\u2102",
+    E: "\u{1D53C}",
+    P: "\u2119",
+    H: "\u210D"
+  };
+  var ACCENTS = {
+    hat: "\u0302",
+    bar: "\u0304",
+    overline: "\u0304",
+    tilde: "\u0303",
+    dot: "\u0307",
+    ddot: "\u0308",
+    vec: "\u20D7",
+    check: "\u030C",
+    acute: "\u0301"
+  };
+  var WRAPPERS = {
+    mathbf: (body) => `<b>${body}</b>`,
+    boldsymbol: (body) => `<b>${body}</b>`,
+    mathit: (body) => `<i>${body}</i>`,
+    mathrm: (body) => `<span class="up">${body}</span>`,
+    operatorname: (body) => `<span class="up">${body}</span>`,
+    text: (body) => `<span class="up">${body}</span>`,
+    textrm: (body) => `<span class="up">${body}</span>`,
+    mathcal: (body) => body,
+    mathsf: (body) => body,
+    mathtt: (body) => `<code>${body}</code>`
+  };
+  var SPACING = /* @__PURE__ */ new Set([",", ";", "!", ":", " ", "\n"]);
+  var LITERAL = /* @__PURE__ */ new Set(["{", "}", "$", "%", "&", "#", "_", "\\"]);
+  var MARK = "\0";
+  function latexToHtml(source) {
+    return convert(String(source || ""));
+  }
+  function convert(src) {
+    let out = "";
+    let i = 0;
+    while (i < src.length) {
+      const ch = src[i];
+      if (ch === "\\") {
+        const step = command(src, i);
+        out += step.html;
+        i = step.next;
+        continue;
+      }
+      if (ch === "^" || ch === "_") {
+        const arg = argument(src, i + 1);
+        const tag = ch === "^" ? "sup" : "sub";
+        out += `<${tag}>${convert(arg.body)}</${tag}>`;
+        i = arg.next;
+        continue;
+      }
+      if (ch === "{" || ch === "}") {
+        i += 1;
+        continue;
+      }
+      out += escapeHtml(ch);
+      i += 1;
+    }
+    return out;
+  }
+  function command(src, at) {
+    const rest = src.slice(at + 1);
+    const name = (/^[A-Za-z]+/.exec(rest) || [""])[0];
+    if (!name) {
+      const ch = src[at + 1] || "";
+      if (SPACING.has(ch)) return { html: " ", next: at + 2 };
+      if (LITERAL.has(ch)) return { html: escapeHtml(ch), next: at + 2 };
+      return { html: "", next: at + 2 };
+    }
+    let cursor = at + 1 + name.length;
+    if (name === "frac" || name === "dfrac" || name === "tfrac") {
+      const top = argument(src, cursor);
+      const bottom = argument(src, top.next);
+      return { html: fraction(convert(top.body), convert(bottom.body)), next: bottom.next };
+    }
+    if (name === "sqrt") {
+      const arg = argument(src, cursor);
+      return { html: `\u221A<span class="root">${convert(arg.body)}</span>`, next: arg.next };
+    }
+    if (name === "mathbb") {
+      const arg = argument(src, cursor);
+      const body = arg.body.trim();
+      return { html: BLACKBOARD[body] || escapeHtml(body), next: arg.next };
+    }
+    if (WRAPPERS[name]) {
+      const arg = argument(src, cursor);
+      return { html: WRAPPERS[name](convert(arg.body)), next: arg.next };
+    }
+    if (ACCENTS[name]) {
+      const arg = argument(src, cursor);
+      return { html: convert(arg.body) + ACCENTS[name], next: arg.next };
+    }
+    if (name === "left" || name === "right" || name === "big" || name === "Big") {
+      return { html: "", next: cursor };
+    }
+    if (SYMBOLS[name] !== void 0) {
+      if (src[cursor] === " ") cursor += 1;
+      return { html: escapeHtml(SYMBOLS[name]), next: cursor };
+    }
+    return { html: escapeHtml(name), next: cursor };
+  }
+  function argument(src, at) {
+    let i = at;
+    while (src[i] === " ") i += 1;
+    if (src[i] === "{") {
+      let depth = 1;
+      let j = i + 1;
+      while (j < src.length && depth > 0) {
+        if (src[j] === "\\") j += 1;
+        else if (src[j] === "{") depth += 1;
+        else if (src[j] === "}") depth -= 1;
+        j += 1;
+      }
+      return { body: src.slice(i + 1, j - (depth === 0 ? 1 : 0)), next: j };
+    }
+    if (src[i] === "\\") {
+      const name = (/^[A-Za-z]+|^./.exec(src.slice(i + 1)) || [""])[0];
+      let next = i + 1 + name.length;
+      if (/^[A-Za-z]/.test(name) && src[next] === " ") next += 1;
+      return { body: src.slice(i, i + 1 + name.length), next };
+    }
+    return { body: src[i] || "", next: i + (src[i] ? 1 : 0) };
+  }
+  function fraction(top, bottom) {
+    return `<span class="frac"><span class="num">${top}</span><span class="den">${bottom}</span></span>`;
+  }
+  var MENTION = /@\[([^\]]+)\]\(livepage:([^)]+)\)/g;
+  function renderMessage(content, { mention } = {}) {
+    const stash = [];
+    const keep = (html2) => {
+      stash.push(html2);
+      return `${MARK}${stash.length - 1}${MARK}`;
+    };
+    let text = String(content || "").replace(/\r\n?/g, "\n").split(MARK).join("");
+    text = text.replace(
+      /```([a-z0-9+#-]*)\n?([\s\S]*?)```/gi,
+      (_m, _lang, body) => keep(`<pre class="code"><code>${escapeHtml(body.replace(/\n$/, ""))}</code></pre>`)
+    );
+    text = text.replace(/`([^`\n]+)`/g, (_m, body) => keep(`<code>${escapeHtml(body)}</code>`));
+    text = text.replace(/\\\[([\s\S]+?)\\\]/g, (_m, body) => keep(mathBlock(body)));
+    text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_m, body) => keep(mathBlock(body)));
+    text = text.replace(/\\\(([\s\S]+?)\\\)/g, (_m, body) => keep(mathInline(body)));
+    text = text.replace(
+      /\$([^$\n]{1,120})\$/g,
+      (whole, body) => /[\\^_{}]/.test(body) ? keep(mathInline(body)) : whole
+    );
+    text = text.replace(
+      MENTION,
+      (_m, label, target) => keep(mention ? mention(label, target) : escapeHtml(label))
+    );
+    const html = blocks(text);
+    return html.replace(
+      new RegExp(`${MARK}(\\d+)${MARK}`, "g"),
+      (_m, index) => stash[Number(index)] ?? ""
+    );
+  }
+  function mathInline(body) {
+    return `<span class="math">${latexToHtml(body.trim())}</span>`;
+  }
+  function mathBlock(body) {
+    return `<span class="math is-block">${latexToHtml(body.trim())}</span>`;
+  }
+  function blocks(text) {
+    const out = [];
+    const lines = text.split("\n");
+    let list = null;
+    let paragraph = [];
+    const flushParagraph = () => {
+      if (!paragraph.length) return;
+      out.push(`<p>${inline(paragraph.join(" "))}</p>`);
+      paragraph = [];
+    };
+    const flushList = () => {
+      if (!list) return;
+      out.push(
+        `<${list.tag}>${list.items.map((item) => `<li>${inline(item)}</li>`).join("")}</${list.tag}>`
+      );
+      list = null;
+    };
+    for (const raw of lines) {
+      const line = raw.trimEnd();
+      if (!line.trim()) {
+        flushParagraph();
+        flushList();
+        continue;
+      }
+      const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+      if (heading) {
+        flushParagraph();
+        flushList();
+        out.push(`<p class="head">${inline(heading[2])}</p>`);
+        continue;
+      }
+      const bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
+      const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+      if (bullet || numbered) {
+        flushParagraph();
+        const tag = bullet ? "ul" : "ol";
+        if (!list || list.tag !== tag) {
+          flushList();
+          list = { tag, items: [] };
+        }
+        list.items.push((bullet || numbered)[1]);
+        continue;
+      }
+      const quote = /^\s*>\s?(.*)$/.exec(line);
+      if (quote) {
+        flushParagraph();
+        flushList();
+        out.push(`<blockquote>${inline(quote[1])}</blockquote>`);
+        continue;
+      }
+      if (list && /^\s{2,}\S/.test(raw)) {
+        list.items[list.items.length - 1] += ` ${line.trim()}`;
+        continue;
+      }
+      flushList();
+      paragraph.push(line.trim());
+    }
+    flushParagraph();
+    flushList();
+    return out.join("");
+  }
+  function inline(text) {
+    let html = escapeHtml(text);
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+    html = html.replace(/__([^_]+)__/g, "<b>$1</b>");
+    html = html.replace(/(^|[\s(])\*([^*\n]+)\*(?=$|[\s).,;:!?])/g, "$1<i>$2</i>");
+    html = html.replace(/(^|\s)_([^_\n]+)_(?=$|[\s.,;:!?])/g, "$1<i>$2</i>");
+    return html;
+  }
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
   // extension/content/overlay.js
   var import_meta = {};
   var GUTTER = 328;
@@ -1293,6 +1674,22 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
 .markup-status.is-collapsed:hover .label { display: inline; }
 .markup-status.is-collapsed:hover { padding: 7px 12px; }
 @keyframes lp-markup-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+/* Enough of the rendered-message rules to stay readable if overlay.css loses
+   its fetch race \u2014 without these a reply is one unbroken run of text. */
+.msg .body > * { margin: 0 0 6px; }
+.msg .body p { white-space: pre-wrap; }
+.msg .body p.head { font-weight: 650; white-space: normal; }
+.msg .body ul, .msg .body ol { padding-left: 18px; }
+.msg .body code, .msg .body pre.code { font-family: ui-monospace, Menlo, monospace; font-size: 0.92em; }
+.msg .body pre.code { padding: 8px 10px; border-radius: 8px; overflow-x: auto; background: rgba(28,23,18,0.08); }
+.msg .body .math { font-family: Palatino, Georgia, serif; font-style: italic; white-space: nowrap; }
+.msg .body .math.is-block { display: block; text-align: center; margin: 8px 0; white-space: normal; }
+.msg .body .math .up { font-style: normal; }
+.msg .body .math sub, .msg .body .math sup { font-size: 0.72em; line-height: 0; }
+.msg .body .frac { display: inline-flex; flex-direction: column; vertical-align: -0.45em; text-align: center; font-size: 0.92em; margin: 0 0.12em; }
+.msg .body .frac .num { border-bottom: 1px solid currentColor; padding: 0 0.25em; }
+.msg .body .frac .den { padding: 0 0.25em; }
+.msg .body .root { border-top: 1px solid currentColor; padding: 0 0.15em; }
 `;
   function makeHost(kind) {
     const host = document.createElement("div");
@@ -1410,6 +1807,26 @@ ${css}`;
       const path = event.composedPath?.() || [];
       return path.includes(this.host) || path.includes(this.floatHost);
     }
+    /**
+     * Whether a node belongs to the overlay rather than the page.
+     *
+     * `host.contains(node)` cannot answer this: our UI lives in a shadow root,
+     * and `contains` stops at the boundary. So a selection made inside a margin
+     * card looked to the page like a selection of the page, and could be turned
+     * into a highlight of our own chrome. `getRootNode` crosses it.
+     */
+    ownsNode(node) {
+      if (!node) return false;
+      const root = node.getRootNode?.();
+      if (root === this.shadow || root === this.floatShadow) return true;
+      return this.host.contains(node) || this.floatHost.contains(node);
+    }
+    /** Whether there is live selected text inside this element. */
+    hasSelectionIn(el) {
+      const selection = this.shadow?.getSelection?.() || document.getSelection();
+      if (!selection || selection.isCollapsed || !selection.toString().trim()) return false;
+      return el.contains(selection.anchorNode) || el.contains(selection.focusNode);
+    }
     setPage(page2) {
       this.page = page2;
       if (this.awaitingAgent) {
@@ -1498,7 +1915,7 @@ ${css}`;
       }
       el.hidden = false;
       el.innerHTML = `
-      <p><strong>RSS on this page.</strong> ${escapeHtml(feed.title || feed.url)}</p>
+      <p><strong>RSS on this page.</strong> ${escapeHtml2(feed.title || feed.url)}</p>
       <input type="text" data-act="tags" placeholder="tags: design, weekly" />
       <button class="solid" data-act="add">Add feed</button>
       <button class="ghost" data-act="dismiss">Not now</button>
@@ -1545,7 +1962,7 @@ ${css}`;
       el.hidden = false;
       el.className = `markup-status is-${state}`;
       el.title = copy.hint;
-      el.innerHTML = `<span class="pulse"></span><span class="label">${escapeHtml(copy.text)}</span>`;
+      el.innerHTML = `<span class="pulse"></span><span class="label">${escapeHtml2(copy.text)}</span>`;
       el.onclick = () => this.handlers.onMarkupAction?.(this.markupState);
       if (state === "working") return;
       this._markupHide = setTimeout(
@@ -1562,7 +1979,7 @@ ${css}`;
       bar.innerHTML = COLOR_IDS.map(
         (id) => {
           const hint = colorHint2(id);
-          return `<button class="swatch" title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`;
+          return `<button class="swatch" title="${escapeHtml2(hint)}" aria-label="${escapeHtml2(hint)}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`;
         }
       ).join("") + `<button class="ghost" data-act="comment">Comment</button>`;
       this.positionToolbar(rect);
@@ -1674,13 +2091,13 @@ ${css}`;
      * so it costs nothing until asked for — and its absence is itself telling.
      */
     wasHereHtml(highlight) {
-      const blocks = blocksAround(this.page, highlight.text, 1);
-      if (!blocks.length) {
+      const blocks2 = blocksAround(this.page, highlight.text, 1);
+      if (!blocks2.length) {
         return `<p class="was-context is-empty">We have no saved copy of this passage.</p>`;
       }
-      const body = blocks.map((block) => {
+      const body = blocks2.map((block) => {
         const text = clip(block.text, 220);
-        return `<span class="was-block">${escapeHtml(text)}</span>`;
+        return `<span class="was-block">${escapeHtml2(text)}</span>`;
       }).join(" ");
       return `
       <details class="was-here">
@@ -1708,7 +2125,7 @@ ${css}`;
       el.hidden = false;
       el.removeAttribute("hidden");
       el.innerHTML = `
-      <span class="chip-ask">Re-attach \u201C${escapeHtml(clip(quote || "", 30))}\u201D here?</span>
+      <span class="chip-ask">Re-attach \u201C${escapeHtml2(clip(quote || "", 30))}\u201D here?</span>
       ${known ? "" : `<span class="chip-note">not in the saved copy</span>`}
       <button class="solid" data-act="attach">Attach</button>
       <button type="button" class="ghost" data-act="cancel">Cancel</button>
@@ -1730,13 +2147,13 @@ ${css}`;
         return `
         <article class="card is-orphan${arming ? " is-arming" : ""}" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
           <p class="meta-line">
-            <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml(threadLabel(thread))}</span>
+            <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml2(threadLabel(thread))}</span>
             <span class="orphan-badge">not on this page</span>
             <button type="button" class="hl-delete" data-act="delete-hl" title="Delete highlight">\xD7</button>
           </p>
-          <p class="quote">${escapeHtml(clip(highlight.text, 140))}</p>
+          <p class="quote">${escapeHtml2(clip(highlight.text, 140))}</p>
           ${context}
-          ${count ? `<p class="preview">${escapeHtml(clip(preview, 110))}</p>` : ""}
+          ${count ? `<p class="preview">${escapeHtml2(clip(preview, 110))}</p>` : ""}
           <div class="orphan-acts">
             <button type="button" class="solid" data-act="move-hl">${arming ? "Selecting\u2026" : "Re-attach here"}</button>
             ${arming ? `<button type="button" class="ghost" data-act="cancel-reattach">Cancel</button>` : ""}
@@ -1748,12 +2165,12 @@ ${css}`;
         return `
         <article class="card${unsure ? " is-unsure" : ""}" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
           <p class="meta-line">
-            <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml(threadLabel(thread))}</span>
+            <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml2(threadLabel(thread))}</span>
             <span>${count ? `${count} ${count === 1 ? "message" : "messages"}` : ""}</span>
             <button type="button" class="hl-delete" data-act="delete-hl" title="Delete highlight">\xD7</button>
           </p>
-          <p class="quote">${escapeHtml(clip(highlight.text, 90))}</p>
-          ${unsure ? this.confirmRowHtml() : `<p class="preview">${escapeHtml(clip(preview, 110))}</p>`}
+          <p class="quote">${escapeHtml2(clip(highlight.text, 90))}</p>
+          ${unsure ? this.confirmRowHtml() : `<p class="preview">${escapeHtml2(clip(preview, 110))}</p>`}
         </article>`;
       }
       const branches = this.page.threads.filter((t) => t.highlightId === highlight.id);
@@ -1766,38 +2183,38 @@ ${css}`;
             ${COLOR_IDS.map(
         (id) => {
           const hint = colorHint2(id);
-          return `<button type="button" class="swatch ${highlight.color === id ? "is-on" : ""}" title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`;
+          return `<button type="button" class="swatch ${highlight.color === id ? "is-on" : ""}" title="${escapeHtml2(hint)}" aria-label="${escapeHtml2(hint)}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`;
         }
       ).join("")}
           </div>
-          <span class="color-meaning">${escapeHtml(COLORS[highlight.color]?.name || "Highlight")}</span>
+          <span class="color-meaning">${escapeHtml2(COLORS[highlight.color]?.name || "Highlight")}</span>
           <button type="button" class="ghost" data-act="move-hl">Replace span</button>
           <button type="button" class="hl-delete" data-act="delete-hl">Delete</button>
         </div>
-        <p class="quote">${escapeHtml(clip(highlight.text, 180))}</p>
+        <p class="quote">${escapeHtml2(clip(highlight.text, 180))}</p>
         ${branches.length > 1 ? `<div class="branch-list">${branches.map(
         (b) => `<button class="chip ${b.id === thread.id ? "is-on" : ""}" data-branch="${b.id}">${icon(
           b.parentId ? "branch" : "comment",
           { size: 12 }
-        )}${escapeHtml(threadLabel(b))}</button>`
+        )}${escapeHtml2(threadLabel(b))}</button>`
       ).join("")}</div>` : ""}
         <div class="messages">
           ${this.messagesHtml(highlight, thread)}
         </div>
         <div class="composer">
           ${thread.awaitingAgent ? `<div class="packet ${thread.awaitingAgent.status === "pending" ? "is-working" : ""}" role="status" aria-live="polite">
-                  <p class="kicker">${escapeHtml(awaitingCopy(thread.awaitingAgent))}</p>
+                  <p class="kicker">${escapeHtml2(awaitingCopy(thread.awaitingAgent))}</p>
                   ${thread.awaitingAgent.status === "error" ? `<p class="error">The reply could not arrive. Check that the local agent helper is running, then try again.</p>
                   <details><summary>Technical details</summary>
-                    <p class="error-detail">${escapeHtml(thread.awaitingAgent.error || "No response from the local agent.")}</p>
-                    <textarea class="packet-md" readonly>${escapeHtml(thread.awaitingAgent.packet || "")}</textarea>
+                    <p class="error-detail">${escapeHtml2(thread.awaitingAgent.error || "No response from the local agent.")}</p>
+                    <textarea class="packet-md" readonly>${escapeHtml2(thread.awaitingAgent.packet || "")}</textarea>
                     <button type="button" class="ghost" data-act="copy-packet">Copy request details</button>
-                  </details>` : `<p class="hint"><span class="working-dots"><i></i><i></i><i></i></span>${escapeHtml(agentName(thread.awaitingAgent.agent))} is reading this passage and writing a reply. You can keep reading.</p>`}
+                  </details>` : `<p class="hint"><span class="working-dots"><i></i><i></i><i></i></span>${escapeHtml2(agentName(thread.awaitingAgent.agent))} is reading this passage and writing a reply. You can keep reading.</p>`}
                 </div>` : ""}
-          <textarea placeholder="${escapeHtml(this.composerPlaceholder(thread))}"></textarea>
+          <textarea placeholder="${escapeHtml2(this.composerPlaceholder(thread))}"></textarea>
           <div class="mention-menu" hidden></div>
           <div class="send">
-            <button type="button" class="solid send-main" data-act="send">${escapeHtml(this.sendLabel(thread))}</button>
+            <button type="button" class="solid send-main" data-act="send">${escapeHtml2(this.sendLabel(thread))}</button>
             <button type="button" class="solid send-caret" data-act="menu" aria-label="Send options">\u25BE</button>
             <div class="send-menu" hidden>
               <button type="button" data-mode="comment" class="${mode === "comment" && !thread.awaitingAgent ? "is-on" : ""}">Comment</button>
@@ -1815,14 +2232,14 @@ ${css}`;
         const forks = siblings.filter((b) => b.id !== thread.id && b.forkedFromMessageId === m.id);
         return `
           <article class="msg ${m.role === "agent" ? "is-agent" : "is-you"}" data-msg="${m.id}">
-            <div class="meta"><span>${escapeHtml(labelOf(m))}</span><span>${formatRelative(m.createdAt)}</span></div>
-            <p>${messageHtml(m.content)}</p>
+            <div class="meta"><span>${escapeHtml2(labelOf(m))}</span><span>${formatRelative(m.createdAt)}</span></div>
+            <div class="body">${messageHtml(m.content)}</div>
             <div class="msg-actions">
               <button type="button" class="fork" data-fork="${m.id}">${icon("branch", { size: 12 })} Explore another angle</button>
               <button type="button" class="delete" data-delete="${m.id}">Delete</button>
             </div>
             <form class="fork-form" hidden data-fork-form="${m.id}">
-              <input type="text" name="label" value="${escapeHtml(suggested)}" placeholder="Name this angle" maxlength="48" />
+              <input type="text" name="label" value="${escapeHtml2(suggested)}" placeholder="Name this angle" maxlength="48" />
               <button type="submit">Start angle</button>
               <button type="button" data-act="cancel-fork">Cancel</button>
             </form>
@@ -1830,7 +2247,7 @@ ${css}`;
           ${forks.length ? `<div class="fork-off">
                   <span class="fork-kicker">${icon("branch", { size: 11 })} Other angles</span>
                   ${forks.map(
-          (b) => `<button type="button" class="chip" data-branch="${b.id}">${escapeHtml(threadLabel(b))}</button>`
+          (b) => `<button type="button" class="chip" data-branch="${b.id}">${escapeHtml2(threadLabel(b))}</button>`
         ).join("")}
                 </div>` : ""}`;
       }).join("");
@@ -1838,8 +2255,15 @@ ${css}`;
     bindCard(card) {
       const highlightId = card.dataset.highlight;
       const threadId = card.dataset.thread;
+      let pressedAt = null;
+      card.addEventListener("pointerdown", (event) => {
+        pressedAt = { x: event.clientX, y: event.clientY };
+      });
       card.onclick = (event) => {
         if (event.target.closest("button, textarea, select, a, .composer, .fork-form, input")) return;
+        const moved = pressedAt && Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) > 4;
+        pressedAt = null;
+        if (moved || this.hasSelectionIn(card)) return;
         if (threadId) this.openThread(threadId);
         else this.handlers.onOpenHighlight?.(highlightId);
       };
@@ -2105,8 +2529,8 @@ ${css}`;
         (item, i) => `<button type="button" class="${i === index ? "is-active" : ""}" data-mention-index="${i}">
                 <span class="mention-dot" style="--lp-mark:${COLORS[item.color]?.fill || "transparent"}"></span>
                 <span class="mention-text">
-                  <strong>${escapeHtml(clip(item.passage, 46))}</strong>
-                  <small>${escapeHtml(mentionContext(item))}</small>
+                  <strong>${escapeHtml2(clip(item.passage, 46))}</strong>
+                  <small>${escapeHtml2(mentionContext(item))}</small>
                 </span>
               </button>`
       ).join("") : `<p>No conversation matches that yet</p>`;
@@ -2227,7 +2651,7 @@ ${css}`;
     const s = String(text || "").replace(/\s+/g, " ");
     return s.length <= n ? s : `${s.slice(0, n - 1)}\u2026`;
   }
-  function escapeHtml(value) {
+  function escapeHtml2(value) {
     return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
   function labelOf(message) {
@@ -2280,13 +2704,11 @@ ${css}`;
     return [decodeURIComponent(pageId), decodeURIComponent(threadId)];
   }
   function messageHtml(content) {
-    const escaped = escapeHtml(content);
-    return escaped.replace(
-      /@\[([^\]]+)\]\(livepage:([^)]+)\)/g,
-      (_match, label, target) => `<button type="button" class="mention" data-mention="${escapeHtml(
+    return renderMessage(content, {
+      mention: (label, target) => `<button type="button" class="mention" data-mention="${escapeHtml2(
         target
-      )}" title="Open this conversation">${icon("at", { size: 12 })}${label}</button>`
-    );
+      )}" title="Open this conversation">${icon("at", { size: 12 })}${escapeHtml2(label)}</button>`
+    });
   }
   function mentionContext(item) {
     const where = item.samePage ? "This page" : clip(item.pageTitle, 32);
@@ -2569,9 +2991,9 @@ ${css}`;
   var PREFETCH_LIMIT = 4;
   var glosses = /* @__PURE__ */ new Map();
   var failures = /* @__PURE__ */ new Map();
-  function extractArticleSymbols(blocks = [], limit = 32) {
-    const body = (blocks || []).filter((block) => block?.text && !block.heading);
-    const allText = (blocks || []).map((block) => block?.text || "").join(" ");
+  function extractArticleSymbols(blocks2 = [], limit = 32) {
+    const body = (blocks2 || []).filter((block) => block?.text && !block.heading);
+    const allText = (blocks2 || []).map((block) => block?.text || "").join(" ");
     if (!body.length) return [];
     const sentences = body.flatMap((block) => splitSentences(block.text));
     const candidates = /* @__PURE__ */ new Map();
@@ -2792,8 +3214,8 @@ ${css}`;
   function glossKey(url, termKey) {
     return `${String(url || location.href)}::${termKey}`;
   }
-  function contextBlocks(blocks, anchorBlockId, windowSize = 2) {
-    const body = blocks.filter((block) => block?.text && !block.heading);
+  function contextBlocks(blocks2, anchorBlockId, windowSize = 2) {
+    const body = blocks2.filter((block) => block?.text && !block.heading);
     const index = body.findIndex((block) => block.id === anchorBlockId);
     if (index < 0) return body.slice(0, 3);
     return body.slice(Math.max(0, index - windowSize), index + windowSize + 1);
@@ -2924,10 +3346,10 @@ ${css}`;
   function escapeRegExp(value) {
     return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
-  function blockContaining(blocks, text) {
+  function blockContaining(blocks2, text) {
     const needle = normalizeSpace(text);
     if (!needle) return null;
-    return blocks.find((block) => normalizeSpace(block.text).includes(needle)) || null;
+    return blocks2.find((block) => normalizeSpace(block.text).includes(needle)) || null;
   }
   function pickRoot2(doc) {
     for (const selector of ROOT_SELECTORS) {
@@ -2938,12 +3360,12 @@ ${css}`;
     return body && body.textContent.trim().length > 200 ? body : null;
   }
   function locateAnchors(root, symbols2) {
-    const blocks = [...root.querySelectorAll(BLOCK_SELECTOR)];
+    const blocks2 = [...root.querySelectorAll(BLOCK_SELECTOR)];
     const anchors2 = /* @__PURE__ */ new Map();
     for (const symbol of symbols2) {
       const needle = normalizeSpace(symbol.anchorBlockText || symbol.anchorText);
       if (!needle) continue;
-      const target = blocks.find((block) => normalizeSpace(block.textContent).includes(needle));
+      const target = blocks2.find((block) => normalizeSpace(block.textContent).includes(needle));
       if (target) anchors2.set(symbol.key, target);
     }
     return anchors2;
@@ -3583,8 +4005,7 @@ ${css}`;
   }
   function captureSelection(selection = window.getSelection()) {
     if (!selection || selection.isCollapsed || !selection.rangeCount) return false;
-    if (selection.anchorNode && overlay.host?.contains(selection.anchorNode)) return false;
-    if (selection.anchorNode && overlay.floatHost?.contains(selection.anchorNode)) return false;
+    if (overlay.ownsNode(selection.anchorNode) || overlay.ownsNode(selection.focusNode)) return false;
     savedRange = selection.getRangeAt(0).cloneRange();
     savedRect = rangeRect(savedRange);
     return true;
@@ -3622,9 +4043,9 @@ ${css}`;
     });
   }
   function reattachTargetIsKnown() {
-    const blocks = (page?.parsed?.blocks || []).map((block) => block.text);
-    if (!blocks.length) return true;
-    return selectionIsSafe(window.getSelection(), blocks);
+    const blocks2 = (page?.parsed?.blocks || []).map((block) => block.text);
+    if (!blocks2.length) return true;
+    return selectionIsSafe(window.getSelection(), blocks2);
   }
   async function ensurePage() {
     if (page?.id) return page;

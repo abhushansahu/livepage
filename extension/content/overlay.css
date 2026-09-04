@@ -396,6 +396,91 @@ button.solid:hover {
   line-height: 1.55;
   user-select: text;
 }
+/*
+ * What an agent wrote, rendered. `shared/markdown.js` emits exactly these
+ * tags and nothing else, so this is the whole surface: no rule here can be
+ * reached by anything the model chose to write.
+ */
+.msg .body {
+  color: var(--lp-ink);
+  line-height: 1.55;
+  user-select: text;
+}
+
+.msg .body > * { margin: 0 0 6px; }
+.msg .body > *:last-child { margin-bottom: 0; }
+.msg .body p { white-space: pre-wrap; }
+.msg .body p.head { font-weight: 650; white-space: normal; }
+
+.msg .body ul,
+.msg .body ol { padding-left: 18px; }
+.msg .body li { margin: 2px 0; line-height: 1.5; }
+
+.msg .body blockquote {
+  margin: 0 0 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--lp-line);
+  opacity: 0.85;
+}
+
+.msg .body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  padding: 0.05em 0.28em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--lp-ink) 8%, transparent);
+}
+
+.msg .body pre.code {
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+  background: color-mix(in srgb, var(--lp-ink) 8%, transparent);
+}
+
+.msg .body pre.code code { background: none; padding: 0; }
+
+/*
+ * Maths is set in a serif italic because that is what makes a variable look
+ * like a variable. Upright spans inside it are the parts LaTeX marked as
+ * words rather than symbols, and they have to come back out of the italic.
+ */
+.msg .body .math {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.msg .body .math.is-block {
+  display: block;
+  text-align: center;
+  margin: 8px 0;
+  font-size: 1.05em;
+  white-space: normal;
+}
+
+.msg .body .math .up,
+.msg .body .math code { font-style: normal; }
+
+.msg .body .math sub,
+.msg .body .math sup { font-size: 0.72em; line-height: 0; }
+
+/* A fraction, stacked, so a/b does not have to be read as a division. */
+.msg .body .frac {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: -0.45em;
+  text-align: center;
+  font-size: 0.92em;
+  margin: 0 0.12em;
+}
+
+.msg .body .frac .num { border-bottom: 1px solid currentColor; padding: 0 0.25em; }
+.msg .body .frac .den { padding: 0 0.25em; }
+
+.msg .body .root { border-top: 1px solid currentColor; padding: 0 0.15em; }
+
 
 .msg-actions {
   display: flex;

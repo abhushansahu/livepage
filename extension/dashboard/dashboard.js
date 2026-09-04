@@ -8,6 +8,7 @@ import { anchorItems } from "../shared/anchors.js";
 import { highlightMatches, pageMatchesQuery } from "../shared/search.js";
 import { cssEscape } from "../parse/quote.js";
 import { viewerUrlFor } from "../pdf/route.js";
+import { renderMessage } from "../shared/markdown.js";
 import { composeFeed, sourceGlyph, sourceLabel } from "../shared/feed.js";
 import { sourceColor, sourceKey } from "../shared/source-meta.js";
 import { icon, sourceIcon } from "../shared/icons.js";
@@ -1054,7 +1055,7 @@ async function openDrawer(id, { focusHighlightId } = {}) {
                   ${(thread.messages || [])
                     .map(
                       (m) =>
-                        `<p><strong>${m.role === "agent" ? `Agent (${m.agent})` : "You"}:</strong> ${escapeHtml(m.content)}</p>`
+                        `<div class="msg-body"><strong>${m.role === "agent" ? `Agent (${m.agent})` : "You"}:</strong> ${renderMessage(m.content)}</div>`
                     )
                     .join("")}
                 </div>`;

@@ -6,6 +6,7 @@ import { icon } from "../shared/icons.js";
 import { normalizeTheme } from "../shared/theme.js";
 import { blocksAround } from "../shared/anchors.js";
 import { documentView } from "./view.js";
+import { renderMessage } from "../shared/markdown.js";
 
 const GUTTER = 328;
 const CARD_GAP = 10;
@@ -72,6 +73,22 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
 .markup-status.is-collapsed:hover .label { display: inline; }
 .markup-status.is-collapsed:hover { padding: 7px 12px; }
 @keyframes lp-markup-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+/* Enough of the rendered-message rules to stay readable if overlay.css loses
+   its fetch race — without these a reply is one unbroken run of text. */
+.msg .body > * { margin: 0 0 6px; }
+.msg .body p { white-space: pre-wrap; }
+.msg .body p.head { font-weight: 650; white-space: normal; }
+.msg .body ul, .msg .body ol { padding-left: 18px; }
+.msg .body code, .msg .body pre.code { font-family: ui-monospace, Menlo, monospace; font-size: 0.92em; }
+.msg .body pre.code { padding: 8px 10px; border-radius: 8px; overflow-x: auto; background: rgba(28,23,18,0.08); }
+.msg .body .math { font-family: Palatino, Georgia, serif; font-style: italic; white-space: nowrap; }
+.msg .body .math.is-block { display: block; text-align: center; margin: 8px 0; white-space: normal; }
+.msg .body .math .up { font-style: normal; }
+.msg .body .math sub, .msg .body .math sup { font-size: 0.72em; line-height: 0; }
+.msg .body .frac { display: inline-flex; flex-direction: column; vertical-align: -0.45em; text-align: center; font-size: 0.92em; margin: 0 0.12em; }
+.msg .body .frac .num { border-bottom: 1px solid currentColor; padding: 0 0.25em; }
+.msg .body .frac .den { padding: 0 0.25em; }
+.msg .body .root { border-top: 1px solid currentColor; padding: 0 0.15em; }
 `;
 
 function makeHost(kind) {
@@ -200,6 +217,28 @@ export class Overlay {
   ownsEvent(event) {
     const path = event.composedPath?.() || [];
     return path.includes(this.host) || path.includes(this.floatHost);
+  }
+
+  /**
+   * Whether a node belongs to the overlay rather than the page.
+   *
+   * `host.contains(node)` cannot answer this: our UI lives in a shadow root,
+   * and `contains` stops at the boundary. So a selection made inside a margin
+   * card looked to the page like a selection of the page, and could be turned
+   * into a highlight of our own chrome. `getRootNode` crosses it.
+   */
+  ownsNode(node) {
+    if (!node) return false;
+    const root = node.getRootNode?.();
+    if (root === this.shadow || root === this.floatShadow) return true;
+    return this.host.contains(node) || this.floatHost.contains(node);
+  }
+
+  /** Whether there is live selected text inside this element. */
+  hasSelectionIn(el) {
+    const selection = this.shadow?.getSelection?.() || document.getSelection();
+    if (!selection || selection.isCollapsed || !selection.toString().trim()) return false;
+    return el.contains(selection.anchorNode) || el.contains(selection.focusNode);
   }
 
   setPage(page) {
@@ -666,7 +705,7 @@ export class Overlay {
         return `
           <article class="msg ${m.role === "agent" ? "is-agent" : "is-you"}" data-msg="${m.id}">
             <div class="meta"><span>${escapeHtml(labelOf(m))}</span><span>${formatRelative(m.createdAt)}</span></div>
-            <p>${messageHtml(m.content)}</p>
+            <div class="body">${messageHtml(m.content)}</div>
             <div class="msg-actions">
               <button type="button" class="fork" data-fork="${m.id}">${icon("branch", { size: 12 })} Explore another angle</button>
               <button type="button" class="delete" data-delete="${m.id}">Delete</button>
@@ -697,8 +736,22 @@ export class Overlay {
   bindCard(card) {
     const highlightId = card.dataset.highlight;
     const threadId = card.dataset.thread;
+    // A drag that selects text inside a card also fires a click on it, and
+    // opening the thread re-renders the gutter — which throws the selection
+    // away and scrolls the conversation to the bottom before you can copy a
+    // word of it. Two guards, because they catch different gestures: the
+    // distance covers dragging, and the live selection covers double-click.
+    let pressedAt = null;
+    card.addEventListener("pointerdown", (event) => {
+      pressedAt = { x: event.clientX, y: event.clientY };
+    });
     card.onclick = (event) => {
       if (event.target.closest("button, textarea, select, a, .composer, .fork-form, input")) return;
+      const moved =
+        pressedAt &&
+        Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) > 4;
+      pressedAt = null;
+      if (moved || this.hasSelectionIn(card)) return;
       if (threadId) this.openThread(threadId);
       else this.handlers.onOpenHighlight?.(highlightId);
     };
@@ -1192,15 +1245,18 @@ function decodeMention(value) {
   return [decodeURIComponent(pageId), decodeURIComponent(threadId)];
 }
 
+/**
+ * An agent answers in markdown with LaTeX in it. Showing that raw put
+ * `h_\theta(x) = \theta^\top x` in the margin and left the reader to decode
+ * it, which defeats the point of the thought being right there.
+ */
 function messageHtml(content) {
-  const escaped = escapeHtml(content);
-  return escaped.replace(
-    /@\[([^\]]+)\]\(livepage:([^)]+)\)/g,
-    (_match, label, target) =>
+  return renderMessage(content, {
+    mention: (label, target) =>
       `<button type="button" class="mention" data-mention="${escapeHtml(
         target
-      )}" title="Open this conversation">${icon("at", { size: 12 })}${label}</button>`
-  );
+      )}" title="Open this conversation">${icon("at", { size: 12 })}${escapeHtml(label)}</button>`
+  });
 }
 
 function mentionContext(item) {
