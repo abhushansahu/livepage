@@ -63,6 +63,13 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
   width: 7px; height: 7px; border-radius: 50%; background: #3f6b52; flex: none;
 }
 .markup-status.is-working .pulse { animation: lp-markup-pulse 1.3s ease-in-out infinite; }
+.markup-status.is-idle .pulse { background: transparent; box-shadow: inset 0 0 0 1.5px #3f6b52; }
+.markup-status.is-empty .pulse { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(28,23,18,0.4); }
+.markup-status.is-error .pulse { background: #8a3a32; }
+.markup-status.is-collapsed .label { display: none; }
+.markup-status.is-collapsed { padding: 7px; }
+.markup-status.is-collapsed:hover .label { display: inline; }
+.markup-status.is-collapsed:hover { padding: 7px 12px; }
 @keyframes lp-markup-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 `;
 
@@ -292,43 +299,50 @@ export class Overlay {
   }
 
   /**
-   * Says an agent is reading the page, and then what it found.
+   * What has happened to this article, and what would happen if you asked.
    *
-   * Deliberately small and in the corner: this is a reading surface, and the
-   * reader did not ask to be interrupted — only to know that marks are on
-   * their way rather than that nothing is happening.
+   * The states have to be told apart, because "not looked at yet", "looking",
+   * "looked and found nothing" and "could not look" are four different things
+   * and all of them used to render as an empty corner. The message shows
+   * itself and then shrinks to a dot rather than disappearing, so the answer
+   * is still there when you glance back.
    */
-  markupStatus(state, { count = 0 } = {}) {
+  markupStatus(state, { count = 0, detail = "" } = {}) {
     this.attachHosts();
     const el = this.els?.markupStatus;
     if (!el) return;
     clearTimeout(this._markupHide);
+    this.markupState = state;
+
     if (!state) {
       el.hidden = true;
       return;
     }
-    // Clicking it sends it away. A wait can run to thirty seconds, and the
-    // reader should never be stuck looking at something they cannot dismiss.
-    el.onclick = () => {
-      el.hidden = true;
-    };
-    if (state === "working") {
-      el.hidden = false;
-      el.className = "markup-status is-working";
-      el.innerHTML = `<span class="pulse"></span><span>Reading this page\u2026</span>`;
-      el.title = "Click to dismiss";
-      return;
-    }
+
+    const copy = {
+      idle: { text: "\u2325A to mark this up", hint: "Nothing marked here yet" },
+      working: { text: "Reading this page\u2026", hint: "An agent is reading this page" },
+      done: {
+        text: `${count} passage${count === 1 ? "" : "s"} marked \u00b7 \u2325J to move between them`,
+        hint: `${count} passage${count === 1 ? "" : "s"} marked`
+      },
+      empty: { text: "Nothing here worth marking", hint: "Read, and nothing was worth marking" },
+      error: { text: detail || "Could not reach the agent", hint: detail || "Could not reach the agent" }
+    }[state];
+    if (!copy) return;
+
     el.hidden = false;
-    el.className = "markup-status";
-    el.innerHTML =
-      state === "empty"
-        ? `<span>Nothing here worth marking</span>`
-        : `<span class="pulse is-done"></span><span>${count} passage${count === 1 ? "" : "s"} marked \u00b7 \u2325J to move between them</span>`;
-    // It has said its piece; the page belongs to the reader again.
-    this._markupHide = setTimeout(() => {
-      el.hidden = true;
-    }, state === "empty" ? 2600 : 5200);
+    el.className = `markup-status is-${state}`;
+    el.title = copy.hint;
+    el.innerHTML = `<span class="pulse"></span><span class="label">${escapeHtml(copy.text)}</span>`;
+    el.onclick = () => this.handlers.onMarkupAction?.(this.markupState);
+
+    // Working has no end of its own; the others say their piece and shrink.
+    if (state === "working") return;
+    this._markupHide = setTimeout(
+      () => el.classList.add("is-collapsed"),
+      state === "done" ? 5200 : 3400
+    );
   }
 
   showToolbar(rect, { onHighlight, onComment } = {}) {

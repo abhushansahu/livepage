@@ -88,7 +88,9 @@ overlay.handlers = {
   onDeleteHighlight: (highlightId) => deleteHighlight(highlightId),
   onSearchMentions: (query) => searchMentions(query),
   onOpenMention: (pageId, threadId) => openMention(pageId, threadId),
-  onRefresh: () => refreshPage()
+  onRefresh: () => refreshPage(),
+  // The dot in the corner does whatever its state implies.
+  onMarkupAction: (state) => (state === "done" ? jumpMark(1) : markupNow())
 };
 
 onBroadcast((message) => {
@@ -290,26 +292,41 @@ async function runMarkup(parsed, { cachedOnly = false, manual = false } = {}) {
     });
     clearTimeout(announce);
     markup = { marks: row?.marks || [], contentHash: row?.contentHash || "", agent: row?.agent };
-    const fresh = row?.cached === false;
-    if (!markup.marks.length) {
-      // Saying so matters: it means the agent read the page and found nothing,
-      // not that anything is broken.
-      overlay.markupStatus(fresh || manual ? "empty" : null);
+    // Nobody has asked for a pass here yet. That is a state of its own, and
+    // the reason the corner looked identical whether an agent had read the
+    // page and found nothing or had never been asked at all.
+    if (row?.skipped === "not-asked") {
+      overlay.markupStatus("idle");
       return;
     }
-    paintMarks(document.body, markup.marks, { reveal: fresh });
+    if (row?.skipped === "short") {
+      overlay.markupStatus(manual ? "empty" : null);
+      return;
+    }
+    if (!markup.marks.length) {
+      overlay.markupStatus("empty");
+      return;
+    }
+    paintMarks(document.body, markup.marks, { reveal: row?.cached === false });
     refreshMinimap();
-    // Announce a pass that just happened, and any pass you asked for. Merely
-    // arriving on an article you already marked should not be narrated at you.
-    overlay.markupStatus(fresh || manual ? "done" : null, { count: markup.marks.length });
+    overlay.markupStatus("done", { count: markup.marks.length });
   } catch (error) {
     clearTimeout(announce);
-    // The host being down is the ordinary case, not an incident. Stay quiet.
-    overlay.markupStatus(null);
-    minimap?.destroy();
-    minimap = null;
+    // Silence is what makes a keypress feel broken: you asked, and the page
+    // did nothing. Say what went wrong, and leave it up.
     console.warn("LivePage markup unavailable", error);
+    overlay.markupStatus("error", { detail: markupError(error) });
   }
+}
+
+/** Turns a failure into something a reader can act on. */
+function markupError(error) {
+  const text = String(error?.message || error || "");
+  if (/fetch|network|refused|failed to fetch|host/i.test(text)) {
+    return "Agent host not running \u00b7 npm run agent-host";
+  }
+  if (/token|pair|401|403/i.test(text)) return "Agent host refused this browser";
+  return `Could not mark up: ${text.slice(0, 60)}`;
 }
 
 /**
@@ -555,6 +572,8 @@ function watchNavigation() {
     clearMarks(document, markup.marks);
     markup = { marks: [], contentHash: "" };
     overlay.markupStatus(null);
+    minimap?.destroy();
+    minimap = null;
     stopSymbols();
     anchors = new Map();
     page = null;

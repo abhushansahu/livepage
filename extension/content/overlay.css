@@ -1029,3 +1029,45 @@ textarea:focus,
     animation: none;
   }
 }
+
+/* Each state of the markup pass has to look different from the others.
+   Nothing looked at yet, looking, looked and found nothing, and could not
+   look are four answers, and an empty corner is not any of them. */
+.markup-status.is-idle .pulse {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--lp-accent, #3f6b52);
+}
+
+.markup-status.is-empty .pulse {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--lp-muted);
+}
+
+.markup-status.is-error .pulse {
+  background: var(--lp-danger);
+}
+
+/* Said its piece, and shrank to something you can still glance at. */
+.markup-status.is-collapsed {
+  padding: 7px;
+  cursor: pointer;
+}
+
+.markup-status.is-collapsed .label {
+  display: none;
+}
+
+.markup-status.is-collapsed:hover,
+.markup-status.is-collapsed:focus-within {
+  padding: 7px 12px;
+}
+
+.markup-status.is-collapsed:hover .label,
+.markup-status.is-collapsed:focus-within .label {
+  display: inline;
+}
+
+.markup-status.is-idle,
+.markup-status.is-empty {
+  cursor: pointer;
+}
