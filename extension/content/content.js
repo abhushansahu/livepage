@@ -43,6 +43,9 @@ let reanchor = null;
 let stopInfinite = null;
 let stopUrlWatch = null;
 let reattaching = null;
+let symbols = null;
+let symbolLoop = null;
+let symbolsFlag = false;
 
 overlay.handlers = {
   onOpenHighlight: (id) => openOrCreateThread(id),
@@ -94,6 +97,7 @@ async function boot() {
   }
   const { flags } = resolveFlags(settings);
   anchorFlag = flags.orphanRecovery !== false;
+  symbolsFlag = Boolean(flags.articleSymbols);
 
   try {
     await overlay.ready;
@@ -102,12 +106,7 @@ async function boot() {
   }
   maybeToolbar();
 
-  let parsed = { blocks: [] };
-  try {
-    parsed = parseDocument(document, location.href);
-  } catch (error) {
-    console.warn("LivePage parse failed", error);
-  }
+  const parsed = freshParse();
   if (!infinite.infinite) infinite = evaluateInfiniteScroll(location.href, document);
   try {
     // Opening a page is not an act of keeping it. This refreshes a page you
@@ -132,18 +131,7 @@ async function boot() {
   } catch (error) {
     console.warn("LivePage visit failed", error);
   }
-  if (flags.articleSymbols) {
-    try {
-      enableArticleSymbols(document, parsed, {
-        call,
-        pageTitle: document.title,
-        url: location.href,
-        prefetch: Boolean(page)
-      });
-    } catch (error) {
-      console.warn("LivePage article symbols failed", error);
-    }
-  }
+  if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
   if (flags.rss) offerRssIfAny();
 }
 
@@ -230,6 +218,56 @@ async function flushAnchorReport() {
 }
 
 /**
+ * Paints the terms worth explaining, and keeps trying while the page arrives.
+ *
+ * A client-rendered page has no article at document_idle, and symbols used to
+ * get exactly one look at it. They now retry on the same schedule the
+ * highlights do, and are torn down and rebuilt when a single-page app swaps
+ * the article underneath.
+ */
+function mountSymbols(parsed) {
+  try {
+    symbols?.destroy();
+  } catch (error) {
+    console.warn("LivePage article symbols teardown failed", error);
+  }
+  symbols = null;
+  try {
+    symbols = enableArticleSymbols(document, parsed, {
+      call,
+      pageTitle: document.title,
+      url: location.href,
+      prefetch: Boolean(page)
+    });
+  } catch (error) {
+    console.warn("LivePage article symbols failed", error);
+  }
+  return symbols?.count || 0;
+}
+
+function startSymbolLoop() {
+  symbolLoop?.stop();
+  symbolLoop = createReanchorLoop({
+    root: document.body,
+    // Nothing painted yet is the only thing worth waiting for; once a term is
+    // on the page the article has arrived.
+    unresolvedCount: () => (symbols?.count ? 0 : 1),
+    infinite: infinite.infinite,
+    anchorNow: () => mountSymbols(freshParse())
+  });
+  symbolLoop.start();
+}
+
+function freshParse() {
+  try {
+    return parseDocument(document, location.href);
+  } catch (error) {
+    console.warn("LivePage parse failed", error);
+    return { blocks: [] };
+  }
+}
+
+/**
  * A single-page app swaps articles without ever reloading, so highlights have
  * to be re-read — and the old page's marks and progress have to be let go, or
  * one article's notes bleed onto the next.
@@ -250,6 +288,14 @@ function watchNavigation() {
     for (const highlight of page?.highlights || []) {
       unwrapHighlight(document, highlight.id);
     }
+    symbolLoop?.stop();
+    symbolLoop = null;
+    try {
+      symbols?.destroy();
+    } catch (error) {
+      console.warn("LivePage article symbols teardown failed", error);
+    }
+    symbols = null;
     anchors = new Map();
     page = null;
     reachedPercent = 0;
@@ -271,12 +317,7 @@ function samePageId(current, href) {
 }
 
 async function revisit() {
-  let parsed = { blocks: [] };
-  try {
-    parsed = parseDocument(document, location.href);
-  } catch (error) {
-    console.warn("LivePage parse failed", error);
-  }
+  const parsed = freshParse();
   infinite = evaluateInfiniteScroll(location.href, document);
   try {
     page = await call("VISIT_PAGE", {
@@ -296,6 +337,7 @@ async function revisit() {
     if (anchorFlag) reanchor = startReanchor();
   }
   watchInfinite();
+  if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
 }
 
 /**

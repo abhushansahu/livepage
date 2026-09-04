@@ -2165,7 +2165,7 @@ ${css}`;
     ".markdown-body"
   ];
   var BLOCK_SELECTOR = "p, li, blockquote, td, h1, h2, h3, h4";
-  var SKIP_SELECTOR = "a, button, input, textarea, select, option, pre, script, style, noscript, svg, canvas, iframe, [contenteditable], .lp-ignore, mark.lp-hl, .lp-article-symbol";
+  var SKIP_SELECTOR = "a, button, input, textarea, select, option, pre, script, style, noscript, svg, canvas, iframe, [contenteditable], .lp-ignore, mark.lp-hl, .lp-article-symbol, nav, header, footer, aside, [role='navigation'], [role='banner'], [role='contentinfo'], [role='complementary'], [aria-hidden='true']";
   var STOP = new Set(
     `a an and are as at be been being but by can could did do does doing done for from had has have
    having he her here hers him his how i if in into is it its itself just me more most much my no
@@ -2246,28 +2246,28 @@ ${css}`;
     }
     for (const phrase of repeatedPhrases(sentences)) add(phrase, "phrase");
     for (const word of repeatedWords(sentences, candidates)) add(word, "word");
-    const symbols = [];
+    const symbols2 = [];
     for (const candidate of candidates.values()) {
       const support = supportFor(candidate, sentences);
       if (!support) continue;
       const count = countTerm(allText, candidate.term);
       if (count < minHits(support.kind, candidate.term)) continue;
-      symbols.push({ ...candidate, ...support, count });
+      symbols2.push({ ...candidate, ...support, count });
     }
-    return symbols.sort((a, b) => rank(b) - rank(a) || b.count - a.count).slice(0, limit).map((symbol) => ({
+    return symbols2.sort((a, b) => rank(b) - rank(a) || b.count - a.count).slice(0, limit).map((symbol) => ({
       ...symbol,
       anchorBlockId: blockContaining(body, symbol.anchorText)?.id || null,
       anchorBlockText: blockContaining(body, symbol.anchorText)?.text || ""
     }));
   }
   function enableArticleSymbols(doc, parsed, options = {}) {
-    const symbols = extractArticleSymbols(parsed?.blocks || []);
-    const root = symbols.length ? pickRoot2(doc) : null;
+    const symbols2 = extractArticleSymbols(parsed?.blocks || []);
+    const root = symbols2.length ? pickRoot2(doc) : null;
     if (!root) return { count: 0, destroy() {
     } };
-    const symbolByKey = new Map(symbols.map((symbol) => [symbol.key, symbol]));
-    const anchorByKey = locateAnchors(root, symbols);
-    const pattern = termPattern(symbols.map((symbol) => symbol.term).sort((a, b) => b.length - a.length));
+    const symbolByKey = new Map(symbols2.map((symbol) => [symbol.key, symbol]));
+    const anchorByKey = locateAnchors(root, symbols2);
+    const pattern = termPattern(symbols2.map((symbol) => symbol.term).sort((a, b) => b.length - a.length));
     let count = 0;
     for (const node of textNodes(root, doc)) {
       const matches = [...node.data.matchAll(pattern)];
@@ -2348,7 +2348,7 @@ ${css}`;
       if (event.key === "Meta" || event.key === "Control") doc.documentElement.classList.add("lp-symbols-peek");
     };
     const onKeyUp = () => doc.documentElement.classList.remove("lp-symbols-peek");
-    warmGlosses(options).then(() => prefetchGlosses(symbols, parsed, options));
+    warmGlosses(options).then(() => prefetchGlosses(symbols2, parsed, options));
     card.addEventListener("pointerenter", () => clearTimeout(hideTimer));
     card.addEventListener("pointerleave", scheduleHide);
     root.addEventListener("pointerover", onPointerOver);
@@ -2359,7 +2359,7 @@ ${css}`;
     window.addEventListener("blur", onKeyUp);
     return {
       count,
-      symbols,
+      symbols: symbols2,
       destroy() {
         root.removeEventListener("pointerover", onPointerOver);
         root.removeEventListener("pointerout", onPointerOut);
@@ -2439,9 +2439,9 @@ ${css}`;
       console.warn("LivePage glossary unavailable", error);
     }
   }
-  async function prefetchGlosses(symbols, parsed, options) {
+  async function prefetchGlosses(symbols2, parsed, options) {
     if (!options.prefetch) return;
-    const queue = symbols.filter((symbol) => shouldExplainWithAi(symbol)).filter((symbol) => !glosses.get(glossKey(options.url, symbol.key))?.text).sort((a, b) => b.count - a.count).slice(0, PREFETCH_LIMIT);
+    const queue = symbols2.filter((symbol) => shouldExplainWithAi(symbol)).filter((symbol) => !glosses.get(glossKey(options.url, symbol.key))?.text).sort((a, b) => b.count - a.count).slice(0, PREFETCH_LIMIT);
     for (const symbol of queue) {
       const text = await loadGloss(symbol, parsed, options);
       if (!text) return;
@@ -2592,12 +2592,13 @@ ${css}`;
       const root = doc.querySelector(selector);
       if (root && root.textContent.trim().length > 200) return root;
     }
-    return null;
+    const body = doc.body;
+    return body && body.textContent.trim().length > 200 ? body : null;
   }
-  function locateAnchors(root, symbols) {
+  function locateAnchors(root, symbols2) {
     const blocks = [...root.querySelectorAll(BLOCK_SELECTOR)];
     const anchors2 = /* @__PURE__ */ new Map();
-    for (const symbol of symbols) {
+    for (const symbol of symbols2) {
       const needle = normalizeSpace(symbol.anchorBlockText || symbol.anchorText);
       if (!needle) continue;
       const target = blocks.find((block) => normalizeSpace(block.textContent).includes(needle));
@@ -2666,6 +2667,9 @@ ${css}`;
   var stopInfinite = null;
   var stopUrlWatch = null;
   var reattaching = null;
+  var symbols = null;
+  var symbolLoop = null;
+  var symbolsFlag = false;
   overlay.handlers = {
     onOpenHighlight: (id) => openOrCreateThread(id),
     onNote: (threadId, content) => mutate("ADD_MESSAGE", { pageId: page.id, threadId, message: { role: "user", content } }),
@@ -2709,18 +2713,14 @@ ${css}`;
     }
     const { flags } = resolveFlags(settings);
     anchorFlag = flags.orphanRecovery !== false;
+    symbolsFlag = Boolean(flags.articleSymbols);
     try {
       await overlay.ready;
     } catch (error) {
       console.warn("LivePage overlay failed", error);
     }
     maybeToolbar();
-    let parsed = { blocks: [] };
-    try {
-      parsed = parseDocument(document, location.href);
-    } catch (error) {
-      console.warn("LivePage parse failed", error);
-    }
+    const parsed = freshParse();
     if (!infinite.infinite) infinite = evaluateInfiniteScroll(location.href, document);
     try {
       page = await call("VISIT_PAGE", {
@@ -2742,18 +2742,7 @@ ${css}`;
     } catch (error) {
       console.warn("LivePage visit failed", error);
     }
-    if (flags.articleSymbols) {
-      try {
-        enableArticleSymbols(document, parsed, {
-          call,
-          pageTitle: document.title,
-          url: location.href,
-          prefetch: Boolean(page)
-        });
-      } catch (error) {
-        console.warn("LivePage article symbols failed", error);
-      }
-    }
+    if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
     if (flags.rss) offerRssIfAny();
   }
   function watchInfinite() {
@@ -2821,6 +2810,45 @@ ${css}`;
       console.warn("LivePage anchor report failed", error);
     }
   }
+  function mountSymbols(parsed) {
+    try {
+      symbols?.destroy();
+    } catch (error) {
+      console.warn("LivePage article symbols teardown failed", error);
+    }
+    symbols = null;
+    try {
+      symbols = enableArticleSymbols(document, parsed, {
+        call,
+        pageTitle: document.title,
+        url: location.href,
+        prefetch: Boolean(page)
+      });
+    } catch (error) {
+      console.warn("LivePage article symbols failed", error);
+    }
+    return symbols?.count || 0;
+  }
+  function startSymbolLoop() {
+    symbolLoop?.stop();
+    symbolLoop = createReanchorLoop({
+      root: document.body,
+      // Nothing painted yet is the only thing worth waiting for; once a term is
+      // on the page the article has arrived.
+      unresolvedCount: () => symbols?.count ? 0 : 1,
+      infinite: infinite.infinite,
+      anchorNow: () => mountSymbols(freshParse())
+    });
+    symbolLoop.start();
+  }
+  function freshParse() {
+    try {
+      return parseDocument(document, location.href);
+    } catch (error) {
+      console.warn("LivePage parse failed", error);
+      return { blocks: [] };
+    }
+  }
   function watchNavigation() {
     if (stopUrlWatch) stopUrlWatch();
     stopUrlWatch = watchUrl(async () => {
@@ -2837,6 +2865,14 @@ ${css}`;
       for (const highlight of page?.highlights || []) {
         unwrapHighlight(document, highlight.id);
       }
+      symbolLoop?.stop();
+      symbolLoop = null;
+      try {
+        symbols?.destroy();
+      } catch (error) {
+        console.warn("LivePage article symbols teardown failed", error);
+      }
+      symbols = null;
       anchors = /* @__PURE__ */ new Map();
       page = null;
       reachedPercent = 0;
@@ -2856,12 +2892,7 @@ ${css}`;
     }
   }
   async function revisit() {
-    let parsed = { blocks: [] };
-    try {
-      parsed = parseDocument(document, location.href);
-    } catch (error) {
-      console.warn("LivePage parse failed", error);
-    }
+    const parsed = freshParse();
     infinite = evaluateInfiniteScroll(location.href, document);
     try {
       page = await call("VISIT_PAGE", {
@@ -2881,6 +2912,7 @@ ${css}`;
       if (anchorFlag) reanchor = startReanchor();
     }
     watchInfinite();
+    if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
   }
   async function anchorInfiniteView() {
     if (!settings.lockInfiniteScroll || !infinite.infinite) return;

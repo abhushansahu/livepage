@@ -11,7 +11,11 @@ const ROOT_SELECTORS = [
 
 const BLOCK_SELECTOR = "p, li, blockquote, td, h1, h2, h3, h4";
 const SKIP_SELECTOR =
-  "a, button, input, textarea, select, option, pre, script, style, noscript, svg, canvas, iframe, [contenteditable], .lp-ignore, mark.lp-hl, .lp-article-symbol";
+  "a, button, input, textarea, select, option, pre, script, style, noscript, svg, canvas, iframe, [contenteditable], .lp-ignore, mark.lp-hl, .lp-article-symbol, " +
+  // Site chrome. The parser strips these before it ever sees the text, so
+  // symbols must ignore them too or falling back to the body would decorate
+  // the nav and the footer.
+  "nav, header, footer, aside, [role='navigation'], [role='banner'], [role='contentinfo'], [role='complementary'], [aria-hidden='true']";
 
 /**
  * Words that can never carry a term on their own, and can never sit at the
@@ -569,12 +573,22 @@ function blockContaining(blocks, text) {
   return blocks.find((block) => normalizeSpace(block.text).includes(needle)) || null;
 }
 
+/**
+ * Where on the page to paint.
+ *
+ * Falls back to the body, because plenty of sites lay an article out in plain
+ * divs and never use one of these containers. The parser that produced the
+ * symbols already falls back the same way — when the two disagreed, terms were
+ * extracted from the text and then silently dropped for having nowhere to go.
+ * Site chrome is kept out by SKIP_SELECTOR rather than by the root.
+ */
 function pickRoot(doc) {
   for (const selector of ROOT_SELECTORS) {
     const root = doc.querySelector(selector);
     if (root && root.textContent.trim().length > 200) return root;
   }
-  return null;
+  const body = doc.body;
+  return body && body.textContent.trim().length > 200 ? body : null;
 }
 
 function locateAnchors(root, symbols) {
