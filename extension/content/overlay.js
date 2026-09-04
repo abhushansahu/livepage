@@ -51,6 +51,19 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
 .orphan-dock .card { position: static; margin: 6px 0; }
 .dock-head { display: flex; gap: 6px; align-items: center; width: 100%; appearance: none; border: 0; background: transparent; font: inherit; color: inherit; cursor: pointer; padding: 2px; text-align: left; }
 .dock-title { flex: 1; font-weight: 600; }
+.markup-status {
+  position: fixed; left: 16px; bottom: 16px; z-index: 2147483646;
+  display: flex; gap: 8px; align-items: center; pointer-events: auto;
+  padding: 7px 12px; border-radius: 999px; font-size: 12px;
+  background: #fffcf7; color: #1c1712;
+  border: 1px solid rgba(28,23,18,0.12); box-shadow: 0 10px 30px rgba(28,23,18,0.12);
+}
+.markup-status[hidden] { display: none !important; }
+.markup-status .pulse {
+  width: 7px; height: 7px; border-radius: 50%; background: #3f6b52; flex: none;
+}
+.markup-status.is-working .pulse { animation: lp-markup-pulse 1.3s ease-in-out infinite; }
+@keyframes lp-markup-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 `;
 
 function makeHost(kind) {
@@ -79,7 +92,7 @@ export class Overlay {
     this.anchors = new Map();
     this.reattaching = null;
     this.dockOpen = false;
-    this.els = { toolbar: null, toast: null, feedOffer: null, gutter: null };
+    this.els = { toolbar: null, toast: null, feedOffer: null, markupStatus: null, gutter: null };
     this.mountFloat();
     this.bind();
     this.ready = this.render();
@@ -94,11 +107,13 @@ export class Overlay {
         <div class="toolbar" hidden></div>
         <div class="toast" hidden></div>
         <div class="feed-offer" hidden></div>
+        <div class="markup-status" hidden role="status" aria-live="polite"></div>
       </div>
     `;
     this.els.toolbar = this.floatShadow.querySelector(".toolbar");
     this.els.toast = this.floatShadow.querySelector(".toast");
     this.els.feedOffer = this.floatShadow.querySelector(".feed-offer");
+    this.els.markupStatus = this.floatShadow.querySelector(".markup-status");
     this.attachHosts();
   }
 
@@ -274,6 +289,46 @@ export class Overlay {
       el.hidden = true;
       onDismiss?.();
     };
+  }
+
+  /**
+   * Says an agent is reading the page, and then what it found.
+   *
+   * Deliberately small and in the corner: this is a reading surface, and the
+   * reader did not ask to be interrupted — only to know that marks are on
+   * their way rather than that nothing is happening.
+   */
+  markupStatus(state, { count = 0 } = {}) {
+    this.attachHosts();
+    const el = this.els?.markupStatus;
+    if (!el) return;
+    clearTimeout(this._markupHide);
+    if (!state) {
+      el.hidden = true;
+      return;
+    }
+    // Clicking it sends it away. A wait can run to thirty seconds, and the
+    // reader should never be stuck looking at something they cannot dismiss.
+    el.onclick = () => {
+      el.hidden = true;
+    };
+    if (state === "working") {
+      el.hidden = false;
+      el.className = "markup-status is-working";
+      el.innerHTML = `<span class="pulse"></span><span>Reading this page\u2026</span>`;
+      el.title = "Click to dismiss";
+      return;
+    }
+    el.hidden = false;
+    el.className = "markup-status";
+    el.innerHTML =
+      state === "empty"
+        ? `<span>Nothing here worth marking</span>`
+        : `<span class="pulse is-done"></span><span>${count} passage${count === 1 ? "" : "s"} marked \u00b7 Alt+J to move between them</span>`;
+    // It has said its piece; the page belongs to the reader again.
+    this._markupHide = setTimeout(() => {
+      el.hidden = true;
+    }, state === "empty" ? 2600 : 5200);
   }
 
   showToolbar(rect, { onHighlight, onComment } = {}) {

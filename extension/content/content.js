@@ -14,6 +14,7 @@ import {
 } from "./highlights.js";
 import { createReanchorLoop, watchUrl } from "./reanchor.js";
 import { clearMarks, nextMark, paintMarks, scrollToMark, unwrapMark } from "./markup-marks.js";
+import { articleIsWorthMarking } from "../agent/markup.js";
 import { Overlay } from "./overlay.js";
 import { toolbarAction, rangeRect } from "./selection.js";
 import { COLOR_IDS } from "../shared/colors.js";
@@ -243,21 +244,34 @@ async function runMarkup(parsed) {
   if (infinite.infinite) return;
   clearMarks(document, markup.marks);
   markup = { marks: [], contentHash: parsed?.contentHash || "" };
+  if (!articleIsWorthMarking(parsed)) return;
+
+  // A cached answer comes back at once, so say nothing for a moment first —
+  // a spinner that flashes and vanishes is worse than no spinner at all.
+  const announce = setTimeout(() => overlay.markupStatus("working"), 450);
   try {
     const row = await call("MARKUP_PAGE", {
       url: location.href,
       pageTitle: document.title,
       parsed
     });
+    clearTimeout(announce);
     markup = { marks: row?.marks || [], contentHash: row?.contentHash || "", agent: row?.agent };
-    if (!markup.marks.length) return;
-    paintMarks(document.body, markup.marks);
-    if (markup.marks.length) {
-      const n = markup.marks.length;
-      overlay.toast(`${n} passage${n === 1 ? "" : "s"} marked · Alt+J to move between them`);
+    if (!markup.marks.length) {
+      // Saying so matters: it means the agent read the page and found nothing,
+      // not that anything is broken.
+      overlay.markupStatus(row?.cached === false ? "empty" : null);
+      return;
     }
+    const fresh = row?.cached === false;
+    paintMarks(document.body, markup.marks, { reveal: fresh });
+    // Only announce a pass that just happened. Coming back to an article you
+    // have already read should not be narrated at you every time.
+    overlay.markupStatus(fresh ? "done" : null, { count: markup.marks.length });
   } catch (error) {
+    clearTimeout(announce);
     // The host being down is the ordinary case, not an incident. Stay quiet.
+    overlay.markupStatus(null);
     console.warn("LivePage markup unavailable", error);
   }
 }
@@ -380,6 +394,7 @@ function watchNavigation() {
     }
     clearMarks(document, markup.marks);
     markup = { marks: [], contentHash: "" };
+    overlay.markupStatus(null);
     symbolLoop?.stop();
     symbolLoop = null;
     try {

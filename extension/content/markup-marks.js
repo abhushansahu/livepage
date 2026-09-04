@@ -10,7 +10,7 @@ import { findQuote, wrapRange, unwrapHighlight, cssEscape } from "../parse/quote
  */
 const CLASS = "lp-mark-ai";
 
-export function paintMarks(root, marks) {
+export function paintMarks(root, marks, { reveal = false } = {}) {
   const painted = [];
   for (const mark of marks || []) {
     unwrapMark(root, mark.id);
@@ -26,6 +26,13 @@ export function paintMarks(root, marks) {
       span.classList.add(CLASS);
       span.dataset.lpMark = mark.id;
       span.title = mark.why ? `${mark.why} — click to keep` : "Click to keep this highlight";
+      if (reveal) {
+        // Staggered in document order, so it reads as the page being marked
+        // up rather than as one that already was. Only on the pass that
+        // painted them — re-anchoring must not replay the whole thing.
+        span.classList.add("is-fresh");
+        span.style.setProperty("--lp-mark-delay", `${Math.min(painted.length, 11) * 90}ms`);
+      }
     }
     painted.push(mark.id);
   }

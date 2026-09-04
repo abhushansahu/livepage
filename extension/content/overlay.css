@@ -973,3 +973,58 @@ textarea:focus,
   font-size: 11px;
   padding-right: 4px;
 }
+
+/* An agent is reading the page. Small, in the corner, and gone once it has
+   said what it found — the reader asked for marks, not for company. */
+.markup-status {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2147483646;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  pointer-events: auto;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  background: var(--lp-surface);
+  color: var(--lp-ink);
+  border: 1px solid var(--lp-line);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--lp-ink) 12%, transparent);
+  animation: lp-markup-in 220ms ease-out;
+}
+
+.markup-status[hidden] {
+  display: none !important;
+}
+
+.markup-status .pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lp-accent, #3f6b52);
+  flex: none;
+}
+
+.markup-status.is-working .pulse {
+  animation: lp-markup-pulse 1.3s ease-in-out infinite;
+}
+
+@keyframes lp-markup-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@keyframes lp-markup-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markup-status,
+  .markup-status.is-working .pulse {
+    animation: none;
+  }
+}
