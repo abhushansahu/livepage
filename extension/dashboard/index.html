@@ -36,6 +36,10 @@
             <svg class="ico" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
             <input id="search" type="search" placeholder="Search, or #tag" />
           </label>
+          <div class="search-mode" id="search-mode" hidden role="group" aria-label="What to search">
+            <button type="button" data-mode="pages" class="is-on">Pages</button>
+            <button type="button" data-mode="passages">Passages</button>
+          </div>
           <select id="sort" aria-label="Sort">
             <option value="recent">Recent</option>
             <option value="oldest-unread">Oldest unread</option>

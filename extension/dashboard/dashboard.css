@@ -1674,3 +1674,65 @@ html[data-theme="dark"] .stat-cell.done span { color: #83c9a8; }
 .review-card.is-orphan {
   border-left: 3px solid var(--danger);
 }
+
+/* Pages or passages: which of the two a query is asking about. */
+.search-mode {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+}
+
+.search-mode[hidden] {
+  display: none;
+}
+
+.search-mode button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.search-mode button.is-on {
+  background: var(--brand);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+#sort:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.passage-card {
+  border-left: 3px solid var(--lp-mark, #f6e27a);
+}
+
+.passage-card .excerpt em {
+  font-style: normal;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--lp-mark, #f6e27a) 55%, transparent);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.passage-card .meta button {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* The passage a search result pointed at. */
+.hl-block.is-focused {
+  outline: 2px solid var(--brand);
+  outline-offset: 4px;
+  border-radius: 6px;
+}

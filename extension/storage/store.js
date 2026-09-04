@@ -2,6 +2,7 @@ import { uid } from "../shared/id.js";
 import { isWaiting } from "../shared/progress.js";
 import { canonicalizeUrl, hostnameOf, pageIdFromUrl } from "../shared/url.js";
 import { contentTags, mergeTags } from "../shared/tags.js";
+import { highlightMatches, pageMatchesQuery } from "../shared/search.js";
 import { DEFAULT_EXPERIMENT } from "../shared/flags.js";
 
 const DB_NAME = "livepage";
@@ -346,27 +347,38 @@ export async function searchPages(query) {
 }
 
 export function pageMatches(page, q) {
-  const hay = [
-    page.title,
-    page.domain,
-    page.url,
-    page.why,
-    page.readState,
-    page.importMeta?.source,
-    page.importMeta?.author,
-    ...contentTags(page),
-    page.parsed?.excerpt,
-    ...(page.parsed?.headings || []),
-    ...(page.tags || []),
-    ...(page.highlights || []).map((h) => h.text),
-    ...(page.threads || []).flatMap((t) =>
-      (t.messages || []).map((m) => m.content)
-    )
-  ]
-    .filter(Boolean)
-    .join("\n")
-    .toLowerCase();
-  return hay.includes(q);
+  return pageMatchesQuery(page, q);
+}
+
+/**
+ * The passages themselves, rather than the pages holding them. Lean rows: a
+ * query can match hundreds of highlights, and the whole page record behind
+ * each one has no business crossing a message boundary.
+ */
+export async function searchHighlights(query, limit = 60) {
+  const pages = await listPages();
+  return highlightMatches(pages, query, { limit }).map((item) => ({
+    page: {
+      id: item.page.id,
+      title: item.page.title,
+      domain: item.page.domain,
+      url: item.page.url,
+      tags: item.page.tags || [],
+      updatedAt: item.page.updatedAt || 0
+    },
+    highlightId: item.highlight.id,
+    threadId: item.thread?.id || null,
+    text: item.highlight.text,
+    color: item.highlight.color || "",
+    field: item.field,
+    snippet: item.snippet,
+    messageCount: item.thread?.messages?.length || 0,
+    lastRole: item.last?.role || null,
+    awaiting: item.awaiting,
+    parentId: item.thread?.parentId || null,
+    branchLabel: item.thread?.branchLabel || "",
+    createdAt: item.highlight.createdAt || 0
+  }));
 }
 
 export async function unreadPages() {

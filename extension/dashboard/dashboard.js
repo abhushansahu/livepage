@@ -5,12 +5,13 @@ import { downloadMarkdown } from "../export/download.js";
 import { ensureDemoHabitat } from "./demo-seed.js";
 import { isWaiting, progressLabel, progressOf, reviewItems } from "../shared/progress.js";
 import { anchorItems } from "../shared/anchors.js";
+import { highlightMatches, pageMatchesQuery } from "../shared/search.js";
+import { cssEscape } from "../parse/quote.js";
 import { composeFeed, sourceGlyph, sourceLabel } from "../shared/feed.js";
 import { sourceColor, sourceKey } from "../shared/source-meta.js";
 import { icon, sourceIcon } from "../shared/icons.js";
 import { isBookmark, isReadingList, isRss, isSave } from "../shared/lists.js";
 import {
-  contentTags,
   displayTags,
   filterBarTags,
   normalizeTag,
@@ -50,6 +51,7 @@ const state = {
   pages: [],
   filter: "home",
   query: "",
+  searchMode: "pages",
   sort: "recent",
   tagFilters: [],
   activeId: null,
@@ -72,6 +74,7 @@ const els = {
   heading: document.getElementById("heading"),
   tagBar: document.getElementById("tag-bar"),
   sort: document.getElementById("sort"),
+  searchMode: document.getElementById("search-mode"),
   nav: document.getElementById("nav"),
   rail: document.getElementById("rail")
 };
@@ -79,6 +82,13 @@ const els = {
 els.search.addEventListener("input", () => {
   state.query = els.search.value;
   render();
+});
+
+els.searchMode?.querySelectorAll("[data-mode]").forEach((btn) => {
+  btn.onclick = () => {
+    state.searchMode = btn.dataset.mode;
+    render();
+  };
 });
 
 els.sort.addEventListener("change", () => {
@@ -218,23 +228,28 @@ boot().catch((error) => {
 function matchesQuery(page) {
   const q = state.query.trim().toLowerCase();
   if (!q) return true;
+  // A bare tag is a filter, not a phrase — there is nothing in it to match a
+  // passage against.
   if (q.startsWith("#")) {
     return pageHasTags(page, [normalizeTag(q.slice(1))]);
   }
-  const hay = [
-    page.title,
-    page.domain,
-    page.why,
-    page.importMeta?.source,
-    page.importMeta?.author,
-    page.parsed?.excerpt,
-    ...contentTags(page),
-    ...(page.highlights || []).map((h) => h.text),
-    ...(page.threads || []).flatMap((t) => (t.messages || []).map((m) => m.content))
-  ]
-    .join("\n")
-    .toLowerCase();
-  return hay.includes(q);
+  return pageMatchesQuery(page, q);
+}
+
+function tagQuery() {
+  return state.query.trim().startsWith("#");
+}
+
+/** Passage search only makes sense with words to look for. */
+function passagesAvailable() {
+  return Boolean(state.query.trim()) && !tagQuery();
+}
+
+function passageResults() {
+  if (!passagesAvailable()) return [];
+  // visiblePages has already applied the tag chips, so the two filters compose
+  // without passage search knowing anything about tags.
+  return highlightMatches(visiblePages(), state.query);
 }
 
 function buckets(pages) {
@@ -275,7 +290,11 @@ function render() {
   renderTagBar(pages);
 
   const room = state.filter;
-  if (room === "review") {
+  const passages = state.searchMode === "passages" ? passageResults() : [];
+  renderSearchMode(passages);
+  if (state.searchMode === "passages" && passagesAvailable()) {
+    els.view.innerHTML = passagesHtml(passages);
+  } else if (room === "review") {
     const body = isPortal() ? portalRowsHtml(room, review) : reviewHtml(review);
     els.view.innerHTML = body + anchorHtml(bucket.anchors);
   } else if (room === "home" && isPortal()) {
@@ -607,6 +626,66 @@ function anchorCard(item) {
     </article>`;
 }
 
+/**
+ * Shows the toggle only once there is something to search, and keeps the sort
+ * dropdown honest: every one of its options orders pages, which says nothing
+ * about which passage answers a query.
+ */
+function renderSearchMode(passages) {
+  if (!els.searchMode) return;
+  const available = passagesAvailable();
+  els.searchMode.hidden = !available;
+  if (!available && state.searchMode === "passages") state.searchMode = "pages";
+  const on = state.searchMode === "passages";
+  els.searchMode.querySelectorAll("[data-mode]").forEach((btn) => {
+    const mine = btn.dataset.mode === state.searchMode;
+    btn.classList.toggle("is-on", mine);
+    if (btn.dataset.mode === "passages") {
+      btn.textContent = available && passages.length ? `Passages (${passages.length})` : "Passages";
+    }
+  });
+  if (els.sort) {
+    els.sort.disabled = on;
+    els.sort.title = on ? "Passages are ordered by relevance" : "";
+  }
+}
+
+function passagesHtml(items) {
+  if (!items.length) {
+    return `<section class="section"><h2>Passages</h2><p class="empty">Nothing you have marked or written mentions that.</p></section>`;
+  }
+  return `<section class="section"><h2>Passages</h2><p class="hint">The sentence, not the article. Open the page to land on it, or open the record to see it in place.</p><div class="grid">${items
+    .map(passageCard)
+    .join("")}</div></section>`;
+}
+
+const FIELD_LABEL = { highlight: "you marked", user: "you wrote", agent: "an agent replied" };
+
+function passageCard(item) {
+  const color = COLORS[item.highlight.color]?.fill || "#F6E27A";
+  return `
+    <article class="review-card passage-card" data-id="${item.page.id}" data-highlight="${item.highlight.id}" style="--lp-mark:${color}">
+      <div class="kicker">${escapeHtml(item.page.domain)} · ${FIELD_LABEL[item.field] || "match"}</div>
+      <q>${escapeHtml(clip(item.highlight.text, 160))}</q>
+      <p class="excerpt">${snippetHtml(item.snippet)}</p>
+      ${tagRow(item.page)}
+      <div class="meta">
+        <span>${escapeHtml(item.page.title)}</span>
+        <button type="button" class="ghost" data-open-live="${item.page.id}" data-live-highlight="${item.highlight.id}">Open page</button>
+      </div>
+    </article>`;
+}
+
+/** Escapes around the match rather than inside it, so the mark stays literal. */
+function snippetHtml(snippet) {
+  if (!snippet) return "";
+  const { text, start, end } = snippet;
+  if (end <= start) return escapeHtml(clip(text, 220));
+  return `${escapeHtml(text.slice(0, start))}<em>${escapeHtml(text.slice(start, end))}</em>${escapeHtml(
+    text.slice(end)
+  )}`;
+}
+
 function reviewHtml(items) {
   if (!items.length) {
     return `<section class="section"><h2>Review</h2><p class="empty">No conversations to review yet. Leave a comment on a page.</p></section>`;
@@ -838,8 +917,8 @@ function bindView() {
   els.view.querySelectorAll("[data-open], .card, .review-card, .tweet, .row").forEach((el) => {
     el.onclick = (event) => {
       if (el.classList.contains("local-tweet")) return;
-      if (event.target.closest("[data-star], [data-reading], [data-snooze], [data-live], a, [data-cta], [data-like], [data-dismiss]")) return;
-      openDrawer(el.dataset.open || el.dataset.id);
+      if (event.target.closest("[data-star], [data-reading], [data-snooze], [data-live], a, [data-cta], [data-like], [data-dismiss], [data-open-live]")) return;
+      openDrawer(el.dataset.open || el.dataset.id, { focusHighlightId: el.dataset.highlight });
     };
   });
   els.view.querySelectorAll("[data-star]").forEach((btn) => {
@@ -896,6 +975,19 @@ function bindView() {
       await reload();
     };
   });
+  els.view.querySelectorAll("[data-open-live]").forEach((btn) => {
+    btn.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const page = state.pages.find((p) => p.id === btn.dataset.openLive);
+      if (!page?.url) return;
+      // The live page re-anchors the highlight and scrolls to it; if the page
+      // has since dropped the passage, LivePage says so there.
+      const url = new URL(page.url);
+      url.hash = `livepage-highlight=${encodeURIComponent(btn.dataset.liveHighlight)}`;
+      window.open(url.href, "_blank", "noreferrer");
+    };
+  });
   const more = document.getElementById("feed-more");
   if (more) {
     more.onclick = () => {
@@ -905,7 +997,7 @@ function bindView() {
   }
 }
 
-async function openDrawer(id) {
+async function openDrawer(id, { focusHighlightId } = {}) {
   const page = await call("GET_PAGE", { id });
   if (!page) return;
   state.activeId = id;
@@ -1000,6 +1092,14 @@ async function openDrawer(id) {
     render();
   };
   const tagInput = els.drawer.querySelector("#page-tags");
+  if (focusHighlightId) {
+    const block = els.drawer.querySelector(`.hl-block[data-highlight="${cssEscape(focusHighlightId)}"]`);
+    if (block) {
+      block.classList.add("is-focused");
+      block.scrollIntoView({ block: "center" });
+    }
+  }
+
   const saveTags = async () => {
     await call("SET_TAGS", { id: page.id, tags: parseTagInput(tagInput.value) });
     await reload();

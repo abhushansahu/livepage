@@ -2733,7 +2733,7 @@ ${css}`;
       if (page) {
         anchorNow();
         overlay.setPage(page);
-        openLinkedThread();
+        openLinkedTarget();
         if (anchorFlag) reanchor = startReanchor();
       }
       watchInfinite();
@@ -3203,36 +3203,21 @@ ${css}`;
     }
   }
   async function searchMentions(query) {
-    const needle = String(query || "").trim().toLowerCase();
-    const pages = await call("LIST_PAGES") || [];
-    const results = [];
-    for (const candidate of pages) {
-      const pageTitle = candidate.title || candidate.domain || "Saved page";
-      for (const thread of candidate.threads || []) {
-        const messages = thread.messages || [];
-        if (!messages.length) continue;
-        const highlight = (candidate.highlights || []).find((item) => item.id === thread.highlightId);
-        const passage = highlight?.text || messages[0].content || "";
-        const haystack = `${pageTitle} ${passage} ${messages[messages.length - 1].content}`.toLowerCase();
-        if (needle && !haystack.includes(needle)) continue;
-        results.push({
-          pageId: candidate.id,
-          threadId: thread.id,
-          passage,
-          pageTitle,
-          samePage: candidate.id === page?.id,
-          color: highlight?.color || "",
-          parentId: thread.parentId || null,
-          branchLabel: thread.branchLabel || "",
-          messageCount: messages.length,
-          updatedAt: candidate.updatedAt || 0
-        });
-      }
-    }
-    results.sort(
+    const rows = await call("SEARCH_HIGHLIGHTS", { query, limit: 24 }) || [];
+    return rows.filter((row) => row.threadId && row.messageCount).map((row) => ({
+      pageId: row.page.id,
+      threadId: row.threadId,
+      passage: row.text || row.snippet?.text || "",
+      pageTitle: row.page.title || row.page.domain || "Saved page",
+      samePage: row.page.id === page?.id,
+      color: row.color || "",
+      parentId: row.parentId,
+      branchLabel: row.branchLabel,
+      messageCount: row.messageCount,
+      updatedAt: row.page.updatedAt || 0
+    })).sort(
       (a, b) => Number(b.samePage) - Number(a.samePage) || (b.updatedAt || 0) - (a.updatedAt || 0)
-    );
-    return results.slice(0, 8);
+    ).slice(0, 8);
   }
   async function openMention(pageId, threadId) {
     if (pageId === page?.id) {
@@ -3248,14 +3233,33 @@ ${css}`;
     url.hash = `livepage-thread=${encodeURIComponent(threadId)}`;
     window.open(url.href, "_blank", "noopener");
   }
-  function openLinkedThread() {
-    const match = location.hash.match(/^#livepage-thread=([^&]+)/);
-    if (!match) return;
-    const threadId = decodeURIComponent(match[1]);
-    if (page?.threads?.some((thread) => thread.id === threadId)) {
-      overlay.openThread(threadId);
-      history.replaceState(null, "", `${location.pathname}${location.search}`);
+  function openLinkedTarget() {
+    const hash = location.hash;
+    const clean = () => history.replaceState(null, "", `${location.pathname}${location.search}`);
+    const thread = hash.match(/^#livepage-thread=([^&]+)/);
+    if (thread) {
+      const threadId = decodeURIComponent(thread[1]);
+      if (page?.threads?.some((t) => t.id === threadId)) {
+        overlay.openThread(threadId);
+        clean();
+      }
+      return;
     }
+    const passage = hash.match(/^#livepage-highlight=([^&]+)/);
+    if (!passage) return;
+    const highlightId = decodeURIComponent(passage[1]);
+    const highlight = page?.highlights?.find((h) => h.id === highlightId);
+    if (!highlight) return;
+    clean();
+    const marks = marksFor(highlightId);
+    if (!marks.length) {
+      overlay.toast("That passage is no longer on this page.");
+    } else {
+      marks[0].scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+    const threads = (page.threads || []).filter((t) => t.highlightId === highlightId);
+    const target = threads.find((t) => !t.parentId) || threads[0];
+    if (target) overlay.openThread(target.id);
   }
   function handleContext(action) {
     captureSelection();

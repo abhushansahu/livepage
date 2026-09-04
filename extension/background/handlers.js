@@ -12,6 +12,7 @@ import {
   saveLedger,
   saveSettings,
   searchPages,
+  searchHighlights,
   unreadPages,
   upsertImportedPages,
   upsertPageFromVisit,
@@ -66,6 +67,8 @@ export async function handleMessage(message) {
       return listPages();
     case "SEARCH_PAGES":
       return searchPages(payload.query);
+    case "SEARCH_HIGHLIGHTS":
+      return searchHighlights(payload.query, payload.limit);
     case "UNREAD_PAGES":
       return unreadPages();
     case "SAVE_PAGE":
