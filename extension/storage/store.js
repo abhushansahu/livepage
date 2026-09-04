@@ -30,6 +30,7 @@ export const DEFAULT_SETTINGS = {
   importSavesEnabled: true,
   localTweetsEnabled: false,
   rssFeeds: [],
+  symbolsOffHosts: [],
   flags: {},
   experiment: { ...DEFAULT_EXPERIMENT },
   vault: { bound: false, name: "", boundAt: 0 }

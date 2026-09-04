@@ -1011,6 +1011,98 @@
 @media (prefers-reduced-motion: reduce) { .tick { transition: none; } }
 `;
 
+  // extension/shared/url.js
+  var TRACKING_PARAMS = /* @__PURE__ */ new Set([
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "utm_id",
+    "fbclid",
+    "gclid",
+    "gclsrc",
+    "dclid",
+    "msclkid",
+    "mc_cid",
+    "mc_eid",
+    "igshid",
+    "si",
+    "ref",
+    "ref_src",
+    "ref_url",
+    "spm",
+    "vero_id",
+    "yclid"
+  ]);
+  function canonicalizeUrl(raw) {
+    if (!raw) return "";
+    let url;
+    try {
+      url = new URL(raw);
+    } catch {
+      return String(raw).split("#")[0];
+    }
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return url.toString();
+    }
+    url.hash = "";
+    url.hostname = url.hostname.replace(/^www\./i, "").toLowerCase();
+    const kept = [];
+    for (const [key, value] of url.searchParams.entries()) {
+      if (TRACKING_PARAMS.has(key.toLowerCase())) continue;
+      kept.push([key, value]);
+    }
+    kept.sort(([a], [b]) => a.localeCompare(b));
+    url.search = "";
+    for (const [key, value] of kept) url.searchParams.append(key, value);
+    let path = url.pathname.replace(/\/{2,}/g, "/");
+    if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+    url.pathname = path || "/";
+    return url.toString();
+  }
+  function pageIdFromUrl(canonicalUrl) {
+    return `p_${simpleHash(canonicalUrl)}`;
+  }
+  function hostnameOf(raw) {
+    try {
+      return new URL(raw).hostname.replace(/^www\./i, "");
+    } catch {
+      return "";
+    }
+  }
+  function simpleHash(text) {
+    let h = 2166136261;
+    const s = String(text);
+    for (let i = 0; i < s.length; i += 1) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16).padStart(8, "0");
+  }
+
+  // extension/shared/site-prefs.js
+  function siteKey(url) {
+    return hostnameOf(url);
+  }
+  function symbolsMutedHere(settings2, url) {
+    const host = siteKey(url);
+    if (!host) return false;
+    return (settings2?.symbolsOffHosts || []).includes(host);
+  }
+  function toggleSymbolsForSite(settings2, url) {
+    const host = siteKey(url);
+    const current = settings2?.symbolsOffHosts || [];
+    if (!host) return { host: "", muted: false, symbolsOffHosts: current };
+    const muted = current.includes(host);
+    return {
+      host,
+      // Muted before means this turns them back on.
+      muted: !muted,
+      symbolsOffHosts: muted ? current.filter((item) => item !== host) : [...current, host]
+    };
+  }
+
   // extension/shared/time.js
   function formatRelative(ts, from = Date.now()) {
     if (!ts) return "never";
@@ -2151,69 +2243,6 @@ ${css}`;
     return Math.min(100, Math.max(0, Math.round(n)));
   }
 
-  // extension/shared/url.js
-  var TRACKING_PARAMS = /* @__PURE__ */ new Set([
-    "utm_source",
-    "utm_medium",
-    "utm_campaign",
-    "utm_term",
-    "utm_content",
-    "utm_id",
-    "fbclid",
-    "gclid",
-    "gclsrc",
-    "dclid",
-    "msclkid",
-    "mc_cid",
-    "mc_eid",
-    "igshid",
-    "si",
-    "ref",
-    "ref_src",
-    "ref_url",
-    "spm",
-    "vero_id",
-    "yclid"
-  ]);
-  function canonicalizeUrl(raw) {
-    if (!raw) return "";
-    let url;
-    try {
-      url = new URL(raw);
-    } catch {
-      return String(raw).split("#")[0];
-    }
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      return url.toString();
-    }
-    url.hash = "";
-    url.hostname = url.hostname.replace(/^www\./i, "").toLowerCase();
-    const kept = [];
-    for (const [key, value] of url.searchParams.entries()) {
-      if (TRACKING_PARAMS.has(key.toLowerCase())) continue;
-      kept.push([key, value]);
-    }
-    kept.sort(([a], [b]) => a.localeCompare(b));
-    url.search = "";
-    for (const [key, value] of kept) url.searchParams.append(key, value);
-    let path = url.pathname.replace(/\/{2,}/g, "/");
-    if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
-    url.pathname = path || "/";
-    return url.toString();
-  }
-  function pageIdFromUrl(canonicalUrl) {
-    return `p_${simpleHash(canonicalUrl)}`;
-  }
-  function simpleHash(text) {
-    let h = 2166136261;
-    const s = String(text);
-    for (let i = 0; i < s.length; i += 1) {
-      h ^= s.charCodeAt(i);
-      h = Math.imul(h, 16777619);
-    }
-    return (h >>> 0).toString(16).padStart(8, "0");
-  }
-
   // extension/shared/tags.js
   function normalizeTag(value) {
     const slug = String(value || "").toLowerCase().trim().replace(/[#]+/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -2887,6 +2916,7 @@ ${css}`;
   var symbols = null;
   var symbolLoop = null;
   var symbolsFlag = false;
+  var symbolsMuted = false;
   var markupFlag = false;
   var markup = { marks: [], contentHash: "" };
   var minimap = null;
@@ -2921,6 +2951,9 @@ ${css}`;
     if (message.kind === "SETTINGS_CHANGED" && message.settings) {
       settings = message.settings;
       overlay.setPreferences(settings);
+      if (symbolsFlag && symbolsMutedHere(settings, location.href) !== symbolsMuted) {
+        applySymbols(freshParse());
+      }
     }
   });
   boot().catch((error) => console.warn("LivePage failed to start", error));
@@ -2967,7 +3000,7 @@ ${css}`;
     } catch (error) {
       console.warn("LivePage visit failed", error);
     }
-    if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
+    applySymbols(parsed);
     if (markupFlag) runMarkup(parsed);
     if (flags.rss) offerRssIfAny();
   }
@@ -3180,6 +3213,44 @@ ${css}`;
     }
     return symbols?.count || 0;
   }
+  function applySymbols(parsed) {
+    symbolsMuted = symbolsMutedHere(settings, location.href);
+    if (!symbolsFlag || symbolsMuted) {
+      stopSymbols();
+      return;
+    }
+    if (!mountSymbols(parsed)) startSymbolLoop();
+  }
+  function stopSymbols() {
+    symbolLoop?.stop();
+    symbolLoop = null;
+    try {
+      symbols?.destroy();
+    } catch (error) {
+      console.warn("LivePage article symbols teardown failed", error);
+    }
+    symbols = null;
+  }
+  async function toggleSymbolsHere() {
+    if (!symbolsFlag) {
+      overlay.toast("Article symbols are off in Settings.");
+      return;
+    }
+    const next = toggleSymbolsForSite(settings, location.href);
+    if (!next.host) return;
+    settings = { ...settings, symbolsOffHosts: next.symbolsOffHosts };
+    if (next.muted) stopSymbols();
+    else applySymbols(freshParse());
+    overlay.toast(
+      next.muted ? `Symbols off for ${next.host} \xB7 Alt+S to bring them back` : `Symbols on for ${next.host}`
+    );
+    try {
+      await call("SAVE_SETTINGS", { symbolsOffHosts: next.symbolsOffHosts });
+    } catch (error) {
+      overlay.toast("Could not remember that for this site.");
+      console.warn("LivePage symbol mute", error);
+    }
+  }
   function startSymbolLoop() {
     symbolLoop?.stop();
     symbolLoop = createReanchorLoop({
@@ -3219,14 +3290,7 @@ ${css}`;
       clearMarks(document, markup.marks);
       markup = { marks: [], contentHash: "" };
       overlay.markupStatus(null);
-      symbolLoop?.stop();
-      symbolLoop = null;
-      try {
-        symbols?.destroy();
-      } catch (error) {
-        console.warn("LivePage article symbols teardown failed", error);
-      }
-      symbols = null;
+      stopSymbols();
       anchors = /* @__PURE__ */ new Map();
       page = null;
       reachedPercent = 0;
@@ -3266,7 +3330,7 @@ ${css}`;
       if (anchorFlag) reanchor = startReanchor();
     }
     watchInfinite();
-    if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
+    applySymbols(parsed);
     if (markupFlag) runMarkup(parsed);
   }
   async function anchorInfiniteView() {
@@ -3344,6 +3408,10 @@ ${css}`;
         gestureSelected = false;
         cancelReattach();
         overlay.hideToolbar();
+        return;
+      }
+      if (event.altKey && (event.key === "s" || event.key === "S")) {
+        toggleSymbolsHere();
         return;
       }
       if (event.altKey && (event.key === "j" || event.key === "J")) {

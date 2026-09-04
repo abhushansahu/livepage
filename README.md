@@ -102,7 +102,10 @@ That layout is ordinary files. You, an agent, or a second laptop can walk the re
 | Highlight selection | `Alt+H` |
 | Comment on selection | `Alt+M` |
 | Next / previous marked passage | `Alt+J` / `Alt+K` |
+| Article symbols off for this site | `Alt+S` |
 | Open dashboard | `Alt+Shift+L` |
+
+`Alt+S` turns the green article symbols off for the site you are on and leaves them alone everywhere else. It stays off until you press it again there — a site you find noisy today is still noisy next week.
 
 Right-click a selection for the same actions. Right-click a page to add its RSS feed.
 

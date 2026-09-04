@@ -24,6 +24,7 @@ import {
 } from "./markup-marks.js";
 import { articleIsWorthMarking } from "../agent/markup.js";
 import { createMinimap, minimapTicks } from "./minimap.js";
+import { symbolsMutedHere, toggleSymbolsForSite } from "../shared/site-prefs.js";
 import { Overlay } from "./overlay.js";
 import { toolbarAction, rangeRect } from "./selection.js";
 import { COLOR_IDS } from "../shared/colors.js";
@@ -57,6 +58,7 @@ let reattaching = null;
 let symbols = null;
 let symbolLoop = null;
 let symbolsFlag = false;
+let symbolsMuted = false;
 let markupFlag = false;
 let markup = { marks: [], contentHash: "" };
 let minimap = null;
@@ -97,6 +99,12 @@ onBroadcast((message) => {
   if (message.kind === "SETTINGS_CHANGED" && message.settings) {
     settings = message.settings;
     overlay.setPreferences(settings);
+    // Another tab on this site may have just muted it. Anything else saved in
+    // Settings is none of our business — re-parsing the page for it would be
+    // rebuilding every symbol on the page for no reason.
+    if (symbolsFlag && symbolsMutedHere(settings, location.href) !== symbolsMuted) {
+      applySymbols(freshParse());
+    }
   }
 });
 boot().catch((error) => console.warn("LivePage failed to start", error));
@@ -150,7 +158,7 @@ async function boot() {
   } catch (error) {
     console.warn("LivePage visit failed", error);
   }
-  if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
+  applySymbols(parsed);
   if (markupFlag) runMarkup(parsed);
   if (flags.rss) offerRssIfAny();
 }
@@ -427,6 +435,55 @@ function mountSymbols(parsed) {
   return symbols?.count || 0;
 }
 
+/** Paints symbols unless this site is one you have turned them off for. */
+function applySymbols(parsed) {
+  symbolsMuted = symbolsMutedHere(settings, location.href);
+  if (!symbolsFlag || symbolsMuted) {
+    stopSymbols();
+    return;
+  }
+  if (!mountSymbols(parsed)) startSymbolLoop();
+}
+
+function stopSymbols() {
+  symbolLoop?.stop();
+  symbolLoop = null;
+  try {
+    symbols?.destroy();
+  } catch (error) {
+    console.warn("LivePage article symbols teardown failed", error);
+  }
+  symbols = null;
+}
+
+/**
+ * Turns the explained terms off for this site, and leaves them alone
+ * everywhere else. Off until you say otherwise — a site you find noisy today
+ * is still noisy next week.
+ */
+async function toggleSymbolsHere() {
+  if (!symbolsFlag) {
+    overlay.toast("Article symbols are off in Settings.");
+    return;
+  }
+  const next = toggleSymbolsForSite(settings, location.href);
+  if (!next.host) return;
+  settings = { ...settings, symbolsOffHosts: next.symbolsOffHosts };
+  if (next.muted) stopSymbols();
+  else applySymbols(freshParse());
+  overlay.toast(
+    next.muted
+      ? `Symbols off for ${next.host} · Alt+S to bring them back`
+      : `Symbols on for ${next.host}`
+  );
+  try {
+    await call("SAVE_SETTINGS", { symbolsOffHosts: next.symbolsOffHosts });
+  } catch (error) {
+    overlay.toast("Could not remember that for this site.");
+    console.warn("LivePage symbol mute", error);
+  }
+}
+
 function startSymbolLoop() {
   symbolLoop?.stop();
   symbolLoop = createReanchorLoop({
@@ -473,14 +530,7 @@ function watchNavigation() {
     clearMarks(document, markup.marks);
     markup = { marks: [], contentHash: "" };
     overlay.markupStatus(null);
-    symbolLoop?.stop();
-    symbolLoop = null;
-    try {
-      symbols?.destroy();
-    } catch (error) {
-      console.warn("LivePage article symbols teardown failed", error);
-    }
-    symbols = null;
+    stopSymbols();
     anchors = new Map();
     page = null;
     reachedPercent = 0;
@@ -522,7 +572,7 @@ async function revisit() {
     if (anchorFlag) reanchor = startReanchor();
   }
   watchInfinite();
-  if (symbolsFlag && !mountSymbols(parsed)) startSymbolLoop();
+  applySymbols(parsed);
   if (markupFlag) runMarkup(parsed);
 }
 
@@ -611,6 +661,10 @@ function watchSelection() {
       gestureSelected = false;
       cancelReattach();
       overlay.hideToolbar();
+      return;
+    }
+    if (event.altKey && (event.key === "s" || event.key === "S")) {
+      toggleSymbolsHere();
       return;
     }
     if (event.altKey && (event.key === "j" || event.key === "J")) {

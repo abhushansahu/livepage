@@ -10,6 +10,7 @@ import {
 } from "../extension/agent/markup.js";
 import { looksLikeStableDocument, evaluateInfiniteScroll } from "../extension/parse/infinite-scroll.js";
 import { minimapTicks } from "../extension/content/minimap.js";
+import { symbolsMutedHere, toggleSymbolsForSite } from "../extension/shared/site-prefs.js";
 
 const blocks = [
   { id: "b1", tag: "h2", text: "Methodology", heading: true },
@@ -270,4 +271,53 @@ test("a tick remembers which kind it is, so the rail can tell them apart", () =>
   assert.equal(ticks[0].kind, "highlight");
   assert.equal(ticks[1].kind, "mark");
   assert.equal(ticks[1].why, "the authors' own limit");
+});
+
+test("muting symbols is remembered for the whole site, not just the page", () => {
+  let settings = { symbolsOffHosts: [] };
+  const first = toggleSymbolsForSite(settings, "https://www.docs.example.com/a?x=1");
+  settings = { symbolsOffHosts: first.symbolsOffHosts };
+
+  assert.equal(first.muted, true);
+  assert.equal(first.host, "docs.example.com", "www. must not split a site in two");
+  assert.equal(symbolsMutedHere(settings, "https://docs.example.com/some/other/page"), true);
+});
+
+test("muting one site says nothing about any other", () => {
+  const muted = toggleSymbolsForSite({ symbolsOffHosts: [] }, "https://noisy.example.com/a");
+  const settings = { symbolsOffHosts: muted.symbolsOffHosts };
+  assert.equal(symbolsMutedHere(settings, "https://elsewhere.com/a"), false);
+  assert.equal(symbolsMutedHere(settings, "https://noisy.example.com/b"), true);
+});
+
+test("the same shortcut brings them back", () => {
+  let settings = { symbolsOffHosts: [] };
+  const off = toggleSymbolsForSite(settings, "https://example.com/a");
+  settings = { symbolsOffHosts: off.symbolsOffHosts };
+  const on = toggleSymbolsForSite(settings, "https://example.com/a");
+
+  assert.equal(on.muted, false);
+  assert.deepEqual(on.symbolsOffHosts, [], "turning it back on must not leave the host behind");
+});
+
+test("muting stays put across other sites being muted and unmuted", () => {
+  let settings = { symbolsOffHosts: [] };
+  for (const url of ["https://a.com/x", "https://b.com/y", "https://c.com/z"]) {
+    settings = { symbolsOffHosts: toggleSymbolsForSite(settings, url).symbolsOffHosts };
+  }
+  settings = { symbolsOffHosts: toggleSymbolsForSite(settings, "https://b.com/y").symbolsOffHosts };
+  assert.deepEqual(settings.symbolsOffHosts, ["a.com", "c.com"]);
+});
+
+test("a page with no host cannot be muted, and does not corrupt the list", () => {
+  const settings = { symbolsOffHosts: ["a.com"] };
+  const result = toggleSymbolsForSite(settings, "not-a-url");
+  assert.equal(result.host, "");
+  assert.deepEqual(result.symbolsOffHosts, ["a.com"]);
+  assert.equal(symbolsMutedHere(settings, "not-a-url"), false);
+});
+
+test("no setting at all reads as nothing muted", () => {
+  assert.equal(symbolsMutedHere({}, "https://example.com/a"), false);
+  assert.equal(symbolsMutedHere(undefined, "https://example.com/a"), false);
 });
