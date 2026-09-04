@@ -66,7 +66,12 @@ export async function handleMessage(message) {
     case "VISIT_PAGE": {
       const page = await upsertPageFromVisit(payload.url, payload);
       if (!page) return null;
-      await note("open", { pageId: page.id, source: page.importMeta?.source });
+      // The PDF viewer re-sends this every time another batch of pages finishes
+      // extracting. That is bookkeeping, not the reader opening the document a
+      // second time, and logging it as one would bury the real opens.
+      if (payload.visited !== false) {
+        await note("open", { pageId: page.id, source: page.importMeta?.source });
+      }
       return page;
     }
     case "FORGET_BROWSED":
@@ -426,6 +431,13 @@ async function patchHighlight(payload) {
   if (patch.color) {
     if (!COLOR_IDS.includes(patch.color)) throw new Error("Unknown highlight color");
     highlight.color = patch.color;
+  }
+  // Handled on its own, not inside the text branch: the viewer patches a
+  // locator alone when it works out which page an older highlight was on, and
+  // nesting this would have made that write silently do nothing.
+  if ("locator" in patch) {
+    const at = Number(patch.locator?.page);
+    highlight.locator = Number.isFinite(at) && at > 0 ? { page: at } : null;
   }
   if (typeof patch.text === "string") {
     const text = patch.text.trim();

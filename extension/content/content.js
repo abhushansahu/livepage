@@ -116,16 +116,24 @@ onBroadcast((message) => {
 boot().catch((error) => console.warn("LivePage failed to start", error));
 
 async function boot() {
-  infinite = evaluateInfiniteScroll(location.href, document);
-  watchSelection();
-  watchMarks();
-
   try {
     settings = (await call("GET_SETTINGS")) || settings;
     overlay.setPreferences(settings);
   } catch (error) {
     console.warn("LivePage settings unavailable", error);
   }
+
+  // Chrome swaps a PDF's tab for its own viewer, whose document is a single
+  // <embed>. There is no text to select and nothing to parse, so none of what
+  // follows applies — offer the reader that does understand it and stop.
+  if (isPdfDocument()) {
+    await offerPdfReader();
+    return;
+  }
+
+  infinite = evaluateInfiniteScroll(location.href, document);
+  watchSelection();
+  watchMarks();
   const { flags } = resolveFlags(settings);
   anchorFlag = flags.orphanRecovery !== false;
   symbolsFlag = Boolean(flags.articleSymbols);
@@ -169,6 +177,28 @@ async function boot() {
   // already marked is painted back without one.
   runMarkup(parsed, { cachedOnly: true });
   if (flags.rss) offerRssIfAny();
+}
+
+/**
+ * Whether Chrome is showing its own PDF viewer here.
+ *
+ * `contentType` is the honest signal — it is what the server actually sent,
+ * where a URL ending in .pdf is only a guess and misses every PDF served from
+ * a pathless endpoint.
+ */
+function isPdfDocument() {
+  return document.contentType === "application/pdf";
+}
+
+async function offerPdfReader() {
+  try {
+    await overlay.ready;
+  } catch {
+    /* the offer is worth showing even on the fallback stylesheet */
+  }
+  overlay.offerPdf({
+    onOpen: () => call("OPEN_PDF", { url: location.href }).catch(() => {})
+  });
 }
 
 function watchInfinite() {

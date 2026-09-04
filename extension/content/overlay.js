@@ -5,6 +5,7 @@ import { cssEscape } from "../parse/quote.js";
 import { icon } from "../shared/icons.js";
 import { normalizeTheme } from "../shared/theme.js";
 import { blocksAround } from "../shared/anchors.js";
+import { documentView } from "./view.js";
 
 const GUTTER = 328;
 const CARD_GAP = 10;
@@ -81,7 +82,13 @@ function makeHost(kind) {
 }
 
 export class Overlay {
-  constructor() {
+  /**
+   * `view` answers the geometry questions — what is scrolling, how tall the
+   * content is, where the margin's room comes from. It defaults to the window,
+   * which is every case but the PDF viewer.
+   */
+  constructor({ view = documentView } = {}) {
+    this.view = view;
     this.host = makeHost("root");
     this.shadow = this.host.attachShadow({ mode: "open" });
     this.floatHost = makeHost("float");
@@ -125,9 +132,14 @@ export class Overlay {
   }
 
   attachHosts() {
-    const root = document.documentElement;
+    // The toolbar, toasts and the status dot are all fixed to the viewport, so
+    // they hang off the document however the page is scrolling. The gutter is
+    // the one that has to live inside the scroller, or its cards would sit
+    // still while the passages they point at moved.
+    const top = document.documentElement;
+    if (top && this.floatHost.parentNode !== top) top.appendChild(this.floatHost);
+    const root = this.view.mount();
     if (!root) return;
-    if (this.floatHost.parentNode !== root) root.appendChild(this.floatHost);
     if (this.els?.gutter && this.host.parentNode !== root) root.appendChild(this.host);
   }
 
@@ -155,28 +167,14 @@ export class Overlay {
     if (css && this.floatShadow.querySelector("style")) {
       this.floatShadow.querySelector("style").textContent = `${FALLBACK_CSS}\n${css}`;
     }
-    document.documentElement.style.setProperty("--lp-gutter", `${GUTTER}px`);
-    if (!document.getElementById("lp-gutter-style")) {
-      const rail = document.createElement("style");
-      rail.id = "lp-gutter-style";
-      rail.textContent = `
-        html.lp-rail-on {
-          position: relative;
-          box-sizing: border-box;
-          padding-right: var(--lp-gutter, 328px) !important;
-          scroll-padding-right: var(--lp-gutter, 328px);
-        }
-      `;
-      document.documentElement.appendChild(rail);
-    }
-    document.documentElement.appendChild(this.host);
+    this.view.mount()?.appendChild(this.host);
     this.attachHosts();
     this.applyTheme();
     this.applyRail();
   }
 
   bind() {
-    window.addEventListener("resize", () => this.layoutCards(), { passive: true });
+    this.view.onRelayout(() => this.layoutCards());
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       const menu = this.els?.gutter?.querySelector(".send-menu:not([hidden])");
@@ -265,12 +263,31 @@ export class Overlay {
   applyRail() {
     const show = (this.page?.highlights || []).length > 0;
     this.host.hidden = !show;
-    document.documentElement.classList.toggle("lp-rail-on", show);
-    if (show) {
-      document.documentElement.style.setProperty("--lp-gutter", `${GUTTER}px`);
-    } else {
-      document.documentElement.style.removeProperty("--lp-gutter");
-    }
+    this.view.setGutter(show, GUTTER);
+  }
+
+  /**
+   * Chrome has handed this tab to its own PDF viewer, where none of LivePage
+   * exists. Say so once, offer the reader that does, and go away when waved
+   * off — the same manners as the RSS offer, and the same element.
+   */
+  offerPdf({ onOpen, onDismiss } = {}) {
+    const el = this.els.feedOffer;
+    if (!el) return;
+    el.hidden = false;
+    el.innerHTML = `
+      <p><strong>This is a PDF.</strong> Open it in LivePage to highlight and think in the margin.</p>
+      <button class="solid" data-act="open">Open in LivePage</button>
+      <button class="ghost" data-act="dismiss">Not now</button>
+    `;
+    el.querySelector("[data-act='open']").onclick = () => {
+      el.hidden = true;
+      onOpen?.();
+    };
+    el.querySelector("[data-act='dismiss']").onclick = () => {
+      el.hidden = true;
+      onDismiss?.();
+    };
   }
 
   offerFeed(feed, { onAdd, onDismiss } = {}) {
@@ -1003,11 +1020,7 @@ export class Overlay {
 
   layoutCards() {
     if (!this.els?.gutter) return;
-    const docHeight = Math.max(
-      document.documentElement.scrollHeight,
-      document.body?.scrollHeight || 0,
-      window.innerHeight
-    );
+    const docHeight = this.view.contentHeight();
     document.documentElement.style.setProperty("--lp-doc-height", `${docHeight}px`);
     this.host.style.height = `${docHeight}px`;
     // Only cards that sit directly in the gutter are positioned; the orphan
@@ -1019,7 +1032,7 @@ export class Overlay {
       const rect = highlightRect(el.dataset.highlight);
       return {
         el,
-        preferred: rect ? rect.top + window.scrollY : null,
+        preferred: rect ? this.view.contentTop(rect) : null,
         height: el.offsetHeight || 72
       };
     });
@@ -1053,10 +1066,10 @@ export class Overlay {
     }
     if (!card.style.top) return;
     const top = parseFloat(card.style.top);
-    const viewTop = window.scrollY;
-    const viewBottom = viewTop + window.innerHeight;
+    const viewTop = this.view.scrollTop();
+    const viewBottom = viewTop + this.view.viewportHeight();
     if (top < viewTop + 24 || top > viewBottom - 160) {
-      window.scrollTo({ top: Math.max(0, top - 80), behavior: "smooth" });
+      this.view.scrollToTop(top - 80);
     }
   }
 

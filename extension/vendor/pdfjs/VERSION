@@ -1,0 +1,2 @@
+pdfjs-dist 4.10.38
+Regenerate with: npm i -D pdfjs-dist@4.10.38 && npm run vendor:pdf

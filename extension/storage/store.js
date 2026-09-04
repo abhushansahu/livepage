@@ -129,6 +129,15 @@ export function emptyPage(url, extras = {}) {
     importMeta: extras.importMeta || null,
     snoozedUntil: 0,
     tags: mergeTags(extras.tags),
+    // What kind of document this is. "web" for everything that came through
+    // the content script; "pdf" for one read in the bundled viewer. Only the
+    // exporter and the viewer look at it — the id, the highlights, the threads
+    // and the vault are the same either way, which is the point.
+    kind: extras.kind === "pdf" ? "pdf" : "web",
+    // For a PDF: { pages, fingerprint }. The fingerprint is recorded now and
+    // used later — it is what will let the same paper found at two URLs be
+    // recognised as one document.
+    docMeta: extras.docMeta || null,
     infiniteScroll: false,
     snapshot: null,
     parsed: {
@@ -212,6 +221,10 @@ export async function upsertPageFromVisit(url, meta = {}) {
     if (typeof meta.infiniteScroll === "boolean") {
       existing.infiniteScroll = meta.infiniteScroll;
     }
+    // A record made before the PDF viewer existed — queued from a link, say —
+    // learns what it is the first time it is actually opened in one.
+    if (meta.kind) existing.kind = meta.kind;
+    if (meta.docMeta) existing.docMeta = { ...(existing.docMeta || {}), ...meta.docMeta };
     return putPage(existing);
   }
   if (meta.createIfMissing === false) return null;
@@ -441,6 +454,13 @@ export async function upsertImportedPages(items) {
  * until a page is actually visited, and deliberately not part of the record a
  * highlight is born with.
  */
+/**
+ * Unknown fields are dropped here on purpose, so a caller cannot smuggle
+ * arbitrary shape into the record. `locator` therefore has to be named: it is
+ * where in a paginated document the passage sits — `{ page: 4 }` for a PDF —
+ * and without it ADD_HIGHLIGHT would silently discard the only thing that
+ * tells the viewer which text layer to search.
+ */
 export function newHighlight(partial) {
   return {
     id: uid("hl"),
@@ -449,8 +469,14 @@ export function newHighlight(partial) {
     prefix: partial.prefix || "",
     suffix: partial.suffix || "",
     createdAt: Date.now(),
-    threadId: partial.threadId || null
+    threadId: partial.threadId || null,
+    locator: normalizeLocator(partial.locator)
   };
+}
+
+function normalizeLocator(locator) {
+  const page = Number(locator?.page);
+  return Number.isFinite(page) && page > 0 ? { page } : null;
 }
 
 export function newThread(partial) {

@@ -3,6 +3,7 @@ import { getSettings, unreadPages, upsertImportedPages } from "../storage/store.
 import { syncSaves } from "../import/sync.js";
 import { syncRssFeeds } from "../import/rss.js";
 import { resolveFlags } from "../shared/flags.js";
+import { viewerUrlFor } from "../pdf/route.js";
 
 const DASHBOARD_PATH = "dashboard/index.html";
 const ALARM = "livepage-unread-reminder";
@@ -36,6 +37,15 @@ chrome.runtime.onInstalled.addListener(async () => {
       title: "LivePage: add RSS feed from this page",
       contexts: ["page"]
     });
+    // Only on links, and only ones that end in .pdf. Chrome will not tell us a
+    // URL's content type before it is fetched, so anything wider than this
+    // would be offering to open documents that are not there.
+    chrome.contextMenus.create({
+      id: "lp-open-pdf",
+      title: "Open this PDF in LivePage",
+      contexts: ["link"],
+      targetUrlPatterns: ["*://*/*.pdf", "*://*/*.PDF", "*://*/*.pdf?*", "*://*/*.PDF?*"]
+    });
   });
   await refreshBadge();
   await scheduleReminder();
@@ -56,6 +66,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true, data: true });
     return true;
   }
+  if (message?.type === "OPEN_PDF") {
+    openPdf(message.payload?.url, sender?.tab).then(() => sendResponse({ ok: true, data: true }));
+    return true;
+  }
   if (message?.type === "RESCHEDULE_REMINDER") {
     scheduleReminder().then(() => sendResponse({ ok: true, data: true }));
     return true;
@@ -73,6 +87,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === "lp-open-pdf") {
+    await openPdf(info.linkUrl, tab);
+    return;
+  }
   if (info.menuItemId === "lp-dashboard") {
     await openDashboard();
     return;
@@ -125,6 +143,24 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   const action = command === "comment-selection" ? "comment" : "highlight";
   await sendToTab(tab.id, { broadcast: true, kind: "CONTEXT_ACTION", action });
 });
+
+/**
+ * Opens a PDF in LivePage's reader, in a new tab beside the one it came from.
+ *
+ * Never a redirect: PDFs are printed, downloaded, filled in and embedded, and
+ * taking every one of them over would break all of that to serve the one case
+ * where the reader wanted to think on it.
+ */
+async function openPdf(url, tab) {
+  if (!url) return;
+  const viewer = viewerUrlFor(url);
+  if (!viewer) return;
+  await chrome.tabs.create({
+    url: viewer,
+    index: typeof tab?.index === "number" ? tab.index + 1 : undefined,
+    windowId: tab?.windowId
+  });
+}
 
 chrome.action.onClicked.addListener(() => {
   /* popup handles click */

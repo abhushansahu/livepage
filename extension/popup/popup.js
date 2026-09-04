@@ -5,6 +5,7 @@ import { parseTagInput, suggestedTagsForHost } from "../shared/tags.js";
 import { hostnameOf } from "../shared/url.js";
 import { resolveFlags } from "../shared/flags.js";
 import { symbolsMutedHere, toggleSymbolsForSite } from "../shared/site-prefs.js";
+import { looksLikePdfUrl } from "../pdf/route.js";
 
 const list = document.getElementById("list");
 const titleEl = document.getElementById("title");
@@ -140,7 +141,21 @@ function renderSwitches() {
   const article = /^https?:/i.test(tabUrl);
   const symbolsOff = symbolsMutedHere(settings, tabUrl);
 
-  const rows = [
+  const rows = [];
+
+  // Only when this tab is a document we can actually open. Offering it
+  // everywhere would make the row furniture, and it stops being a signal.
+  if (looksLikePdfUrl(tabUrl)) {
+    rows.push({
+      id: "pdf",
+      on: true,
+      key: "",
+      label: "Open this PDF in LivePage",
+      sub: "Highlights and margin conversations, in the document"
+    });
+  }
+
+  rows.push(
     {
       id: "markup",
       on: flags.markup !== false,
@@ -165,7 +180,7 @@ function renderSwitches() {
       key: "",
       label: "Show marked passages down the edge"
     }
-  ];
+  );
 
   switches.innerHTML = rows
     .map(
@@ -189,6 +204,11 @@ function renderSwitches() {
 
 async function onSwitch(id) {
   const { flags } = resolveFlags(settings);
+  if (id === "pdf") {
+    await call("OPEN_PDF", { url: tabUrl }).catch(() => {});
+    window.close();
+    return;
+  }
   try {
     if (id === "symbols") {
       // Symbols are muted per site, so this row means "here", not everywhere —

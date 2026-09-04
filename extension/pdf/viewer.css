@@ -1,0 +1,164 @@
+/*
+ * The viewer's own chrome. Everything about the margin — cards, toolbar,
+ * marks — comes from content.css and the overlay's shadow stylesheet, exactly
+ * as it does on an article, so there is nothing to keep in sync here.
+ */
+
+:root {
+  --paper: #f6f1e8;
+  --ink: #1c1712;
+  --line: rgba(28, 23, 18, 0.12);
+  --sage: #3f6b52;
+  --bar: 44px;
+}
+
+html.lp-theme-dark {
+  --paper: #17140f;
+  --ink: #ece5da;
+  --line: rgba(236, 229, 218, 0.16);
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-sans-serif, "Segoe UI", system-ui, sans-serif;
+}
+
+.bar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--bar);
+  z-index: 5;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 0 14px;
+  box-sizing: border-box;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+.bar .mark {
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--sage);
+  font-weight: 700;
+  flex: none;
+}
+
+.bar h1 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar .where {
+  font-size: 12px;
+  opacity: 0.62;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar .tools {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.bar button {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.bar button:hover {
+  border-color: var(--sage);
+  color: var(--sage);
+}
+
+/*
+ * pdf.js refuses to start unless its container is absolutely positioned, and
+ * it needs to be the scroller: the margin's cards are absolutely positioned
+ * inside it so the browser scrolls them along with the pages, with no scroll
+ * listener anywhere.
+ */
+#viewerContainer {
+  position: absolute;
+  inset: var(--bar) 0 0 0;
+  overflow: auto;
+  outline: none;
+}
+
+/*
+ * Making room for the margin. Padding on the scroller rather than a width on
+ * the page stack, so pdf.js keeps centring the pages in whatever is left —
+ * the same move `html.lp-rail-on` makes on an article.
+ */
+#viewerContainer.lp-rail-on {
+  padding-right: var(--lp-gutter, 328px);
+}
+
+/*
+ * A PDF's glyphs are painted on a canvas and the selectable text sits over
+ * them, invisible. A highlight drawn in that layer would therefore cover the
+ * words it is meant to mark. Multiplying the whole layer into the canvas fixes
+ * it in one rule: transparent stays transparent, and a mark's colour darkens
+ * the paper underneath while leaving the black letters black.
+ */
+#viewerContainer .textLayer {
+  mix-blend-mode: multiply;
+}
+
+/*
+ * No padding on a mark inside the text layer.
+ *
+ * pdf.js positions every run absolutely and scales it horizontally so the
+ * invisible text lines up with the glyphs painted underneath. Padding inside
+ * one of those runs pushes the text along and the highlight stops sitting over
+ * the words it marks. The mark is a coloured rectangle here and nothing else,
+ * so it wants to be exactly the size of the text it covers.
+ */
+#viewerContainer .textLayer mark.lp-hl {
+  padding: 0;
+  margin: 0;
+  border-radius: 0.08em;
+}
+
+.notice {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 6;
+  max-width: min(560px, calc(100vw - 40px));
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(28, 23, 18, 0.14);
+}
+
+.notice[hidden] {
+  display: none;
+}
+
+.notice b {
+  color: var(--sage);
+}

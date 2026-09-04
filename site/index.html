@@ -117,6 +117,11 @@
             <p class="fine"><kbd>⌥J</kbd> and <kbd>⌥K</kbd> move between marks without touching the mouse.</p>
           </article>
           <article class="tile">
+            <h3>PDFs get the same margin</h3>
+            <p>Open a paper in LivePage’s own reader and it behaves like any other page: select, highlight, ask, and the conversation sits beside the passage. The record is keyed on the PDF’s own URL, so it is the same page in the dashboard and the same note in the vault as if you had read it on the web.</p>
+            <p class="fine">Each highlight remembers its page number, so it comes back when you scroll to it. A scanned PDF has no text to select, and LivePage says so rather than pretending.</p>
+          </article>
+          <article class="tile">
             <h3><kbd>⌥S</kbd> Terms explained in place</h3>
             <p>Words an article leans on get a quiet underline; hover for what it means here, ⌘-click to jump to where it was defined. Answers are cached per page, so the second hover is instant. Noisy on a site you read daily — <kbd>⌥S</kbd> turns it off for that site and leaves it alone everywhere else.</p>
           </article>
@@ -221,7 +226,8 @@ cd livepage
           <p>Highlights use text-quote selectors. A page that rewrites the paragraph can still leave one with nowhere to sit — it collects in a dock with its thread intact rather than disappearing, and you re-attach it by selecting the passage where it lives now. Infinite-scroll feeds snapshot themselves when you highlight, so the anchor has somewhere to live.</p>
           <p>The extension runs on every http(s) page because the product is “think on the live web.” Harvest uses the cookies of this Chrome profile. If you are not logged into X here, LivePage cannot invent that session.</p>
           <p>Agent replies stay on your machine. Marking up an article shells out to the Cursor or Claude Code CLI already installed there, so it costs a real call and waits to be asked rather than running on every page you open. If the host is down, LivePage says so, and you still have the packet to paste a reply back by hand.</p>
-          <p><strong>No PDFs yet.</strong> LivePage works on http and https pages; a bundled viewer that would give PDFs the same margin is planned, not built. There is also no backup or restore yet — the vault dump is one-way, so a wiped Chrome profile takes your highlights with it.</p>
+          <p><strong>PDFs, with edges.</strong> They open in LivePage’s reader rather than taking over Chrome’s — from the popup, or by right-clicking a link to one. A local file needs “Allow access to file URLs” ticked on <code>chrome://extensions</code>, which no extension can ask for on your behalf. A highlight has to sit on one page; a selection crossing a page break is refused rather than quietly halved. Marking up with <kbd>⌥A</kbd> is not wired to PDFs yet.</p>
+          <p><strong>No backup or restore yet.</strong> The vault dump is one-way, so a wiped Chrome profile takes your highlights with it.</p>
         </div>
       </section>
 

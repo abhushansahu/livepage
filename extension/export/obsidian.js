@@ -16,9 +16,11 @@ export function pageToMarkdown(page) {
     `domain: ${page.domain || ""}`,
     `status: ${page.readState || "unread"}`,
     `source: ${page.importMeta?.source || "live"}`,
+    `type: ${page.kind === "pdf" ? "pdf" : "article"}`,
     `progress: ${page.progress?.maxPercent || 0}`,
     `bookmarked: ${page.bookmarked ? "true" : "false"}`,
     `tags: [${tags.map(yamlEscape).join(", ")}]`,
+    ...(page.docMeta?.pages ? [`pages: ${page.docMeta.pages}`] : []),
     `livepage_id: ${page.id}`,
     `updated: ${iso(page.updatedAt)}`,
     `---`,
@@ -47,7 +49,10 @@ export function pageToMarkdown(page) {
   }
 
   for (const highlight of page.highlights || []) {
-    lines.push(`### ${highlight.color}: "${clip(highlight.text, 140)}"`);
+    // The page number is how you find a passage again in a 40-page paper, so
+    // it belongs in the heading you scan, not in a field further down.
+    const where = highlight.locator?.page ? ` · p. ${highlight.locator.page}` : "";
+    lines.push(`### ${highlight.color}: "${clip(highlight.text, 140)}"${where}`);
     lines.push(`> ${highlight.text}`, ``);
     const threads = threadsByHighlight.get(highlight.id) || [];
     if (!threads.length) continue;
@@ -83,9 +88,25 @@ export function obsidianNewUri({ vault, folder, filename, content }) {
 
 export function suggestedFilename(page) {
   const stamp = new Date(page.updatedAt || Date.now()).toISOString().slice(0, 10);
-  const slug = slugify(page.title || page.domain || "page").slice(0, 60);
-  const host = slugify(page.domain || "web").slice(0, 40);
+  const slug = slugify(page.title || fileStem(page.url) || page.domain || "page").slice(0, 60);
+  // A file:// PDF has no hostname, so without a fallback every local document
+  // would export as "…-web-….md" and they would sort into one indistinct pile.
+  const host = slugify(page.domain || (isFileUrl(page.url) ? "local" : "web")).slice(0, 40);
   return `${stamp}-${host}-${slug}.md`;
+}
+
+function isFileUrl(url) {
+  return /^file:/i.test(String(url || ""));
+}
+
+function fileStem(url) {
+  const path = String(url || "").split("#")[0].split("?")[0];
+  const file = path.split("/").filter(Boolean).pop() || "";
+  try {
+    return decodeURIComponent(file).replace(/\.[a-z0-9]{1,5}$/i, "");
+  } catch {
+    return file.replace(/\.[a-z0-9]{1,5}$/i, "");
+  }
 }
 
 function slugify(value) {

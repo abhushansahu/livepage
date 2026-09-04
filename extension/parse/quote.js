@@ -206,18 +206,51 @@ export function unwrapHighlight(root, highlightId) {
   });
 }
 
+/**
+ * The document as one string, with a map back to the text nodes it came from.
+ *
+ * `<br>` is counted as whitespace. It has to be: a PDF's text layer is one
+ * span per line with a `<br>` between them and no whitespace anywhere, so
+ * without this a quote spanning two lines would be stored as "thecat sat" and
+ * would never match anything again. `foo<br>bar` reading as "foobar" was
+ * always wrong on the web too; this fixes it there as a by-product.
+ *
+ * Block elements are deliberately *not* treated the same way, even though
+ * `<p>a</p><p>b</p>` has the same problem when a page ships without whitespace
+ * between its tags. Almost every page has that whitespace, so the change would
+ * be nearly all risk — it would shift the flattened offsets of every stored
+ * quote on the web — for a case `<br>` does not cover.
+ */
 function flattenText(root) {
   const spans = [];
   let rawCombined = "";
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+  let pendingBreak = false;
+  if (root?.nodeType === Node.ELEMENT_NODE && root.matches?.(SKIP)) {
+    return { spans, text: "", rawAtFlat: [] };
+  }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
     acceptNode(node) {
-      if (!node.textContent) return NodeFilter.FILTER_REJECT;
-      if (node.parentElement?.closest(SKIP)) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        // Rejecting the element skips its whole subtree, which is what the
+        // old per-text-node `closest(SKIP)` was paying for on every node.
+        if (node.matches(SKIP)) return NodeFilter.FILTER_REJECT;
+        return node.tagName === "BR" ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      }
+      return node.textContent ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
     }
   });
   let node = walker.nextNode();
   while (node) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      pendingBreak = true;
+      node = walker.nextNode();
+      continue;
+    }
+    // The break is added to the raw string but claimed by no span, so every
+    // later span's rawStart already accounts for it and the offset map stays
+    // honest.
+    if (pendingBreak && rawCombined) rawCombined += "\n";
+    pendingBreak = false;
     const raw = node.textContent;
     spans.push({ node, rawStart: rawCombined.length, rawEnd: rawCombined.length + raw.length });
     rawCombined += raw;

@@ -92,8 +92,14 @@ export function applySelectionHighlight(selection, highlight, root = document.bo
   return applyRangeHighlight(selection.getRangeAt(0), highlight, root);
 }
 
-export function marksFor(highlightId) {
-  return [...document.querySelectorAll(`mark.lp-hl[data-lp-id="${cssEscape(highlightId)}"]`)];
+/**
+ * `root` narrows the search to one part of the document. The PDF viewer uses
+ * it to ask "is this highlight marked *in this page's text layer*", which is a
+ * different question from "is it marked anywhere" once pdf.js starts throwing
+ * away the text layers of pages you have scrolled past.
+ */
+export function marksFor(highlightId, root = document) {
+  return [...root.querySelectorAll(`mark.lp-hl[data-lp-id="${cssEscape(highlightId)}"]`)];
 }
 
 export function recolorMarks(highlightId, color) {
@@ -118,8 +124,8 @@ function colorHint(color) {
   return `${meta.name} — ${meta.purpose}`;
 }
 
-export function highlightRect(highlightId) {
-  const marks = marksFor(highlightId);
+export function highlightRect(highlightId, root = document) {
+  const marks = marksFor(highlightId, root);
   if (!marks.length) return null;
   const rects = marks.map((m) => m.getBoundingClientRect());
   return {

@@ -7,6 +7,7 @@ import { isWaiting, progressLabel, progressOf, reviewItems } from "../shared/pro
 import { anchorItems } from "../shared/anchors.js";
 import { highlightMatches, pageMatchesQuery } from "../shared/search.js";
 import { cssEscape } from "../parse/quote.js";
+import { viewerUrlFor } from "../pdf/route.js";
 import { composeFeed, sourceGlyph, sourceLabel } from "../shared/feed.js";
 import { sourceColor, sourceKey } from "../shared/source-meta.js";
 import { icon, sourceIcon } from "../shared/icons.js";
@@ -22,6 +23,23 @@ import {
 import { experimentMeta, firstVisibleFilter, navItems, resolveFlags } from "../shared/flags.js";
 import { applyTheme, watchTheme } from "../shared/theme.js";
 import { bindVaultFolder, vaultStatus, vaultSupported, writeVault } from "../export/vault.js";
+
+/**
+ * Where "open this page" actually goes.
+ *
+ * A PDF's record is keyed on the PDF's own URL, which is right — but opening
+ * that URL hands the document to Chrome's viewer, where LivePage is not, and
+ * the reader sees a bare PDF and concludes their highlights are gone. Route it
+ * back through our own viewer instead.
+ */
+function liveUrlFor(page, hash = "") {
+  if (!page?.url) return "";
+  const base = page.kind === "pdf" ? viewerUrlFor(page.url) || page.url : page.url;
+  if (!hash) return base;
+  const url = new URL(base);
+  url.hash = hash;
+  return url.href;
+}
 
 if (location.protocol !== "chrome-extension:" && !globalThis.__LP_BRIDGE) {
   const { handleMessage } = await import("../background/handlers.js");
@@ -722,7 +740,7 @@ function feedPost(item) {
         </div>
         <p class="meta-line">${progressLabel(page)}${page.highlights?.length ? ` · ${page.highlights.length} marks` : ""}${page.inReadingList ? " · reading list" : ""}${page.bookmarked ? " · ★ bookmark" : ""}</p>
         <div class="tweet-actions">
-          <a href="${page.url}" target="_blank" rel="noreferrer" data-live="${page.id}">Open</a>
+          <a href="${liveUrlFor(page)}" target="_blank" rel="noreferrer" data-live="${page.id}">Open</a>
           <button type="button" data-snooze="${page.id}">Not now</button>
           <button type="button" data-reading="${page.id}">${page.inReadingList ? "In reading list" : "Reading list"}</button>
           <button type="button" class="star" data-star="${page.id}">${page.bookmarked ? "★" : "☆"}</button>
@@ -955,7 +973,7 @@ function bindView() {
         pageId: btn.dataset.cta
       });
       const page = state.pages.find((p) => p.id === btn.dataset.cta);
-      if (page?.url) window.open(page.url, "_blank", "noreferrer");
+      if (page?.url) window.open(liveUrlFor(page), "_blank", "noreferrer");
       openDrawer(btn.dataset.cta);
     };
   });
@@ -983,9 +1001,8 @@ function bindView() {
       if (!page?.url) return;
       // The live page re-anchors the highlight and scrolls to it; if the page
       // has since dropped the passage, LivePage says so there.
-      const url = new URL(page.url);
-      url.hash = `livepage-highlight=${encodeURIComponent(btn.dataset.liveHighlight)}`;
-      window.open(url.href, "_blank", "noreferrer");
+      const url = liveUrlFor(page, `livepage-highlight=${encodeURIComponent(btn.dataset.liveHighlight)}`);
+      window.open(url, "_blank", "noreferrer");
     };
   });
   const more = document.getElementById("feed-more");
@@ -1057,7 +1074,7 @@ async function openDrawer(id, { focusHighlightId } = {}) {
       <button type="button" class="act" id="close-drawer" title="Close" aria-label="Close">${icon("close", { size: 15 })}</button>
     </header>
     <h2>${escapeHtml(page.title)}</h2>
-    <p class="drawer-open-line"><a class="open-live" href="${page.url}" target="_blank" rel="noreferrer">Open live page ${icon("external", { size: 13 })}</a></p>
+    <p class="drawer-open-line"><a class="open-live" href="${liveUrlFor(page)}" target="_blank" rel="noreferrer">Open ${page.kind === "pdf" ? "in the PDF reader" : "live page"} ${icon("external", { size: 13 })}</a></p>
     <div class="progress-hero">
       <div class="bar-row">
         <div class="bar" title="${p}%"><span style="width:${p}%"></span></div>

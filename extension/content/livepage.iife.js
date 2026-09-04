@@ -395,15 +395,28 @@
   function flattenText(root) {
     const spans = [];
     let rawCombined = "";
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    let pendingBreak = false;
+    if (root?.nodeType === Node.ELEMENT_NODE && root.matches?.(SKIP)) {
+      return { spans, text: "", rawAtFlat: [] };
+    }
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
       acceptNode(node2) {
-        if (!node2.textContent) return NodeFilter.FILTER_REJECT;
-        if (node2.parentElement?.closest(SKIP)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
+        if (node2.nodeType === Node.ELEMENT_NODE) {
+          if (node2.matches(SKIP)) return NodeFilter.FILTER_REJECT;
+          return node2.tagName === "BR" ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+        }
+        return node2.textContent ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
       }
     });
     let node = walker.nextNode();
     while (node) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        pendingBreak = true;
+        node = walker.nextNode();
+        continue;
+      }
+      if (pendingBreak && rawCombined) rawCombined += "\n";
+      pendingBreak = false;
       const raw = node.textContent;
       spans.push({ node, rawStart: rawCombined.length, rawEnd: rawCombined.length + raw.length });
       rawCombined += raw;
@@ -704,8 +717,8 @@
     describeMarks(highlight, marks);
     return marks;
   }
-  function marksFor(highlightId) {
-    return [...document.querySelectorAll(`mark.lp-hl[data-lp-id="${cssEscape(highlightId)}"]`)];
+  function marksFor(highlightId, root = document) {
+    return [...root.querySelectorAll(`mark.lp-hl[data-lp-id="${cssEscape(highlightId)}"]`)];
   }
   function recolorMarks(highlightId, color) {
     marksFor(highlightId).forEach((mark) => {
@@ -724,8 +737,8 @@
     const meta = colorOf(color);
     return `${meta.name} \u2014 ${meta.purpose}`;
   }
-  function highlightRect(highlightId) {
-    const marks = marksFor(highlightId);
+  function highlightRect(highlightId, root = document) {
+    const marks = marksFor(highlightId, root);
     if (!marks.length) return null;
     const rects = marks.map((m) => m.getBoundingClientRect());
     return {
@@ -1166,6 +1179,54 @@
     return value === "dark" ? "dark" : "coffee";
   }
 
+  // extension/content/view.js
+  var documentView = {
+    /** Where the overlay's hosts are appended. */
+    mount: () => document.documentElement,
+    /** A viewport rect's top, in content coordinates. */
+    contentTop: (rect) => rect.top + window.scrollY,
+    /** The top of what is currently visible, in content coordinates. */
+    scrollTop: () => window.scrollY,
+    viewportHeight: () => window.innerHeight,
+    contentHeight: () => Math.max(
+      document.documentElement.scrollHeight,
+      document.body?.scrollHeight || 0,
+      window.innerHeight
+    ),
+    scrollToTop: (top) => window.scrollTo({ top: Math.max(0, top), behavior: "smooth" }),
+    /**
+     * Makes room for the margin, or gives it back.
+     *
+     * The rule lives in a style element rather than inline on <html> so a page's
+     * own stylesheet cannot outrank it, and so removing the class is enough to
+     * undo it.
+     */
+    setGutter(on, width) {
+      const root = document.documentElement;
+      if (!document.getElementById("lp-gutter-style")) {
+        const rail = document.createElement("style");
+        rail.id = "lp-gutter-style";
+        rail.textContent = `
+        html.lp-rail-on {
+          position: relative;
+          box-sizing: border-box;
+          padding-right: var(--lp-gutter, 328px) !important;
+          scroll-padding-right: var(--lp-gutter, 328px);
+        }
+      `;
+        root.appendChild(rail);
+      }
+      root.classList.toggle("lp-rail-on", on);
+      if (on) root.style.setProperty("--lp-gutter", `${width}px`);
+      else root.style.removeProperty("--lp-gutter");
+    },
+    /** Re-layout triggers other than our own. */
+    onRelayout(handler) {
+      window.addEventListener("resize", handler, { passive: true });
+      return () => window.removeEventListener("resize", handler);
+    }
+  };
+
   // extension/content/overlay.js
   var import_meta = {};
   var GUTTER = 328;
@@ -1240,7 +1301,13 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
     return host;
   }
   var Overlay = class {
-    constructor() {
+    /**
+     * `view` answers the geometry questions — what is scrolling, how tall the
+     * content is, where the margin's room comes from. It defaults to the window,
+     * which is every case but the PDF viewer.
+     */
+    constructor({ view = documentView } = {}) {
+      this.view = view;
       this.host = makeHost("root");
       this.shadow = this.host.attachShadow({ mode: "open" });
       this.floatHost = makeHost("float");
@@ -1281,9 +1348,10 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
       this.attachHosts();
     }
     attachHosts() {
-      const root = document.documentElement;
+      const top = document.documentElement;
+      if (top && this.floatHost.parentNode !== top) top.appendChild(this.floatHost);
+      const root = this.view.mount();
       if (!root) return;
-      if (this.floatHost.parentNode !== root) root.appendChild(this.floatHost);
       if (this.els?.gutter && this.host.parentNode !== root) root.appendChild(this.host);
     }
     async render() {
@@ -1310,27 +1378,13 @@ ${css}</style>`;
         this.floatShadow.querySelector("style").textContent = `${FALLBACK_CSS}
 ${css}`;
       }
-      document.documentElement.style.setProperty("--lp-gutter", `${GUTTER}px`);
-      if (!document.getElementById("lp-gutter-style")) {
-        const rail = document.createElement("style");
-        rail.id = "lp-gutter-style";
-        rail.textContent = `
-        html.lp-rail-on {
-          position: relative;
-          box-sizing: border-box;
-          padding-right: var(--lp-gutter, 328px) !important;
-          scroll-padding-right: var(--lp-gutter, 328px);
-        }
-      `;
-        document.documentElement.appendChild(rail);
-      }
-      document.documentElement.appendChild(this.host);
+      this.view.mount()?.appendChild(this.host);
       this.attachHosts();
       this.applyTheme();
       this.applyRail();
     }
     bind() {
-      window.addEventListener("resize", () => this.layoutCards(), { passive: true });
+      this.view.onRelayout(() => this.layoutCards());
       document.addEventListener("keydown", (event) => {
         if (event.key !== "Escape") return;
         const menu = this.els?.gutter?.querySelector(".send-menu:not([hidden])");
@@ -1409,12 +1463,30 @@ ${css}`;
     applyRail() {
       const show = (this.page?.highlights || []).length > 0;
       this.host.hidden = !show;
-      document.documentElement.classList.toggle("lp-rail-on", show);
-      if (show) {
-        document.documentElement.style.setProperty("--lp-gutter", `${GUTTER}px`);
-      } else {
-        document.documentElement.style.removeProperty("--lp-gutter");
-      }
+      this.view.setGutter(show, GUTTER);
+    }
+    /**
+     * Chrome has handed this tab to its own PDF viewer, where none of LivePage
+     * exists. Say so once, offer the reader that does, and go away when waved
+     * off — the same manners as the RSS offer, and the same element.
+     */
+    offerPdf({ onOpen, onDismiss } = {}) {
+      const el = this.els.feedOffer;
+      if (!el) return;
+      el.hidden = false;
+      el.innerHTML = `
+      <p><strong>This is a PDF.</strong> Open it in LivePage to highlight and think in the margin.</p>
+      <button class="solid" data-act="open">Open in LivePage</button>
+      <button class="ghost" data-act="dismiss">Not now</button>
+    `;
+      el.querySelector("[data-act='open']").onclick = () => {
+        el.hidden = true;
+        onOpen?.();
+      };
+      el.querySelector("[data-act='dismiss']").onclick = () => {
+        el.hidden = true;
+        onDismiss?.();
+      };
     }
     offerFeed(feed, { onAdd, onDismiss } = {}) {
       const el = this.els.feedOffer;
@@ -2072,11 +2144,7 @@ ${css}`;
     }
     layoutCards() {
       if (!this.els?.gutter) return;
-      const docHeight = Math.max(
-        document.documentElement.scrollHeight,
-        document.body?.scrollHeight || 0,
-        window.innerHeight
-      );
+      const docHeight = this.view.contentHeight();
       document.documentElement.style.setProperty("--lp-doc-height", `${docHeight}px`);
       this.host.style.height = `${docHeight}px`;
       const cards = [...this.els.gutter.querySelectorAll(".gutter > .card")];
@@ -2084,7 +2152,7 @@ ${css}`;
         const rect = highlightRect(el.dataset.highlight);
         return {
           el,
-          preferred: rect ? rect.top + window.scrollY : null,
+          preferred: rect ? this.view.contentTop(rect) : null,
           height: el.offsetHeight || 72
         };
       });
@@ -2115,10 +2183,10 @@ ${css}`;
       }
       if (!card.style.top) return;
       const top = parseFloat(card.style.top);
-      const viewTop = window.scrollY;
-      const viewBottom = viewTop + window.innerHeight;
+      const viewTop = this.view.scrollTop();
+      const viewBottom = viewTop + this.view.viewportHeight();
       if (top < viewTop + 24 || top > viewBottom - 160) {
-        window.scrollTo({ top: Math.max(0, top - 80), behavior: "smooth" });
+        this.view.scrollToTop(top - 80);
       }
     }
     expandDock() {
@@ -2992,15 +3060,19 @@ ${css}`;
   });
   boot().catch((error) => console.warn("LivePage failed to start", error));
   async function boot() {
-    infinite = evaluateInfiniteScroll(location.href, document);
-    watchSelection();
-    watchMarks();
     try {
       settings = await call("GET_SETTINGS") || settings;
       overlay.setPreferences(settings);
     } catch (error) {
       console.warn("LivePage settings unavailable", error);
     }
+    if (isPdfDocument()) {
+      await offerPdfReader();
+      return;
+    }
+    infinite = evaluateInfiniteScroll(location.href, document);
+    watchSelection();
+    watchMarks();
     const { flags } = resolveFlags(settings);
     anchorFlag = flags.orphanRecovery !== false;
     symbolsFlag = Boolean(flags.articleSymbols);
@@ -3037,6 +3109,19 @@ ${css}`;
     applySymbols(parsed);
     runMarkup(parsed, { cachedOnly: true });
     if (flags.rss) offerRssIfAny();
+  }
+  function isPdfDocument() {
+    return document.contentType === "application/pdf";
+  }
+  async function offerPdfReader() {
+    try {
+      await overlay.ready;
+    } catch {
+    }
+    overlay.offerPdf({
+      onOpen: () => call("OPEN_PDF", { url: location.href }).catch(() => {
+      })
+    });
   }
   function watchInfinite() {
     if (infinite.infinite) return;
