@@ -110,3 +110,10 @@ html.lp-theme-dark .lp-symbol-card small { color: #a3998e; }
     outline-offset: 12px;
   }
 }
+
+/* Restored from a loose match: the page changed, and the reader has not yet
+   confirmed this is the passage they marked. */
+mark.lp-hl.is-unsure {
+  text-decoration: underline dashed currentColor 1px;
+  text-underline-offset: 3px;
+}

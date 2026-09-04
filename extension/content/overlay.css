@@ -828,3 +828,148 @@ textarea:focus,
   font: inherit;
   cursor: pointer;
 }
+
+/* Passages the page no longer has a place for.
+   Fixed, because .gutter positions its cards absolutely — an in-flow section
+   would render underneath them. Docked bottom-right so it never collides with
+   the RSS offer, which sits at the top of the same column. */
+.orphan-dock {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: min(300px, calc(var(--lp-gutter, 328px) - 28px));
+  max-height: 60vh;
+  overflow: auto;
+  z-index: 2147483644;
+  pointer-events: auto;
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-line);
+  border-left: 3px solid var(--lp-danger);
+  border-radius: 14px;
+  padding: 8px 10px;
+  box-shadow: 0 10px 40px color-mix(in srgb, var(--lp-ink) 12%, transparent);
+}
+
+.orphan-dock.is-expanded {
+  max-height: 78vh;
+}
+
+.orphan-dock[hidden],
+.dock-body[hidden] {
+  display: none !important;
+}
+
+.orphan-dock .card {
+  position: static;
+  margin: 6px 0;
+}
+
+.dock-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  padding: 2px;
+  text-align: left;
+}
+
+.dock-ico {
+  display: inline-flex;
+  color: var(--lp-danger);
+}
+
+.dock-title {
+  flex: 1;
+  font-weight: 600;
+}
+
+.dock-caret {
+  color: var(--lp-muted);
+}
+
+.dock-hint {
+  margin: 4px 2px 8px;
+  color: var(--lp-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.card.is-orphan {
+  border-left-color: var(--lp-danger);
+  cursor: pointer;
+}
+
+.card.is-arming {
+  border-color: var(--lp-danger);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lp-danger) 22%, transparent);
+}
+
+.orphan-badge {
+  color: var(--lp-danger);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.orphan-acts {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.was-here summary {
+  cursor: pointer;
+  color: var(--lp-muted);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.was-context {
+  margin: 6px 0 0;
+  color: var(--lp-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.was-context.is-empty {
+  font-style: italic;
+}
+
+.was-block + .was-block {
+  margin-left: 4px;
+}
+
+/* A loose match restored, but the reader has not said it is the right one. */
+.card.is-unsure {
+  border-left-style: dashed;
+}
+
+.confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.confirm-ask {
+  flex: 1 1 100%;
+  color: var(--lp-muted);
+  font-size: 12px;
+}
+
+.chip-ask {
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.chip-note {
+  color: var(--lp-danger);
+  font-size: 11px;
+  padding-right: 4px;
+}

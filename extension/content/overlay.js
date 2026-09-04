@@ -4,6 +4,7 @@ import { highlightRect } from "./highlights.js";
 import { cssEscape } from "../parse/quote.js";
 import { icon } from "../shared/icons.js";
 import { normalizeTheme } from "../shared/theme.js";
+import { blocksAround } from "../shared/anchors.js";
 
 const GUTTER = 328;
 const CARD_GAP = 10;
@@ -19,7 +20,7 @@ const FALLBACK_CSS = `
   z-index: 2147483640; pointer-events: none;
 }
 .lp-root, .lp-float { font-family: ui-sans-serif, "Segoe UI", system-ui, sans-serif; color: #1c1712; font-size: 13px; }
-.feed-offer, .toolbar, .toast, .card { pointer-events: auto; }
+.feed-offer, .toolbar, .toast, .card, .orphan-dock { pointer-events: auto; }
 .feed-offer[hidden], .toolbar[hidden], .toast[hidden] { display: none !important; }
 .toolbar {
   position: fixed; z-index: 2147483646; display: flex; gap: 4px; align-items: center;
@@ -34,6 +35,22 @@ button.ghost { appearance: none; border: 0; background: transparent; color: #1c1
 }
 .toast { bottom: 20px; left: 50%; transform: translateX(-50%); background: #1c1712; color: #f6f1e8; border-radius: 999px; }
 button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8; padding: 6px 10px; font: inherit; cursor: pointer; border-radius: 999px; font-weight: 600; }
+/* The dock is fixed because .gutter positions its cards absolutely; an
+   in-flow block would sit underneath them. If the stylesheet fetch loses its
+   race these rules are the difference between a readable dock and every
+   orphan stacked on one point. */
+.orphan-dock {
+  position: fixed; right: 16px; bottom: 16px;
+  width: min(300px, calc(var(--lp-gutter, 328px) - 28px));
+  max-height: 60vh; overflow: auto; z-index: 2147483644;
+  background: #fffcf7; border: 1px solid rgba(28,23,18,0.12);
+  border-radius: 14px; padding: 8px 10px; box-shadow: 0 10px 40px rgba(28,23,18,0.12);
+}
+.orphan-dock.is-expanded { max-height: 78vh; }
+.orphan-dock[hidden], .dock-body[hidden] { display: none !important; }
+.orphan-dock .card { position: static; margin: 6px 0; }
+.dock-head { display: flex; gap: 6px; align-items: center; width: 100%; appearance: none; border: 0; background: transparent; font: inherit; color: inherit; cursor: pointer; padding: 2px; text-align: left; }
+.dock-title { flex: 1; font-weight: 600; }
 `;
 
 function makeHost(kind) {
@@ -59,6 +76,9 @@ export class Overlay {
     this.highlightStrength = 48;
     this.mention = null;
     this.mentionRequest = "";
+    this.anchors = new Map();
+    this.reattaching = null;
+    this.dockOpen = false;
     this.els = { toolbar: null, toast: null, feedOffer: null, gutter: null };
     this.mountFloat();
     this.bind();
@@ -186,6 +206,40 @@ export class Overlay {
     document.documentElement.style.setProperty("--lp-highlight-strength", `${this.highlightStrength}%`);
   }
 
+  /** What the live page did with each highlight's quote, by highlight id. */
+  setAnchors(anchors) {
+    this.anchors = anchors || new Map();
+    this.renderCards();
+  }
+
+  setReattaching(highlightId) {
+    this.reattaching = highlightId || null;
+    if (highlightId) this.expandDock();
+    this.renderCards();
+  }
+
+  anchorOf(highlightId) {
+    return this.anchors.get(highlightId) || null;
+  }
+
+  isOrphan(highlightId) {
+    return this.anchorOf(highlightId)?.state === "missing";
+  }
+
+  /**
+   * Lets go of the page entirely. A single-page app swaps articles under us,
+   * and renderCards cannot clear itself — it returns early without a page.
+   */
+  clear() {
+    this.page = null;
+    this.anchors = new Map();
+    this.reattaching = null;
+    this.activeThreadId = null;
+    this.dockOpen = false;
+    if (this.els?.gutter) this.els.gutter.innerHTML = "";
+    this.applyRail();
+  }
+
   applyRail() {
     const show = (this.page?.highlights || []).length > 0;
     this.host.hidden = !show;
@@ -235,12 +289,7 @@ export class Overlay {
           return `<button class="swatch" title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`;
         }
       ).join("") + `<button class="ghost" data-act="comment">Comment</button>`;
-    const top = rect.top - 44;
-    const left = Math.min(rect.left, document.documentElement.clientWidth - 280);
-    bar.style.top = `${Math.max(8, top)}px`;
-    bar.style.left = `${Math.max(8, left)}px`;
-    bar.onpointerdown = (event) => event.preventDefault();
-    bar.onmousedown = (event) => event.preventDefault();
+    this.positionToolbar(rect);
     bar.querySelectorAll(".swatch").forEach((btn) => {
       btn.onclick = (event) => {
         event.preventDefault();
@@ -253,6 +302,21 @@ export class Overlay {
       onComment?.();
       this.hideToolbar();
     });
+  }
+
+  /** Places the floating bar above a selection, kept on screen. */
+  positionToolbar(rect) {
+    const bar = this.els?.toolbar;
+    if (!bar || !rect) return;
+    bar.hidden = false;
+    bar.removeAttribute("hidden");
+    const top = rect.top - 44;
+    const left = Math.min(rect.left, document.documentElement.clientWidth - 280);
+    bar.style.top = `${Math.max(8, top)}px`;
+    bar.style.left = `${Math.max(8, left)}px`;
+    // Keep the page's selection alive while the bar is clicked.
+    bar.onpointerdown = (event) => event.preventDefault();
+    bar.onmousedown = (event) => event.preventDefault();
   }
 
   hideToolbar() {
@@ -284,10 +348,18 @@ export class Overlay {
       ? ""
       : this.els.gutter.querySelector(".card.is-open .composer textarea:not(.packet-md)")?.value || "";
     this._skipDraftOnce = false;
-    this.els.gutter.innerHTML = this.page.highlights
-      .map((highlight) => this.cardHtml(highlight))
-      .join("");
+    const placed = [];
+    const orphans = [];
+    for (const highlight of this.page.highlights) {
+      (this.isOrphan(highlight.id) ? orphans : placed).push(highlight);
+    }
+    // The dock has to be part of this same string: renderCards replaces the
+    // gutter wholesale, so anything appended separately is thrown away on the
+    // next mutation.
+    this.els.gutter.innerHTML =
+      placed.map((highlight) => this.cardHtml(highlight)).join("") + this.dockHtml(orphans);
     this.els.gutter.querySelectorAll(".card").forEach((card) => this.bindCard(card));
+    this.bindDock();
     this.layoutCards();
     this.markActiveHighlights();
     this.applyRail();
@@ -301,22 +373,134 @@ export class Overlay {
     }
   }
 
+  /**
+   * The passages this page no longer has a place for.
+   *
+   * They keep their whole conversation — a highlight is only ever the anchor
+   * for one — so nothing is lost while the page and the quote disagree.
+   */
+  dockHtml(orphans) {
+    if (!orphans.length) return "";
+    const open = this.dockOpen || Boolean(this.reattaching);
+    const count = orphans.length;
+    return `
+      <section class="orphan-dock${open ? " is-expanded" : ""}">
+        <button type="button" class="dock-head" data-act="toggle-orphans" aria-expanded="${open}">
+          <span class="dock-ico">${icon("search", { size: 13 })}</span>
+          <span class="dock-title">${count} highlight${count === 1 ? "" : "s"} lost ${count === 1 ? "its" : "their"} place</span>
+          <span class="dock-caret">${open ? "\u25be" : "\u25b8"}</span>
+        </button>
+        <div class="dock-body"${open ? "" : " hidden"}>
+          <p class="dock-hint">The page changed under these. Select the passage each one belongs to now, then re-attach.</p>
+          ${orphans.map((highlight) => this.cardHtml(highlight)).join("")}
+        </div>
+      </section>`;
+  }
+
+  /**
+   * A loose match is a guess. Ask before the stored quote is ever rewritten
+   * from it — otherwise the anchor is re-derived from the same stale text on
+   * every load and drifts until it snaps.
+   */
+  confirmRowHtml() {
+    return `
+      <div class="confirm-row">
+        <span class="confirm-ask">The page changed. Is this the right passage?</span>
+        <button type="button" class="solid" data-act="confirm-anchor">That\u2019s it</button>
+        <button type="button" class="ghost" data-act="move-hl">No \u2014 re-attach</button>
+      </div>`;
+  }
+
+  /**
+   * What the saved copy of this page remembers around the passage. Collapsed,
+   * so it costs nothing until asked for — and its absence is itself telling.
+   */
+  wasHereHtml(highlight) {
+    const blocks = blocksAround(this.page, highlight.text, 1);
+    if (!blocks.length) {
+      return `<p class="was-context is-empty">We have no saved copy of this passage.</p>`;
+    }
+    const body = blocks
+      .map((block) => {
+        const text = clip(block.text, 220);
+        return `<span class="was-block">${escapeHtml(text)}</span>`;
+      })
+      .join(" ");
+    return `
+      <details class="was-here">
+        <summary>Where it used to sit</summary>
+        <p class="was-context">${body}</p>
+      </details>`;
+  }
+
+  bindDock() {
+    const head = this.els.gutter.querySelector("[data-act='toggle-orphans']");
+    if (!head) return;
+    head.addEventListener("click", () => {
+      this.dockOpen = !this.dockOpen;
+      this.renderCards();
+    });
+  }
+
+  /**
+   * Asks whether this selection is the passage, rather than moving a highlight
+   * the moment something is selected. Rendered through the existing toolbar so
+   * it inherits the fallback styling and needs no new fixed element.
+   */
+  showReattachChip(rect, { quote, known = true, onAttach, onCancel } = {}) {
+    this.attachHosts();
+    const el = this.els?.toolbar;
+    if (!el) return;
+    el.hidden = false;
+    el.removeAttribute("hidden");
+    el.innerHTML = `
+      <span class="chip-ask">Re-attach \u201c${escapeHtml(clip(quote || "", 30))}\u201d here?</span>
+      ${known ? "" : `<span class="chip-note">not in the saved copy</span>`}
+      <button class="solid" data-act="attach">Attach</button>
+      <button type="button" class="ghost" data-act="cancel">Cancel</button>
+    `;
+    el.querySelector("[data-act='attach']").onclick = () => onAttach?.();
+    el.querySelector("[data-act='cancel']").onclick = () => onCancel?.();
+    this.positionToolbar(rect);
+  }
+
   cardHtml(highlight) {
     const thread = this.threadFor(highlight.id);
     const open = Boolean(thread && thread.id === this.activeThreadId);
     const color = COLORS[highlight.color]?.fill || "#F6E27A";
     const preview = thread?.messages?.[0]?.content || "Add a comment";
     const count = thread?.messages?.length || 0;
-    if (!open) {
+    const orphan = this.isOrphan(highlight.id);
+    const arming = this.reattaching === highlight.id;
+    if (orphan) {
+      const context = this.wasHereHtml(highlight);
       return `
-        <article class="card" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
+        <article class="card is-orphan${arming ? " is-arming" : ""}" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
+          <p class="meta-line">
+            <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml(threadLabel(thread))}</span>
+            <span class="orphan-badge">not on this page</span>
+            <button type="button" class="hl-delete" data-act="delete-hl" title="Delete highlight">×</button>
+          </p>
+          <p class="quote">${escapeHtml(clip(highlight.text, 140))}</p>
+          ${context}
+          ${count ? `<p class="preview">${escapeHtml(clip(preview, 110))}</p>` : ""}
+          <div class="orphan-acts">
+            <button type="button" class="solid" data-act="move-hl">${arming ? "Selecting…" : "Re-attach here"}</button>
+            ${arming ? `<button type="button" class="ghost" data-act="cancel-reattach">Cancel</button>` : ""}
+          </div>
+        </article>`;
+    }
+    if (!open) {
+      const unsure = this.anchorOf(highlight.id)?.state === "moved";
+      return `
+        <article class="card${unsure ? " is-unsure" : ""}" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
           <p class="meta-line">
             <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml(threadLabel(thread))}</span>
             <span>${count ? `${count} ${count === 1 ? "message" : "messages"}` : ""}</span>
             <button type="button" class="hl-delete" data-act="delete-hl" title="Delete highlight">×</button>
           </p>
           <p class="quote">${escapeHtml(clip(highlight.text, 90))}</p>
-          <p class="preview">${escapeHtml(clip(preview, 110))}</p>
+          ${unsure ? this.confirmRowHtml() : `<p class="preview">${escapeHtml(clip(preview, 110))}</p>`}
         </article>`;
     }
     const branches = this.page.threads.filter((t) => t.highlightId === highlight.id);
@@ -450,9 +634,19 @@ export class Overlay {
         this.handlers.onOpenMention?.(pageId, mentionThreadId);
       };
     });
-    card.querySelector("[data-act='move-hl']")?.addEventListener("click", (event) => {
+    card.querySelectorAll("[data-act='move-hl']").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.handlers.onMoveHighlight?.(highlightId);
+      });
+    });
+    card.querySelector("[data-act='confirm-anchor']")?.addEventListener("click", (event) => {
       event.stopPropagation();
-      this.handlers.onMoveHighlight?.(highlightId);
+      this.handlers.onConfirmAnchor?.(highlightId);
+    });
+    card.querySelector("[data-act='cancel-reattach']")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.handlers.onCancelReattach?.();
     });
     card.querySelectorAll("[data-act='delete-hl']").forEach((btn) => {
       btn.onclick = (event) => {
@@ -747,19 +941,24 @@ export class Overlay {
     );
     document.documentElement.style.setProperty("--lp-doc-height", `${docHeight}px`);
     this.host.style.height = `${docHeight}px`;
-    const cards = [...this.els.gutter.querySelectorAll(".card")];
-    const items = cards
-      .map((el) => {
-        const rect = highlightRect(el.dataset.highlight);
-        const preferred = rect ? rect.top + window.scrollY : 12;
-        return { el, preferred, height: el.offsetHeight || 72 };
-      })
-      .sort((a, b) => a.preferred - b.preferred);
-    let cursor = 12;
+    // Only cards that sit directly in the gutter are positioned; the orphan
+    // dock keeps its own, and a highlight with no marks has nothing to align
+    // to, so it must stay out of the stack rather than piling up at the top of
+    // the document ahead of every real card.
+    const cards = [...this.els.gutter.querySelectorAll(".gutter > .card")];
+    const items = cards.map((el) => {
+      const rect = highlightRect(el.dataset.highlight);
+      return {
+        el,
+        preferred: rect ? rect.top + window.scrollY : null,
+        height: el.offsetHeight || 72
+      };
+    });
     for (const item of items) {
-      const top = Math.max(item.preferred, cursor);
-      item.el.style.top = `${top}px`;
-      cursor = top + item.height + CARD_GAP;
+      if (item.preferred === null) item.el.style.removeProperty("top");
+    }
+    for (const placed of stackCards(items, CARD_GAP)) {
+      placed.el.style.top = `${placed.top}px`;
     }
   }
 
@@ -775,14 +974,29 @@ export class Overlay {
     if (textarea) {
       requestAnimationFrame(() => textarea.focus());
     }
-    if (card) {
-      const top = parseFloat(card.style.top || "0");
-      const viewTop = window.scrollY;
-      const viewBottom = viewTop + window.innerHeight;
-      if (top < viewTop + 24 || top > viewBottom - 160) {
-        window.scrollTo({ top: Math.max(0, top - 80), behavior: "smooth" });
-      }
+    if (!card) return;
+    // A card in the dock is not anywhere on the page. Opening it must reveal
+    // the card, not drag the reader to the top of the document.
+    if (card.closest(".orphan-dock")) {
+      this.expandDock();
+      card.scrollIntoView({ block: "nearest" });
+      return;
     }
+    if (!card.style.top) return;
+    const top = parseFloat(card.style.top);
+    const viewTop = window.scrollY;
+    const viewBottom = viewTop + window.innerHeight;
+    if (top < viewTop + 24 || top > viewBottom - 160) {
+      window.scrollTo({ top: Math.max(0, top - 80), behavior: "smooth" });
+    }
+  }
+
+  expandDock() {
+    const body = this.els?.gutter?.querySelector(".dock-body");
+    const head = this.els?.gutter?.querySelector(".dock-head");
+    if (body) body.hidden = false;
+    if (head) head.setAttribute("aria-expanded", "true");
+    this.dockOpen = true;
   }
 
   closePanel() {
@@ -804,6 +1018,25 @@ export class Overlay {
       mark.classList.toggle("is-active", Boolean(thread && mark.dataset.lpId === thread.highlightId));
     });
   }
+}
+
+/**
+ * Stacks the cards that have a place on the page, newest position wins ties.
+ *
+ * Cards with no anchor are absent from the result entirely rather than falling
+ * back to the top of the document, where they would sort ahead of every real
+ * card and push the whole margin down.
+ */
+export function stackCards(items, gap) {
+  const placed = (items || [])
+    .filter((item) => typeof item.preferred === "number")
+    .sort((a, b) => a.preferred - b.preferred);
+  let cursor = 12;
+  return placed.map((item) => {
+    const top = Math.max(item.preferred, cursor);
+    cursor = top + (item.height || 72) + gap;
+    return { ...item, top };
+  });
 }
 
 function clip(text, n) {

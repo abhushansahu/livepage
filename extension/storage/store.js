@@ -167,8 +167,16 @@ export async function getPageByUrl(url) {
   return getPage(id);
 }
 
-export async function putPage(page) {
-  const next = { ...page, updatedAt: Date.now() };
+/**
+ * Writes a page back.
+ *
+ * `touch: false` keeps the existing updatedAt. Bookkeeping the reader never
+ * asked for — re-checking whether a highlight still anchors, merging a backup
+ * — must not claim the page was touched, or "recently updated" stops meaning
+ * anything and a later merge reads this machine as newer than it is.
+ */
+export async function putPage(page, { touch = true } = {}) {
+  const next = touch ? { ...page, updatedAt: Date.now() } : { ...page };
   await withStore("pages", "readwrite", (store) => {
     store.put(next);
   });
@@ -408,6 +416,13 @@ export async function upsertImportedPages(items) {
   return { imported, updated, total: imported + updated };
 }
 
+/**
+ * A highlight is a text quote, not a position, so it can outlive the markup it
+ * was made on. Highlights may also carry an optional `anchor` summarising how
+ * the last live page treated that quote — see shared/anchors.js. It is absent
+ * until a page is actually visited, and deliberately not part of the record a
+ * highlight is born with.
+ */
 export function newHighlight(partial) {
   return {
     id: uid("hl"),

@@ -5,7 +5,14 @@ import {
   evaluateInfiniteScroll
 } from "../parse/infinite-scroll.js";
 import { quoteFromRange, unwrapHighlight } from "../parse/quote.js";
-import { applyRangeHighlight, restoreHighlights, recolorMarks } from "./highlights.js";
+import {
+  anchorHighlights,
+  applyRangeHighlight,
+  marksFor,
+  recolorMarks,
+  selectionIsSafe
+} from "./highlights.js";
+import { createReanchorLoop, watchUrl } from "./reanchor.js";
 import { Overlay } from "./overlay.js";
 import { toolbarAction, rangeRect } from "./selection.js";
 import { COLOR_IDS } from "../shared/colors.js";
@@ -13,6 +20,7 @@ import { measureScrollProgress } from "../shared/progress.js";
 import { detectFeeds } from "../import/rss.js";
 import { parseTagInput } from "../shared/tags.js";
 import { resolveFlags } from "../shared/flags.js";
+import { canonicalizeUrl, pageIdFromUrl } from "../shared/url.js";
 import { enableArticleSymbols } from "./article-symbols.js";
 
 if (globalThis.__LP_CONTENT_STARTED) {
@@ -28,6 +36,13 @@ let reachedPercent = 0;
 let savedRange = null;
 let savedRect = null;
 let gestureSelected = false;
+let anchorFlag = true;
+let anchors = new Map();
+let anchorTimer = null;
+let reanchor = null;
+let stopInfinite = null;
+let stopUrlWatch = null;
+let reattaching = null;
 
 overlay.handlers = {
   onOpenHighlight: (id) => openOrCreateThread(id),
@@ -48,6 +63,8 @@ overlay.handlers = {
     mutate("DELETE_MESSAGE", { pageId: page.id, threadId, messageId }),
   onRecolorHighlight: (highlightId, color) => recolorHighlight(highlightId, color),
   onMoveHighlight: (highlightId) => moveHighlight(highlightId),
+  onConfirmAnchor: (highlightId) => confirmAnchor(highlightId),
+  onCancelReattach: () => cancelReattach(),
   onDeleteHighlight: (highlightId) => deleteHighlight(highlightId),
   onSearchMentions: (query) => searchMentions(query),
   onOpenMention: (pageId, threadId) => openMention(pageId, threadId),
@@ -76,6 +93,7 @@ async function boot() {
     console.warn("LivePage settings unavailable", error);
   }
   const { flags } = resolveFlags(settings);
+  anchorFlag = flags.orphanRecovery !== false;
 
   try {
     await overlay.ready;
@@ -103,12 +121,14 @@ async function boot() {
       createIfMissing: false
     });
     if (page) {
-      restoreHighlights(document.body, page.highlights);
+      anchorNow();
       overlay.setPage(page);
       openLinkedThread();
+      if (anchorFlag) reanchor = startReanchor();
     }
     watchInfinite();
     watchScroll();
+    if (anchorFlag) watchNavigation();
   } catch (error) {
     console.warn("LivePage visit failed", error);
   }
@@ -138,7 +158,144 @@ function watchInfinite() {
     infinite = { infinite: true, reason: "This page grew while you were reading." };
     if (page?.id) call("PATCH_PAGE", { id: page.id, patch: { infiniteScroll: true } });
   });
-  detector.start();
+  stopInfinite = detector.start();
+}
+
+/**
+ * Re-reads the page and records what became of every highlight's quote.
+ *
+ * Highlights that already anchored are left in place; only the unresolved ones
+ * are looked for again, so a retry costs one pass over the document rather
+ * than a full teardown of every mark on it.
+ */
+function anchorNow() {
+  if (!page) return;
+  anchors = anchorHighlights(document.body, page.highlights, { verdicts: anchors });
+  if (anchorFlag) {
+    overlay.setAnchors(anchors);
+    queueAnchorReport();
+  }
+}
+
+function unresolvedCount() {
+  let count = 0;
+  for (const result of anchors.values()) {
+    if (result.state === "missing") count += 1;
+  }
+  return count;
+}
+
+function startReanchor() {
+  const loop = createReanchorLoop({
+    root: document.body,
+    unresolvedCount,
+    infinite: infinite.infinite,
+    // anchorNow re-renders the margin through setAnchors, which lays the cards
+    // out against wherever the marks ended up.
+    anchorNow
+  });
+  loop.start();
+  return loop;
+}
+
+/**
+ * Tells the record what the live page did with each quote — once per load,
+ * after the retries have settled, and never when nothing changed.
+ */
+function queueAnchorReport() {
+  if (!page?.id || !anchors.size) return;
+  if (anchorTimer) clearTimeout(anchorTimer);
+  anchorTimer = setTimeout(flushAnchorReport, 2000);
+}
+
+async function flushAnchorReport() {
+  if (anchorTimer) clearTimeout(anchorTimer);
+  anchorTimer = null;
+  if (!page?.id || !anchors.size) return;
+  const verdicts = [...anchors.entries()].map(([highlightId, result]) => ({
+    highlightId,
+    state: result.state,
+    rung: result.rung || 0
+  }));
+  try {
+    const result = await call("REPORT_ANCHORS", {
+      pageId: page.id,
+      url: location.href,
+      verdicts
+    });
+    if (result?.page) page = result.page;
+  } catch (error) {
+    console.warn("LivePage anchor report failed", error);
+  }
+}
+
+/**
+ * A single-page app swaps articles without ever reloading, so highlights have
+ * to be re-read — and the old page's marks and progress have to be let go, or
+ * one article's notes bleed onto the next.
+ */
+function watchNavigation() {
+  if (stopUrlWatch) stopUrlWatch();
+  stopUrlWatch = watchUrl(async () => {
+    const sameDocument = page && samePageId(page, location.href);
+    if (sameDocument) {
+      reanchor?.kick();
+      return;
+    }
+    await flushAnchorReport();
+    reanchor?.stop();
+    reanchor = null;
+    if (stopInfinite) stopInfinite();
+    stopInfinite = null;
+    for (const highlight of page?.highlights || []) {
+      unwrapHighlight(document, highlight.id);
+    }
+    anchors = new Map();
+    page = null;
+    reachedPercent = 0;
+    savedRange = null;
+    savedRect = null;
+    cancelReattach();
+    overlay.closePanel();
+    overlay.clear();
+    await revisit();
+  });
+}
+
+function samePageId(current, href) {
+  try {
+    return current.id === pageIdFromUrl(canonicalizeUrl(href));
+  } catch {
+    return false;
+  }
+}
+
+async function revisit() {
+  let parsed = { blocks: [] };
+  try {
+    parsed = parseDocument(document, location.href);
+  } catch (error) {
+    console.warn("LivePage parse failed", error);
+  }
+  infinite = evaluateInfiniteScroll(location.href, document);
+  try {
+    page = await call("VISIT_PAGE", {
+      url: location.href,
+      title: document.title,
+      parsed,
+      infiniteScroll: infinite.infinite,
+      createIfMissing: false
+    });
+  } catch (error) {
+    console.warn("LivePage visit failed", error);
+    return;
+  }
+  if (page) {
+    anchorNow();
+    overlay.setPage(page);
+    if (anchorFlag) reanchor = startReanchor();
+  }
+  watchInfinite();
 }
 
 /**
@@ -214,6 +371,7 @@ function watchSelection() {
       savedRange = null;
       savedRect = null;
       gestureSelected = false;
+      cancelReattach();
       overlay.hideToolbar();
       return;
     }
@@ -252,10 +410,33 @@ function maybeToolbar() {
   const rect = rangeRect(savedRange) || savedRect;
   if (!rect) return;
   savedRect = rect;
+  // While a re-attach is armed the selection means one thing only: this is
+  // where that highlight belongs now. Offer that instead of a new highlight.
+  if (reattaching) {
+    const highlight = (page?.highlights || []).find((h) => h.id === reattaching);
+    overlay.showReattachChip(rect, {
+      quote: highlight?.text || "",
+      known: reattachTargetIsKnown(),
+      onAttach: () => moveHighlight(reattaching),
+      onCancel: () => cancelReattach()
+    });
+    return;
+  }
   overlay.showToolbar(rect, {
     onHighlight: (color) => createFromSelection({ color }),
     onComment: () => createFromSelection({ color: settings.defaultColor, comment: true })
   });
+}
+
+/**
+ * Whether the selected text appears anywhere in the copy we have saved of this
+ * page. Only ever a remark on the chip — the page changing is exactly the
+ * situation a re-attach is for, so this must not block one.
+ */
+function reattachTargetIsKnown() {
+  const blocks = (page?.parsed?.blocks || []).map((block) => block.text);
+  if (!blocks.length) return true;
+  return selectionIsSafe(window.getSelection(), blocks);
 }
 
 /** The first act of keeping a page is what brings its record into being. */
@@ -329,6 +510,13 @@ async function moveHighlight(highlightId) {
   captureSelection();
   const range = savedRange;
   if (!range || range.collapsed) {
+    // An orphan's passage is somewhere else on the page and its card scrolls
+    // out of reach, so "select first, then click" cannot be completed. Arm
+    // instead, and wait for the selection.
+    if (anchorFlag && anchors.get(highlightId)?.state === "missing") {
+      armReattach(highlightId);
+      return;
+    }
     overlay.toast("Select the new span on the page, then click Replace span.");
     return;
   }
@@ -348,11 +536,62 @@ async function moveHighlight(highlightId) {
     window.getSelection()?.removeAllRanges();
     savedRange = null;
     overlay.hideToolbar();
+    anchors.set(highlightId, { state: "found", rung: 1, confidence: "exact" });
+    overlay.setAnchors(anchors);
+    cancelReattach();
     overlay.setPage(page);
     overlay.toast("Highlight moved to that span.");
   } catch (error) {
     overlay.toast("Could not move that highlight.");
     console.warn("LivePage move highlight", error);
+  }
+}
+
+/**
+ * Waits for the reader to point at the passage. Nothing is committed until
+ * they confirm the chip, so a stray selection cannot move a highlight.
+ */
+function armReattach(highlightId) {
+  reattaching = highlightId;
+  overlay.setReattaching(highlightId);
+  overlay.toast("Select the passage this belongs to now.");
+}
+
+function cancelReattach() {
+  if (!reattaching) return;
+  reattaching = null;
+  overlay.setReattaching(null);
+  overlay.hideToolbar();
+}
+
+/**
+ * A loose match restored, and the reader says it is the right passage. Rewrite
+ * the stored quote from where it actually sits, so the next load matches
+ * cleanly instead of drifting further from a quote that is already stale.
+ */
+async function confirmAnchor(highlightId) {
+  const marks = marksFor(highlightId);
+  if (!marks.length || !page) return;
+  const range = document.createRange();
+  range.setStartBefore(marks[0]);
+  range.setEndAfter(marks[marks.length - 1]);
+  const quote = quoteFromRange(range, document.body);
+  if (!quote) return;
+  try {
+    const result = await call("PATCH_HIGHLIGHT", {
+      pageId: page.id,
+      highlightId,
+      patch: { text: quote.exact, prefix: quote.prefix, suffix: quote.suffix }
+    });
+    page = result.page;
+    anchors.set(highlightId, { state: "found", rung: 1, confidence: "exact" });
+    overlay.setAnchors(anchors);
+    anchorNow();
+    overlay.setPage(page);
+    overlay.toast("Anchor confirmed.");
+  } catch (error) {
+    overlay.toast("Could not confirm that anchor.");
+    console.warn("LivePage confirm anchor", error);
   }
 }
 

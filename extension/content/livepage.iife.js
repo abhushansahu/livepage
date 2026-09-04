@@ -255,20 +255,22 @@
       hits.push(index);
       from = index + 1;
     }
-    if (hits.length) return pickBest(hay, hits, exact.length, prefix, suffix);
+    if (hits.length) return pickBest(hay, hits, exact.length, prefix, suffix, 1);
     for (let trim = 1; trim <= Math.min(4, Math.floor(exact.length / 5)); trim += 1) {
       const inner = exact.slice(trim, exact.length - trim);
       if (inner.length < 8) break;
       const index = hay.indexOf(inner);
       if (index >= 0) {
-        return pickBest(hay, [index], inner.length, prefix, suffix);
+        return pickBest(hay, [index], inner.length, prefix, suffix, 2);
       }
     }
     if (prefix.length >= 8 && suffix.length >= 8) {
       const p = hay.indexOf(prefix);
       if (p >= 0) {
         const s = hay.indexOf(suffix, p + prefix.length);
-        if (s > p) return { start: p + prefix.length, end: s };
+        if (s > p && spanLooksRight(s - (p + prefix.length), exact.length)) {
+          return { start: p + prefix.length, end: s, rung: 3, hits: 1, score: 0 };
+        }
       }
     }
     if (exact.length >= 12 && exact.length <= 240) {
@@ -276,12 +278,56 @@
     }
     return null;
   }
+  function spanLooksRight(found, expected) {
+    if (found <= 0) return false;
+    return found >= expected * 0.5 - 40 && found <= expected * 2 + 40;
+  }
+  function anchorConfidence(match, selector) {
+    if (!match) return null;
+    const length = normalizeText(selector?.exact || "").length || 1;
+    if (match.rung === 1) {
+      if (!match.ambiguous) return "exact";
+      return match.score >= 3 ? "exact" : "loose";
+    }
+    if (match.rung === 2) return match.score >= 3 ? "close" : "loose";
+    if (match.rung === 3) return "loose";
+    if (match.rung === 4) {
+      const ratio = (match.distance ?? length) / length;
+      if (ratio < 0.04) return "close";
+      return ratio <= 0.1 ? "loose" : null;
+    }
+    return "loose";
+  }
   function findQuote(root, selector) {
+    return locateInDom(root, selector)?.range || null;
+  }
+  function locateInDom(root, selector) {
     if (!selector?.exact) return null;
+    return resolveInMap(flattenText(root), selector);
+  }
+  function locateAllInDom(root, selectors) {
+    const found = /* @__PURE__ */ new Map();
+    const list = selectors || [];
+    if (!list.length) return found;
     const map = flattenText(root);
-    const found = locateQuote(map.text, selector);
-    if (!found) return null;
-    return rangeFromOffsets(map, found.start, found.end);
+    list.forEach((selector, index) => {
+      if (!selector?.exact) return;
+      const result = resolveInMap(map, selector);
+      if (result) found.set(index, result);
+    });
+    return found;
+  }
+  function resolveInMap(map, selector) {
+    const match = locateQuote(map.text, selector);
+    if (!match) return null;
+    const range = rangeFromOffsets(map, match.start, match.end);
+    if (!range) return null;
+    return {
+      range,
+      rung: match.rung,
+      distance: match.distance,
+      confidence: anchorConfidence(match, selector)
+    };
   }
   function wrapRange(range, highlight) {
     if (!range || range.collapsed) return [];
@@ -427,7 +473,7 @@
     const child = kids[offset];
     return child ? firstTextPoint(child) : firstTextPoint(container);
   }
-  function pickBest(hay, hits, length, prefix, suffix) {
+  function pickBest(hay, hits, length, prefix, suffix, rung) {
     let best = hits[0];
     let bestScore = -1;
     for (const index of hits) {
@@ -443,7 +489,14 @@
         best = index;
       }
     }
-    return { start: best, end: best + length };
+    return {
+      start: best,
+      end: best + length,
+      rung,
+      hits: hits.length,
+      score: Math.max(0, bestScore),
+      ambiguous: hits.length > 1 && bestScore <= 0
+    };
   }
   function fuzzyWindow(hay, exact, prefix, suffix) {
     const maxDist = Math.max(2, Math.floor(exact.length * 0.1));
@@ -459,7 +512,7 @@
       if (suffix && hay.slice(i + exact.length, i + exact.length + 32).startsWith(suffix)) score -= 0.5;
       if (score < bestScore) {
         bestScore = score;
-        best = { start: i, end: i + exact.length };
+        best = { start: i, end: i + exact.length, rung: 4, hits: 1, score: 0, distance: dist };
       }
     }
     return best;
@@ -560,22 +613,65 @@
     return COLORS[id] || COLORS.lemon;
   }
 
+  // extension/shared/anchors.js
+  function normalizeLoose(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+  function blocksAround(page2, text, windowSize = 2) {
+    const blocks = page2?.parsed?.blocks || [];
+    if (!blocks.length) return [];
+    const needle = normalizeLoose(text);
+    if (!needle) return [];
+    const index = blocks.findIndex(
+      (block) => normalizeLoose(block.text).includes(needle.slice(0, 80))
+    );
+    if (index < 0) return [];
+    return blocks.slice(Math.max(0, index - windowSize), index + windowSize + 1);
+  }
+  function stateForConfidence(confidence) {
+    if (!confidence) return "missing";
+    return confidence === "loose" ? "moved" : "found";
+  }
+
   // extension/content/highlights.js
-  function restoreHighlights(root, highlights) {
-    const restored = [];
-    for (const highlight of highlights || []) {
-      unwrapHighlight(root, highlight.id);
-      const range = findQuote(root, {
+  function anchorHighlights(root, highlights, { verdicts } = {}) {
+    const list = highlights || [];
+    const results = /* @__PURE__ */ new Map();
+    const pending = [];
+    for (const highlight of list) {
+      const settled = verdicts?.get(highlight.id);
+      if (settled?.state === "found" && marksFor(highlight.id).length) {
+        results.set(highlight.id, settled);
+        continue;
+      }
+      pending.push(highlight);
+    }
+    if (!pending.length) return results;
+    const located = locateAllInDom(
+      root,
+      pending.map((highlight) => ({
         exact: highlight.text,
         prefix: highlight.prefix,
         suffix: highlight.suffix
-      });
-      if (!range) continue;
-      wrapRange(range, highlight);
-      describeMarks(highlight);
-      restored.push(highlight.id);
-    }
-    return restored;
+      }))
+    );
+    pending.forEach((highlight, index) => {
+      unwrapHighlight(root, highlight.id);
+      const match = located.get(index);
+      if (!match) {
+        results.set(highlight.id, { state: "missing", rung: 0, confidence: null });
+        return;
+      }
+      const marks = wrapRange(match.range, highlight);
+      if (!marks.length) {
+        results.set(highlight.id, { state: "missing", rung: match.rung, confidence: null });
+        return;
+      }
+      const state = stateForConfidence(match.confidence);
+      describeMarks(highlight, marks, match.confidence);
+      results.set(highlight.id, { state, rung: match.rung, confidence: match.confidence });
+    });
+    return results;
   }
   function applyRangeHighlight(range, highlight, root = document.body) {
     if (!range || range.collapsed) return [];
@@ -601,8 +697,12 @@
       mark.title = colorHint(color);
     });
   }
-  function describeMarks(highlight, marks = marksFor(highlight.id)) {
-    for (const mark of marks) mark.title = colorHint(highlight.color);
+  function describeMarks(highlight, marks = marksFor(highlight.id), confidence = "exact") {
+    const unsure = confidence === "loose";
+    for (const mark of marks) {
+      mark.title = unsure ? `${colorHint(highlight.color)} \u2014 the page changed; check this is the right passage` : colorHint(highlight.color);
+      mark.classList.toggle("is-unsure", unsure);
+    }
   }
   function colorHint(color) {
     const meta = colorOf(color);
@@ -618,6 +718,129 @@
       left: Math.min(...rects.map((r) => r.left)),
       right: Math.max(...rects.map((r) => r.right)),
       height: Math.max(...rects.map((r) => r.bottom)) - Math.min(...rects.map((r) => r.top))
+    };
+  }
+  function selectionIsSafe(selection, snapshotBlockTexts) {
+    if (!selection || selection.isCollapsed) return false;
+    const text = selection.toString().trim();
+    if (text.length < 2) return false;
+    if (!snapshotBlockTexts) return true;
+    const hay = snapshotBlockTexts.join("\n");
+    return hay.includes(text.slice(0, Math.min(80, text.length)));
+  }
+
+  // extension/content/anchor-plan.js
+  var RETRY_SCHEDULE = [400, 1200, 3e3, 6e3, 12e3];
+  var MAX_ATTEMPTS = RETRY_SCHEDULE.length;
+  var INFINITE_MAX_ATTEMPTS = 2;
+  function nextAttempt({ attempt = 0, dirty = false, infinite: infinite2 = false } = {}) {
+    const cap = infinite2 ? INFINITE_MAX_ATTEMPTS : MAX_ATTEMPTS;
+    if (attempt >= cap) return { done: true, skip: false, delay: 0 };
+    const skip = attempt > 0 && !dirty;
+    return { done: false, skip, delay: RETRY_SCHEDULE[attempt] };
+  }
+
+  // extension/content/reanchor.js
+  function createReanchorLoop({ root, unresolvedCount: unresolvedCount2, anchorNow: anchorNow2, infinite: infinite2 = false } = {}) {
+    let attempt = 0;
+    let dirty = false;
+    let timer = null;
+    let observer = null;
+    let running = false;
+    function stop() {
+      running = false;
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (observer) observer.disconnect();
+      observer = null;
+    }
+    function schedule() {
+      if (!running) return;
+      if (unresolvedCount2() === 0) {
+        stop();
+        return;
+      }
+      const plan = nextAttempt({ attempt, dirty, infinite: infinite2 });
+      if (plan.done) {
+        stop();
+        return;
+      }
+      timer = setTimeout(() => {
+        timer = null;
+        if (!running) return;
+        const skipping = plan.skip;
+        attempt += 1;
+        if (!skipping) {
+          dirty = false;
+          try {
+            anchorNow2();
+          } catch (error) {
+            console.warn("LivePage re-anchor failed", error);
+          }
+        }
+        schedule();
+      }, plan.delay);
+    }
+    return {
+      start() {
+        if (running || unresolvedCount2() === 0) return;
+        running = true;
+        if (typeof MutationObserver !== "undefined") {
+          observer = new MutationObserver(() => {
+            dirty = true;
+          });
+          observer.observe(root || document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true
+          });
+        } else {
+          dirty = true;
+        }
+        schedule();
+      },
+      /** Re-read now — the page changed under us in a way we already know about. */
+      kick() {
+        if (unresolvedCount2() === 0) return;
+        dirty = true;
+        if (!running) {
+          attempt = 0;
+          this.start();
+          return;
+        }
+        try {
+          anchorNow2();
+        } catch (error) {
+          console.warn("LivePage re-anchor failed", error);
+        }
+      },
+      stop
+    };
+  }
+  function watchUrl(onChange, { pollMs = 700, debounceMs = 250 } = {}) {
+    let last = location.href;
+    let timer = null;
+    let poll = null;
+    const fire = () => {
+      if (location.href === last) return;
+      last = location.href;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        onChange(location.href);
+      }, debounceMs);
+    };
+    const hasNavigation = typeof navigation !== "undefined" && navigation?.addEventListener;
+    if (hasNavigation) navigation.addEventListener("navigatesuccess", fire);
+    window.addEventListener("popstate", fire);
+    window.addEventListener("hashchange", fire);
+    if (!hasNavigation) poll = setInterval(fire, pollMs);
+    return () => {
+      if (timer) clearTimeout(timer);
+      if (poll) clearInterval(poll);
+      if (hasNavigation) navigation.removeEventListener("navigatesuccess", fire);
+      window.removeEventListener("popstate", fire);
+      window.removeEventListener("hashchange", fire);
     };
   }
 
@@ -699,7 +922,7 @@
   z-index: 2147483640; pointer-events: none;
 }
 .lp-root, .lp-float { font-family: ui-sans-serif, "Segoe UI", system-ui, sans-serif; color: #1c1712; font-size: 13px; }
-.feed-offer, .toolbar, .toast, .card { pointer-events: auto; }
+.feed-offer, .toolbar, .toast, .card, .orphan-dock { pointer-events: auto; }
 .feed-offer[hidden], .toolbar[hidden], .toast[hidden] { display: none !important; }
 .toolbar {
   position: fixed; z-index: 2147483646; display: flex; gap: 4px; align-items: center;
@@ -714,6 +937,22 @@ button.ghost { appearance: none; border: 0; background: transparent; color: #1c1
 }
 .toast { bottom: 20px; left: 50%; transform: translateX(-50%); background: #1c1712; color: #f6f1e8; border-radius: 999px; }
 button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8; padding: 6px 10px; font: inherit; cursor: pointer; border-radius: 999px; font-weight: 600; }
+/* The dock is fixed because .gutter positions its cards absolutely; an
+   in-flow block would sit underneath them. If the stylesheet fetch loses its
+   race these rules are the difference between a readable dock and every
+   orphan stacked on one point. */
+.orphan-dock {
+  position: fixed; right: 16px; bottom: 16px;
+  width: min(300px, calc(var(--lp-gutter, 328px) - 28px));
+  max-height: 60vh; overflow: auto; z-index: 2147483644;
+  background: #fffcf7; border: 1px solid rgba(28,23,18,0.12);
+  border-radius: 14px; padding: 8px 10px; box-shadow: 0 10px 40px rgba(28,23,18,0.12);
+}
+.orphan-dock.is-expanded { max-height: 78vh; }
+.orphan-dock[hidden], .dock-body[hidden] { display: none !important; }
+.orphan-dock .card { position: static; margin: 6px 0; }
+.dock-head { display: flex; gap: 6px; align-items: center; width: 100%; appearance: none; border: 0; background: transparent; font: inherit; color: inherit; cursor: pointer; padding: 2px; text-align: left; }
+.dock-title { flex: 1; font-weight: 600; }
 `;
   function makeHost(kind) {
     const host = document.createElement("div");
@@ -737,6 +976,9 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
       this.highlightStrength = 48;
       this.mention = null;
       this.mentionRequest = "";
+      this.anchors = /* @__PURE__ */ new Map();
+      this.reattaching = null;
+      this.dockOpen = false;
       this.els = { toolbar: null, toast: null, feedOffer: null, gutter: null };
       this.mountFloat();
       this.bind();
@@ -854,6 +1096,35 @@ ${css}`;
       document.documentElement.classList.toggle("lp-theme-dark", this.theme === "dark");
       document.documentElement.style.setProperty("--lp-highlight-strength", `${this.highlightStrength}%`);
     }
+    /** What the live page did with each highlight's quote, by highlight id. */
+    setAnchors(anchors2) {
+      this.anchors = anchors2 || /* @__PURE__ */ new Map();
+      this.renderCards();
+    }
+    setReattaching(highlightId) {
+      this.reattaching = highlightId || null;
+      if (highlightId) this.expandDock();
+      this.renderCards();
+    }
+    anchorOf(highlightId) {
+      return this.anchors.get(highlightId) || null;
+    }
+    isOrphan(highlightId) {
+      return this.anchorOf(highlightId)?.state === "missing";
+    }
+    /**
+     * Lets go of the page entirely. A single-page app swaps articles under us,
+     * and renderCards cannot clear itself — it returns early without a page.
+     */
+    clear() {
+      this.page = null;
+      this.anchors = /* @__PURE__ */ new Map();
+      this.reattaching = null;
+      this.activeThreadId = null;
+      this.dockOpen = false;
+      if (this.els?.gutter) this.els.gutter.innerHTML = "";
+      this.applyRail();
+    }
     applyRail() {
       const show = (this.page?.highlights || []).length > 0;
       this.host.hidden = !show;
@@ -900,12 +1171,7 @@ ${css}`;
           return `<button class="swatch" title="${escapeHtml(hint)}" aria-label="${escapeHtml(hint)}" style="--lp-mark:${COLORS[id].fill}" data-color="${id}"></button>`;
         }
       ).join("") + `<button class="ghost" data-act="comment">Comment</button>`;
-      const top = rect.top - 44;
-      const left = Math.min(rect.left, document.documentElement.clientWidth - 280);
-      bar.style.top = `${Math.max(8, top)}px`;
-      bar.style.left = `${Math.max(8, left)}px`;
-      bar.onpointerdown = (event) => event.preventDefault();
-      bar.onmousedown = (event) => event.preventDefault();
+      this.positionToolbar(rect);
       bar.querySelectorAll(".swatch").forEach((btn) => {
         btn.onclick = (event) => {
           event.preventDefault();
@@ -918,6 +1184,19 @@ ${css}`;
         onComment?.();
         this.hideToolbar();
       });
+    }
+    /** Places the floating bar above a selection, kept on screen. */
+    positionToolbar(rect) {
+      const bar = this.els?.toolbar;
+      if (!bar || !rect) return;
+      bar.hidden = false;
+      bar.removeAttribute("hidden");
+      const top = rect.top - 44;
+      const left = Math.min(rect.left, document.documentElement.clientWidth - 280);
+      bar.style.top = `${Math.max(8, top)}px`;
+      bar.style.left = `${Math.max(8, left)}px`;
+      bar.onpointerdown = (event) => event.preventDefault();
+      bar.onmousedown = (event) => event.preventDefault();
     }
     hideToolbar() {
       if (this.els?.toolbar) this.els.toolbar.hidden = true;
@@ -942,8 +1221,14 @@ ${css}`;
       } : null;
       const draft = this._skipDraftOnce ? "" : this.els.gutter.querySelector(".card.is-open .composer textarea:not(.packet-md)")?.value || "";
       this._skipDraftOnce = false;
-      this.els.gutter.innerHTML = this.page.highlights.map((highlight) => this.cardHtml(highlight)).join("");
+      const placed = [];
+      const orphans = [];
+      for (const highlight of this.page.highlights) {
+        (this.isOrphan(highlight.id) ? orphans : placed).push(highlight);
+      }
+      this.els.gutter.innerHTML = placed.map((highlight) => this.cardHtml(highlight)).join("") + this.dockHtml(orphans);
       this.els.gutter.querySelectorAll(".card").forEach((card) => this.bindCard(card));
+      this.bindDock();
       this.layoutCards();
       this.markActiveHighlights();
       this.applyRail();
@@ -954,22 +1239,127 @@ ${css}`;
         open.scrollTop = scrollState.atBottom ? open.scrollHeight : scrollState.top;
       }
     }
+    /**
+     * The passages this page no longer has a place for.
+     *
+     * They keep their whole conversation — a highlight is only ever the anchor
+     * for one — so nothing is lost while the page and the quote disagree.
+     */
+    dockHtml(orphans) {
+      if (!orphans.length) return "";
+      const open = this.dockOpen || Boolean(this.reattaching);
+      const count = orphans.length;
+      return `
+      <section class="orphan-dock${open ? " is-expanded" : ""}">
+        <button type="button" class="dock-head" data-act="toggle-orphans" aria-expanded="${open}">
+          <span class="dock-ico">${icon("search", { size: 13 })}</span>
+          <span class="dock-title">${count} highlight${count === 1 ? "" : "s"} lost ${count === 1 ? "its" : "their"} place</span>
+          <span class="dock-caret">${open ? "\u25BE" : "\u25B8"}</span>
+        </button>
+        <div class="dock-body"${open ? "" : " hidden"}>
+          <p class="dock-hint">The page changed under these. Select the passage each one belongs to now, then re-attach.</p>
+          ${orphans.map((highlight) => this.cardHtml(highlight)).join("")}
+        </div>
+      </section>`;
+    }
+    /**
+     * A loose match is a guess. Ask before the stored quote is ever rewritten
+     * from it — otherwise the anchor is re-derived from the same stale text on
+     * every load and drifts until it snaps.
+     */
+    confirmRowHtml() {
+      return `
+      <div class="confirm-row">
+        <span class="confirm-ask">The page changed. Is this the right passage?</span>
+        <button type="button" class="solid" data-act="confirm-anchor">That\u2019s it</button>
+        <button type="button" class="ghost" data-act="move-hl">No \u2014 re-attach</button>
+      </div>`;
+    }
+    /**
+     * What the saved copy of this page remembers around the passage. Collapsed,
+     * so it costs nothing until asked for — and its absence is itself telling.
+     */
+    wasHereHtml(highlight) {
+      const blocks = blocksAround(this.page, highlight.text, 1);
+      if (!blocks.length) {
+        return `<p class="was-context is-empty">We have no saved copy of this passage.</p>`;
+      }
+      const body = blocks.map((block) => {
+        const text = clip(block.text, 220);
+        return `<span class="was-block">${escapeHtml(text)}</span>`;
+      }).join(" ");
+      return `
+      <details class="was-here">
+        <summary>Where it used to sit</summary>
+        <p class="was-context">${body}</p>
+      </details>`;
+    }
+    bindDock() {
+      const head = this.els.gutter.querySelector("[data-act='toggle-orphans']");
+      if (!head) return;
+      head.addEventListener("click", () => {
+        this.dockOpen = !this.dockOpen;
+        this.renderCards();
+      });
+    }
+    /**
+     * Asks whether this selection is the passage, rather than moving a highlight
+     * the moment something is selected. Rendered through the existing toolbar so
+     * it inherits the fallback styling and needs no new fixed element.
+     */
+    showReattachChip(rect, { quote, known = true, onAttach, onCancel } = {}) {
+      this.attachHosts();
+      const el = this.els?.toolbar;
+      if (!el) return;
+      el.hidden = false;
+      el.removeAttribute("hidden");
+      el.innerHTML = `
+      <span class="chip-ask">Re-attach \u201C${escapeHtml(clip(quote || "", 30))}\u201D here?</span>
+      ${known ? "" : `<span class="chip-note">not in the saved copy</span>`}
+      <button class="solid" data-act="attach">Attach</button>
+      <button type="button" class="ghost" data-act="cancel">Cancel</button>
+    `;
+      el.querySelector("[data-act='attach']").onclick = () => onAttach?.();
+      el.querySelector("[data-act='cancel']").onclick = () => onCancel?.();
+      this.positionToolbar(rect);
+    }
     cardHtml(highlight) {
       const thread = this.threadFor(highlight.id);
       const open = Boolean(thread && thread.id === this.activeThreadId);
       const color = COLORS[highlight.color]?.fill || "#F6E27A";
       const preview = thread?.messages?.[0]?.content || "Add a comment";
       const count = thread?.messages?.length || 0;
-      if (!open) {
+      const orphan = this.isOrphan(highlight.id);
+      const arming = this.reattaching === highlight.id;
+      if (orphan) {
+        const context = this.wasHereHtml(highlight);
         return `
-        <article class="card" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
+        <article class="card is-orphan${arming ? " is-arming" : ""}" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
+          <p class="meta-line">
+            <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml(threadLabel(thread))}</span>
+            <span class="orphan-badge">not on this page</span>
+            <button type="button" class="hl-delete" data-act="delete-hl" title="Delete highlight">\xD7</button>
+          </p>
+          <p class="quote">${escapeHtml(clip(highlight.text, 140))}</p>
+          ${context}
+          ${count ? `<p class="preview">${escapeHtml(clip(preview, 110))}</p>` : ""}
+          <div class="orphan-acts">
+            <button type="button" class="solid" data-act="move-hl">${arming ? "Selecting\u2026" : "Re-attach here"}</button>
+            ${arming ? `<button type="button" class="ghost" data-act="cancel-reattach">Cancel</button>` : ""}
+          </div>
+        </article>`;
+      }
+      if (!open) {
+        const unsure = this.anchorOf(highlight.id)?.state === "moved";
+        return `
+        <article class="card${unsure ? " is-unsure" : ""}" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
           <p class="meta-line">
             <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml(threadLabel(thread))}</span>
             <span>${count ? `${count} ${count === 1 ? "message" : "messages"}` : ""}</span>
             <button type="button" class="hl-delete" data-act="delete-hl" title="Delete highlight">\xD7</button>
           </p>
           <p class="quote">${escapeHtml(clip(highlight.text, 90))}</p>
-          <p class="preview">${escapeHtml(clip(preview, 110))}</p>
+          ${unsure ? this.confirmRowHtml() : `<p class="preview">${escapeHtml(clip(preview, 110))}</p>`}
         </article>`;
       }
       const branches = this.page.threads.filter((t) => t.highlightId === highlight.id);
@@ -1077,9 +1467,19 @@ ${css}`;
           this.handlers.onOpenMention?.(pageId, mentionThreadId);
         };
       });
-      card.querySelector("[data-act='move-hl']")?.addEventListener("click", (event) => {
+      card.querySelectorAll("[data-act='move-hl']").forEach((btn) => {
+        btn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          this.handlers.onMoveHighlight?.(highlightId);
+        });
+      });
+      card.querySelector("[data-act='confirm-anchor']")?.addEventListener("click", (event) => {
         event.stopPropagation();
-        this.handlers.onMoveHighlight?.(highlightId);
+        this.handlers.onConfirmAnchor?.(highlightId);
+      });
+      card.querySelector("[data-act='cancel-reattach']")?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.handlers.onCancelReattach?.();
       });
       card.querySelectorAll("[data-act='delete-hl']").forEach((btn) => {
         btn.onclick = (event) => {
@@ -1357,17 +1757,20 @@ ${css}`;
       );
       document.documentElement.style.setProperty("--lp-doc-height", `${docHeight}px`);
       this.host.style.height = `${docHeight}px`;
-      const cards = [...this.els.gutter.querySelectorAll(".card")];
+      const cards = [...this.els.gutter.querySelectorAll(".gutter > .card")];
       const items = cards.map((el) => {
         const rect = highlightRect(el.dataset.highlight);
-        const preferred = rect ? rect.top + window.scrollY : 12;
-        return { el, preferred, height: el.offsetHeight || 72 };
-      }).sort((a, b) => a.preferred - b.preferred);
-      let cursor = 12;
+        return {
+          el,
+          preferred: rect ? rect.top + window.scrollY : null,
+          height: el.offsetHeight || 72
+        };
+      });
       for (const item of items) {
-        const top = Math.max(item.preferred, cursor);
-        item.el.style.top = `${top}px`;
-        cursor = top + item.height + CARD_GAP;
+        if (item.preferred === null) item.el.style.removeProperty("top");
+      }
+      for (const placed of stackCards(items, CARD_GAP)) {
+        placed.el.style.top = `${placed.top}px`;
       }
     }
     openThread(threadId) {
@@ -1382,14 +1785,26 @@ ${css}`;
       if (textarea) {
         requestAnimationFrame(() => textarea.focus());
       }
-      if (card) {
-        const top = parseFloat(card.style.top || "0");
-        const viewTop = window.scrollY;
-        const viewBottom = viewTop + window.innerHeight;
-        if (top < viewTop + 24 || top > viewBottom - 160) {
-          window.scrollTo({ top: Math.max(0, top - 80), behavior: "smooth" });
-        }
+      if (!card) return;
+      if (card.closest(".orphan-dock")) {
+        this.expandDock();
+        card.scrollIntoView({ block: "nearest" });
+        return;
       }
+      if (!card.style.top) return;
+      const top = parseFloat(card.style.top);
+      const viewTop = window.scrollY;
+      const viewBottom = viewTop + window.innerHeight;
+      if (top < viewTop + 24 || top > viewBottom - 160) {
+        window.scrollTo({ top: Math.max(0, top - 80), behavior: "smooth" });
+      }
+    }
+    expandDock() {
+      const body = this.els?.gutter?.querySelector(".dock-body");
+      const head = this.els?.gutter?.querySelector(".dock-head");
+      if (body) body.hidden = false;
+      if (head) head.setAttribute("aria-expanded", "true");
+      this.dockOpen = true;
     }
     closePanel() {
       this.activeThreadId = null;
@@ -1409,6 +1824,15 @@ ${css}`;
       });
     }
   };
+  function stackCards(items, gap) {
+    const placed = (items || []).filter((item) => typeof item.preferred === "number").sort((a, b) => a.preferred - b.preferred);
+    let cursor = 12;
+    return placed.map((item) => {
+      const top = Math.max(item.preferred, cursor);
+      cursor = top + (item.height || 72) + gap;
+      return { ...item, top };
+    });
+  }
   function clip(text, n) {
     const s = String(text || "").replace(/\s+/g, " ");
     return s.length <= n ? s : `${s.slice(0, n - 1)}\u2026`;
@@ -1562,6 +1986,18 @@ ${css}`;
     url.pathname = path || "/";
     return url.toString();
   }
+  function pageIdFromUrl(canonicalUrl) {
+    return `p_${simpleHash(canonicalUrl)}`;
+  }
+  function simpleHash(text) {
+    let h = 2166136261;
+    const s = String(text);
+    for (let i = 0; i < s.length; i += 1) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16).padStart(8, "0");
+  }
 
   // extension/shared/tags.js
   function normalizeTag(value) {
@@ -1647,6 +2083,7 @@ ${css}`;
     localTweets: false,
     importSaves: true,
     articleSymbols: false,
+    orphanRecovery: true,
     dashboardLayout: "compact"
   };
   var EXPERIMENTS = {
@@ -2159,14 +2596,14 @@ ${css}`;
   }
   function locateAnchors(root, symbols) {
     const blocks = [...root.querySelectorAll(BLOCK_SELECTOR)];
-    const anchors = /* @__PURE__ */ new Map();
+    const anchors2 = /* @__PURE__ */ new Map();
     for (const symbol of symbols) {
       const needle = normalizeSpace(symbol.anchorBlockText || symbol.anchorText);
       if (!needle) continue;
       const target = blocks.find((block) => normalizeSpace(block.textContent).includes(needle));
-      if (target) anchors.set(symbol.key, target);
+      if (target) anchors2.set(symbol.key, target);
     }
-    return anchors;
+    return anchors2;
   }
   function textNodes(root, doc) {
     const nodes = [];
@@ -2222,6 +2659,13 @@ ${css}`;
   var savedRange = null;
   var savedRect = null;
   var gestureSelected = false;
+  var anchorFlag = true;
+  var anchors = /* @__PURE__ */ new Map();
+  var anchorTimer = null;
+  var reanchor = null;
+  var stopInfinite = null;
+  var stopUrlWatch = null;
+  var reattaching = null;
   overlay.handlers = {
     onOpenHighlight: (id) => openOrCreateThread(id),
     onNote: (threadId, content) => mutate("ADD_MESSAGE", { pageId: page.id, threadId, message: { role: "user", content } }),
@@ -2237,6 +2681,8 @@ ${css}`;
     onDeleteMessage: (threadId, messageId) => mutate("DELETE_MESSAGE", { pageId: page.id, threadId, messageId }),
     onRecolorHighlight: (highlightId, color) => recolorHighlight(highlightId, color),
     onMoveHighlight: (highlightId) => moveHighlight(highlightId),
+    onConfirmAnchor: (highlightId) => confirmAnchor(highlightId),
+    onCancelReattach: () => cancelReattach(),
     onDeleteHighlight: (highlightId) => deleteHighlight(highlightId),
     onSearchMentions: (query) => searchMentions(query),
     onOpenMention: (pageId, threadId) => openMention(pageId, threadId),
@@ -2262,6 +2708,7 @@ ${css}`;
       console.warn("LivePage settings unavailable", error);
     }
     const { flags } = resolveFlags(settings);
+    anchorFlag = flags.orphanRecovery !== false;
     try {
       await overlay.ready;
     } catch (error) {
@@ -2284,12 +2731,14 @@ ${css}`;
         createIfMissing: false
       });
       if (page) {
-        restoreHighlights(document.body, page.highlights);
+        anchorNow();
         overlay.setPage(page);
         openLinkedThread();
+        if (anchorFlag) reanchor = startReanchor();
       }
       watchInfinite();
       watchScroll();
+      if (anchorFlag) watchNavigation();
     } catch (error) {
       console.warn("LivePage visit failed", error);
     }
@@ -2318,7 +2767,120 @@ ${css}`;
       infinite = { infinite: true, reason: "This page grew while you were reading." };
       if (page?.id) call("PATCH_PAGE", { id: page.id, patch: { infiniteScroll: true } });
     });
-    detector.start();
+    stopInfinite = detector.start();
+  }
+  function anchorNow() {
+    if (!page) return;
+    anchors = anchorHighlights(document.body, page.highlights, { verdicts: anchors });
+    if (anchorFlag) {
+      overlay.setAnchors(anchors);
+      queueAnchorReport();
+    }
+  }
+  function unresolvedCount() {
+    let count = 0;
+    for (const result of anchors.values()) {
+      if (result.state === "missing") count += 1;
+    }
+    return count;
+  }
+  function startReanchor() {
+    const loop = createReanchorLoop({
+      root: document.body,
+      unresolvedCount,
+      infinite: infinite.infinite,
+      // anchorNow re-renders the margin through setAnchors, which lays the cards
+      // out against wherever the marks ended up.
+      anchorNow
+    });
+    loop.start();
+    return loop;
+  }
+  function queueAnchorReport() {
+    if (!page?.id || !anchors.size) return;
+    if (anchorTimer) clearTimeout(anchorTimer);
+    anchorTimer = setTimeout(flushAnchorReport, 2e3);
+  }
+  async function flushAnchorReport() {
+    if (anchorTimer) clearTimeout(anchorTimer);
+    anchorTimer = null;
+    if (!page?.id || !anchors.size) return;
+    const verdicts = [...anchors.entries()].map(([highlightId, result]) => ({
+      highlightId,
+      state: result.state,
+      rung: result.rung || 0
+    }));
+    try {
+      const result = await call("REPORT_ANCHORS", {
+        pageId: page.id,
+        url: location.href,
+        verdicts
+      });
+      if (result?.page) page = result.page;
+    } catch (error) {
+      console.warn("LivePage anchor report failed", error);
+    }
+  }
+  function watchNavigation() {
+    if (stopUrlWatch) stopUrlWatch();
+    stopUrlWatch = watchUrl(async () => {
+      const sameDocument = page && samePageId(page, location.href);
+      if (sameDocument) {
+        reanchor?.kick();
+        return;
+      }
+      await flushAnchorReport();
+      reanchor?.stop();
+      reanchor = null;
+      if (stopInfinite) stopInfinite();
+      stopInfinite = null;
+      for (const highlight of page?.highlights || []) {
+        unwrapHighlight(document, highlight.id);
+      }
+      anchors = /* @__PURE__ */ new Map();
+      page = null;
+      reachedPercent = 0;
+      savedRange = null;
+      savedRect = null;
+      cancelReattach();
+      overlay.closePanel();
+      overlay.clear();
+      await revisit();
+    });
+  }
+  function samePageId(current, href) {
+    try {
+      return current.id === pageIdFromUrl(canonicalizeUrl(href));
+    } catch {
+      return false;
+    }
+  }
+  async function revisit() {
+    let parsed = { blocks: [] };
+    try {
+      parsed = parseDocument(document, location.href);
+    } catch (error) {
+      console.warn("LivePage parse failed", error);
+    }
+    infinite = evaluateInfiniteScroll(location.href, document);
+    try {
+      page = await call("VISIT_PAGE", {
+        url: location.href,
+        title: document.title,
+        parsed,
+        infiniteScroll: infinite.infinite,
+        createIfMissing: false
+      });
+    } catch (error) {
+      console.warn("LivePage visit failed", error);
+      return;
+    }
+    if (page) {
+      anchorNow();
+      overlay.setPage(page);
+      if (anchorFlag) reanchor = startReanchor();
+    }
+    watchInfinite();
   }
   async function anchorInfiniteView() {
     if (!settings.lockInfiniteScroll || !infinite.infinite) return;
@@ -2383,6 +2945,7 @@ ${css}`;
         savedRange = null;
         savedRect = null;
         gestureSelected = false;
+        cancelReattach();
         overlay.hideToolbar();
         return;
       }
@@ -2420,10 +2983,25 @@ ${css}`;
     const rect = rangeRect(savedRange) || savedRect;
     if (!rect) return;
     savedRect = rect;
+    if (reattaching) {
+      const highlight = (page?.highlights || []).find((h) => h.id === reattaching);
+      overlay.showReattachChip(rect, {
+        quote: highlight?.text || "",
+        known: reattachTargetIsKnown(),
+        onAttach: () => moveHighlight(reattaching),
+        onCancel: () => cancelReattach()
+      });
+      return;
+    }
     overlay.showToolbar(rect, {
       onHighlight: (color) => createFromSelection({ color }),
       onComment: () => createFromSelection({ color: settings.defaultColor, comment: true })
     });
+  }
+  function reattachTargetIsKnown() {
+    const blocks = (page?.parsed?.blocks || []).map((block) => block.text);
+    if (!blocks.length) return true;
+    return selectionIsSafe(window.getSelection(), blocks);
   }
   async function ensurePage() {
     if (page?.id) return page;
@@ -2492,6 +3070,10 @@ ${css}`;
     captureSelection();
     const range = savedRange;
     if (!range || range.collapsed) {
+      if (anchorFlag && anchors.get(highlightId)?.state === "missing") {
+        armReattach(highlightId);
+        return;
+      }
       overlay.toast("Select the new span on the page, then click Replace span.");
       return;
     }
@@ -2511,11 +3093,50 @@ ${css}`;
       window.getSelection()?.removeAllRanges();
       savedRange = null;
       overlay.hideToolbar();
+      anchors.set(highlightId, { state: "found", rung: 1, confidence: "exact" });
+      overlay.setAnchors(anchors);
+      cancelReattach();
       overlay.setPage(page);
       overlay.toast("Highlight moved to that span.");
     } catch (error) {
       overlay.toast("Could not move that highlight.");
       console.warn("LivePage move highlight", error);
+    }
+  }
+  function armReattach(highlightId) {
+    reattaching = highlightId;
+    overlay.setReattaching(highlightId);
+    overlay.toast("Select the passage this belongs to now.");
+  }
+  function cancelReattach() {
+    if (!reattaching) return;
+    reattaching = null;
+    overlay.setReattaching(null);
+    overlay.hideToolbar();
+  }
+  async function confirmAnchor(highlightId) {
+    const marks = marksFor(highlightId);
+    if (!marks.length || !page) return;
+    const range = document.createRange();
+    range.setStartBefore(marks[0]);
+    range.setEndAfter(marks[marks.length - 1]);
+    const quote = quoteFromRange(range, document.body);
+    if (!quote) return;
+    try {
+      const result = await call("PATCH_HIGHLIGHT", {
+        pageId: page.id,
+        highlightId,
+        patch: { text: quote.exact, prefix: quote.prefix, suffix: quote.suffix }
+      });
+      page = result.page;
+      anchors.set(highlightId, { state: "found", rung: 1, confidence: "exact" });
+      overlay.setAnchors(anchors);
+      anchorNow();
+      overlay.setPage(page);
+      overlay.toast("Anchor confirmed.");
+    } catch (error) {
+      overlay.toast("Could not confirm that anchor.");
+      console.warn("LivePage confirm anchor", error);
     }
   }
   async function deleteHighlight(highlightId) {

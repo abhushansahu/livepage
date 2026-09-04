@@ -1,4 +1,5 @@
 import { uniqueBlocks } from "../parse/page-parser.js";
+import { blocksAround } from "../shared/anchors.js";
 import { colorOf } from "../shared/colors.js";
 
 export const AGENT_TARGETS = {
@@ -182,18 +183,7 @@ export function plainProse(value) {
 }
 
 export function nearbyBlocks(page, highlight, windowSize = 2) {
-  const blocks = page?.parsed?.blocks || [];
-  if (!blocks.length) return [];
-  const needle = normalizeLoose(highlight?.text || "");
-  let index = needle
-    ? blocks.findIndex((block) => normalizeLoose(block.text).includes(needle.slice(0, 80)))
-    : -1;
-  if (index < 0) return [];
-  return blocks.slice(Math.max(0, index - windowSize), index + windowSize + 1);
-}
-
-function normalizeLoose(value) {
-  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  return blocksAround(page, highlight?.text || "", windowSize);
 }
 
 export function nextLedger(ledger, packet, pageId) {

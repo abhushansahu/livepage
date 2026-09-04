@@ -1,21 +1,74 @@
-import { cssEscape, findQuote, quoteFromRange, unwrapHighlight, wrapRange } from "../parse/quote.js";
+import {
+  cssEscape,
+  findQuote,
+  locateAllInDom,
+  quoteFromRange,
+  unwrapHighlight,
+  wrapRange
+} from "../parse/quote.js";
 import { colorOf } from "../shared/colors.js";
+import { stateForConfidence } from "../shared/anchors.js";
 
-export function restoreHighlights(root, highlights) {
-  const restored = [];
-  for (const highlight of highlights || []) {
-    unwrapHighlight(root, highlight.id);
-    const range = findQuote(root, {
+/**
+ * Puts marks back on the page for every highlight whose quote can still be
+ * found, and says what happened to the ones that could not.
+ *
+ * Returns a Map of highlight id to { state, rung, confidence }: "found" is on
+ * the page, "moved" matched loosely enough that the reader should confirm it,
+ * "missing" is not here at all. Nothing is dropped silently — a highlight is
+ * where a conversation is anchored, so losing one without saying so loses the
+ * thread with it.
+ *
+ * `verdicts` carries the previous pass's answers. A highlight that is already
+ * marked and was already found is left completely alone: re-wrapping it would
+ * destroy and rebuild its marks, dropping the active state and any selection
+ * inside them, for no gain.
+ */
+export function anchorHighlights(root, highlights, { verdicts } = {}) {
+  const list = highlights || [];
+  const results = new Map();
+  const pending = [];
+  for (const highlight of list) {
+    const settled = verdicts?.get(highlight.id);
+    if (settled?.state === "found" && marksFor(highlight.id).length) {
+      results.set(highlight.id, settled);
+      continue;
+    }
+    pending.push(highlight);
+  }
+  if (!pending.length) return results;
+
+  // One flatten for the whole pass. flattenText walks every text node, and the
+  // retry loop runs this often enough that per-highlight flattening would cost
+  // the document several times over on every attempt.
+  const located = locateAllInDom(
+    root,
+    pending.map((highlight) => ({
       exact: highlight.text,
       prefix: highlight.prefix,
       suffix: highlight.suffix
-    });
-    if (!range) continue;
-    wrapRange(range, highlight);
-    describeMarks(highlight);
-    restored.push(highlight.id);
-  }
-  return restored;
+    }))
+  );
+
+  pending.forEach((highlight, index) => {
+    unwrapHighlight(root, highlight.id);
+    const match = located.get(index);
+    if (!match) {
+      results.set(highlight.id, { state: "missing", rung: 0, confidence: null });
+      return;
+    }
+    const marks = wrapRange(match.range, highlight);
+    // A span already covered by another highlight's mark yields nothing to
+    // wrap. That is unresolved, not found.
+    if (!marks.length) {
+      results.set(highlight.id, { state: "missing", rung: match.rung, confidence: null });
+      return;
+    }
+    const state = stateForConfidence(match.confidence);
+    describeMarks(highlight, marks, match.confidence);
+    results.set(highlight.id, { state, rung: match.rung, confidence: match.confidence });
+  });
+  return results;
 }
 
 export function applyRangeHighlight(range, highlight, root = document.body) {
@@ -50,8 +103,14 @@ export function recolorMarks(highlightId, color) {
   });
 }
 
-function describeMarks(highlight, marks = marksFor(highlight.id)) {
-  for (const mark of marks) mark.title = colorHint(highlight.color);
+function describeMarks(highlight, marks = marksFor(highlight.id), confidence = "exact") {
+  const unsure = confidence === "loose";
+  for (const mark of marks) {
+    mark.title = unsure
+      ? `${colorHint(highlight.color)} — the page changed; check this is the right passage`
+      : colorHint(highlight.color);
+    mark.classList.toggle("is-unsure", unsure);
+  }
 }
 
 function colorHint(color) {

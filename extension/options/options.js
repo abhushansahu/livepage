@@ -140,6 +140,7 @@ function currentPatch() {
       localTweets: form.elements.flagLocalTweets.checked,
       importSaves: form.elements.flagImportSaves.checked,
       articleSymbols: form.elements.flagArticleSymbols.checked,
+      orphanRecovery: form.elements.flagOrphanRecovery.checked,
       dashboardLayout: form.elements.dashboardLayout.value
     }
   };
@@ -170,6 +171,7 @@ function fillForm(value) {
   form.elements.flagLocalTweets.checked = Boolean(flags.localTweets);
   form.elements.flagImportSaves.checked = flags.importSaves !== false;
   form.elements.flagArticleSymbols.checked = Boolean(flags.articleSymbols);
+  form.elements.flagOrphanRecovery.checked = flags.orphanRecovery !== false;
 }
 
 async function refreshRss() {

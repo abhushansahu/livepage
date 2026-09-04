@@ -32,6 +32,7 @@ import {
 import { pairAgentHost, pingAgentHost, runAgentAsk } from "../agent/host-client.js";
 import { obsidianNewUri, pageToMarkdown, suggestedFilename } from "../export/obsidian.js";
 import { canonicalizeUrl, pageIdFromUrl } from "../shared/url.js";
+import { mergeAnchorVerdict } from "../shared/anchors.js";
 import { applyProgress } from "../shared/progress.js";
 import { isKept } from "../shared/lists.js";
 import { uniqueItems } from "../import/normalize.js";
@@ -92,6 +93,8 @@ export async function handleMessage(message) {
       return removeHighlight(payload.pageId, payload.highlightId);
     case "PATCH_HIGHLIGHT":
       return patchHighlight(payload);
+    case "REPORT_ANCHORS":
+      return reportAnchors(payload);
     case "ADD_MESSAGE":
       return addMessage(payload);
     case "DELETE_MESSAGE":
@@ -409,9 +412,50 @@ async function patchHighlight(payload) {
     highlight.text = text;
     if (typeof patch.prefix === "string") highlight.prefix = patch.prefix;
     if (typeof patch.suffix === "string") highlight.suffix = patch.suffix;
+    // Re-pointing a highlight at a span someone just selected settles the
+    // question of where it belongs; whatever doubt the old quote carried is
+    // no longer about this highlight.
+    highlight.anchor = {
+      state: "found",
+      rung: 1,
+      at: Date.now(),
+      missStreak: 0,
+      url: page.canonicalUrl || page.url || ""
+    };
   }
   await putPage(page);
   return { page, highlight };
+}
+
+/**
+ * Records what the live page did with each highlight's quote.
+ *
+ * Called once per page load, not once per attempt. Writes nothing when every
+ * verdict matches what the record already believed, which is the ordinary
+ * case — anchoring is not an edit, and it must not look like one.
+ */
+async function reportAnchors(payload) {
+  const page = await loadPage(payload);
+  const verdicts = payload.verdicts || [];
+  if (!verdicts.length) return { page, changed: 0 };
+  const byId = new Map((page.highlights || []).map((h) => [h.id, h]));
+  const now = Date.now();
+  let changed = 0;
+  for (const verdict of verdicts) {
+    const highlight = byId.get(verdict.highlightId);
+    if (!highlight) continue;
+    const merged = mergeAnchorVerdict(
+      highlight.anchor,
+      { ...verdict, url: payload.url || page.canonicalUrl || "" },
+      now
+    );
+    if (!merged.changed) continue;
+    highlight.anchor = merged.anchor;
+    changed += 1;
+  }
+  if (!changed) return { page, changed: 0 };
+  const saved = await putPage(page, { touch: false });
+  return { page: saved, changed };
 }
 
 async function addMessage(payload) {

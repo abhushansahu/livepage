@@ -13,6 +13,7 @@ export const FLAG_DEFAULTS = {
   localTweets: false,
   importSaves: true,
   articleSymbols: false,
+  orphanRecovery: true,
   dashboardLayout: "compact"
 };
 

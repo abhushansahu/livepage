@@ -4,6 +4,7 @@ import { COLORS, COLOR_IDS } from "../shared/colors.js";
 import { downloadMarkdown } from "../export/download.js";
 import { ensureDemoHabitat } from "./demo-seed.js";
 import { isWaiting, progressLabel, progressOf, reviewItems } from "../shared/progress.js";
+import { anchorItems } from "../shared/anchors.js";
 import { composeFeed, sourceGlyph, sourceLabel } from "../shared/feed.js";
 import { sourceColor, sourceKey } from "../shared/source-meta.js";
 import { icon, sourceIcon } from "../shared/icons.js";
@@ -242,10 +243,11 @@ function buckets(pages) {
   const bookmarks = pages.filter(isBookmark);
   const review = reviewItems(pages);
   const awaiting = review.filter((r) => r.awaiting);
+  const anchors = anchorItems(pages);
   const trail = pages.filter((p) => p.readState !== "released");
   const saves = pages.filter(isSave);
   const rss = pages.filter(isRss);
-  return { waiting, readingList, bookmarks, review, awaiting, trail, saves, rss };
+  return { waiting, readingList, bookmarks, review, awaiting, anchors, trail, saves, rss };
 }
 
 function visiblePages() {
@@ -268,13 +270,14 @@ function render() {
   applyChrome(bucket, homeFeed.length);
   els.heading.textContent = ROOMS[state.filter]?.title || "For you";
   els.counts.textContent = isPortal()
-    ? `${waiting.length} unread · ${saves.length} saves · ${awaiting.length} review`
+    ? `${waiting.length} unread · ${saves.length} saves · ${awaiting.length} review${bucket.anchors.length ? ` · ${bucket.anchors.length} unanchored` : ""}`
     : `${waiting.length} unread through · ${saves.length} pulled saves · ${rss.length} rss · ${awaiting.length} to review`;
   renderTagBar(pages);
 
   const room = state.filter;
   if (room === "review") {
-    els.view.innerHTML = isPortal() ? portalRowsHtml(room, review) : reviewHtml(review);
+    const body = isPortal() ? portalRowsHtml(room, review) : reviewHtml(review);
+    els.view.innerHTML = body + anchorHtml(bucket.anchors);
   } else if (room === "home" && isPortal()) {
     els.view.innerHTML = portalHomeHtml(homeFeed);
   } else {
@@ -555,6 +558,53 @@ function listHtml(title, hint, pages) {
     return `<section class="section"><h2>${title}</h2><p class="empty">Nothing here yet.${state.syncNote ? ` ${escapeHtml(state.syncNote)}` : ""}</p></section>`;
   }
   return `<section class="section"><h2>${title}</h2><p class="hint">${hint}</p>${state.syncNote ? `<p class="sync-note">${escapeHtml(state.syncNote)}</p>` : ""}<div class="grid">${pages.map(pageCard).join("")}</div></section>`;
+}
+
+/**
+ * Highlights whose anchor is in doubt.
+ *
+ * The dashboard has no live page, so it cannot go looking — it can only report
+ * what the last visit recorded. Repair needs the passage in front of you, so
+ * the only thing to do from here is open the page.
+ */
+function anchorHtml(items) {
+  if (!items?.length) return "";
+  const lost = items.filter((item) => !item.weak);
+  const weak = items.filter((item) => item.weak);
+  const section = (title, hint, rows) =>
+    rows.length
+      ? `<section class="section"><h2>${title}</h2><p class="hint">${hint}</p><div class="grid">${rows
+          .map(anchorCard)
+          .join("")}</div></section>`
+      : "";
+  return (
+    section(
+      "Needs re-anchoring",
+      "These pages changed under your highlights. Open one and re-attach it where the passage lives now.",
+      lost
+    ) +
+    section(
+      "No saved copy",
+      "We have no record of this text on the page. Older highlights land here too — open the page to check.",
+      weak
+    )
+  );
+}
+
+function anchorCard(item) {
+  const last = item.thread?.messages?.[item.thread.messages.length - 1];
+  return `
+    <article class="review-card is-orphan" data-id="${item.page.id}">
+      <div class="kicker">${escapeHtml(item.page.domain)} · ${escapeHtml(item.label)}</div>
+      <q>${escapeHtml(clip(item.highlight?.text || "", 140))}</q>
+      ${
+        last
+          ? `<p class="excerpt"><strong>${last.role === "agent" ? "Agent" : "You"}:</strong> ${escapeHtml(clip(last.content, 120))}</p>`
+          : ""
+      }
+      ${tagRow(item.page)}
+      <div class="meta"><span>${escapeHtml(item.page.title)}</span><span>${formatRelative(item.since)}</span></div>
+    </article>`;
 }
 
 function reviewHtml(items) {

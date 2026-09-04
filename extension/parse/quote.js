@@ -27,6 +27,13 @@ export function quoteFromRange(range, root = document.body) {
   };
 }
 
+/**
+ * Locates a stored quote inside a flat string. The ladder degrades on purpose:
+ * an exact hit, then a trimmed one, then the span between prefix and suffix,
+ * then a fuzzy window. Later rungs are guesses, so the result reports which
+ * rung matched and how sure it is — see anchorConfidence. Callers that only
+ * want the span keep reading .start / .end.
+ */
 export function locateQuote(hay, selector) {
   const exact = normalizeText(selector?.exact || "");
   if (!exact || !hay) return null;
@@ -40,22 +47,28 @@ export function locateQuote(hay, selector) {
     hits.push(index);
     from = index + 1;
   }
-  if (hits.length) return pickBest(hay, hits, exact.length, prefix, suffix);
+  if (hits.length) return pickBest(hay, hits, exact.length, prefix, suffix, 1);
 
   for (let trim = 1; trim <= Math.min(4, Math.floor(exact.length / 5)); trim += 1) {
     const inner = exact.slice(trim, exact.length - trim);
     if (inner.length < 8) break;
     const index = hay.indexOf(inner);
     if (index >= 0) {
-      return pickBest(hay, [index], inner.length, prefix, suffix);
+      return pickBest(hay, [index], inner.length, prefix, suffix, 2);
     }
   }
 
+  // Every quote away from a document edge carries a 32-char prefix and suffix,
+  // so this rung fires whenever a paragraph is deleted but its neighbours
+  // survive — and it would happily return everything between them. Only trust
+  // it when what is left is roughly the length we recorded.
   if (prefix.length >= 8 && suffix.length >= 8) {
     const p = hay.indexOf(prefix);
     if (p >= 0) {
       const s = hay.indexOf(suffix, p + prefix.length);
-      if (s > p) return { start: p + prefix.length, end: s };
+      if (s > p && spanLooksRight(s - (p + prefix.length), exact.length)) {
+        return { start: p + prefix.length, end: s, rung: 3, hits: 1, score: 0 };
+      }
     }
   }
 
@@ -65,12 +78,78 @@ export function locateQuote(hay, selector) {
   return null;
 }
 
+/**
+ * True when a recovered span is close enough to the recorded length to be the
+ * same passage rather than whatever happened to sit between two landmarks.
+ */
+export function spanLooksRight(found, expected) {
+  if (found <= 0) return false;
+  return found >= expected * 0.5 - 40 && found <= expected * 2 + 40;
+}
+
+/**
+ * How much a match deserves to be trusted. "exact" and "close" restore
+ * silently; "loose" restores but asks the reader to confirm before the stored
+ * quote is ever rewritten from it.
+ */
+export function anchorConfidence(match, selector) {
+  if (!match) return null;
+  const length = normalizeText(selector?.exact || "").length || 1;
+  if (match.rung === 1) {
+    if (!match.ambiguous) return "exact";
+    return match.score >= 3 ? "exact" : "loose";
+  }
+  if (match.rung === 2) return match.score >= 3 ? "close" : "loose";
+  if (match.rung === 3) return "loose";
+  if (match.rung === 4) {
+    const ratio = (match.distance ?? length) / length;
+    if (ratio < 0.04) return "close";
+    return ratio <= 0.1 ? "loose" : null;
+  }
+  return "loose";
+}
+
 export function findQuote(root, selector) {
+  return locateInDom(root, selector)?.range || null;
+}
+
+/**
+ * findQuote, but keeping the evidence: which rung matched and how sure it is.
+ */
+export function locateInDom(root, selector) {
   if (!selector?.exact) return null;
+  return resolveInMap(flattenText(root), selector);
+}
+
+/**
+ * Locates many selectors against one flattened document. flattenText walks
+ * every text node, so anchoring N highlights one call at a time is O(N × doc);
+ * the retry loop runs often enough that it has to flatten once and locate many.
+ */
+export function locateAllInDom(root, selectors) {
+  const found = new Map();
+  const list = selectors || [];
+  if (!list.length) return found;
   const map = flattenText(root);
-  const found = locateQuote(map.text, selector);
-  if (!found) return null;
-  return rangeFromOffsets(map, found.start, found.end);
+  list.forEach((selector, index) => {
+    if (!selector?.exact) return;
+    const result = resolveInMap(map, selector);
+    if (result) found.set(index, result);
+  });
+  return found;
+}
+
+function resolveInMap(map, selector) {
+  const match = locateQuote(map.text, selector);
+  if (!match) return null;
+  const range = rangeFromOffsets(map, match.start, match.end);
+  if (!range) return null;
+  return {
+    range,
+    rung: match.rung,
+    distance: match.distance,
+    confidence: anchorConfidence(match, selector)
+  };
 }
 
 export function wrapRange(range, highlight) {
@@ -235,7 +314,7 @@ function resolveToText(container, offset, edge) {
   return child ? firstTextPoint(child) : firstTextPoint(container);
 }
 
-function pickBest(hay, hits, length, prefix, suffix) {
+function pickBest(hay, hits, length, prefix, suffix, rung) {
   let best = hits[0];
   let bestScore = -1;
   for (const index of hits) {
@@ -251,7 +330,16 @@ function pickBest(hay, hits, length, prefix, suffix) {
       best = index;
     }
   }
-  return { start: best, end: best + length };
+  // Repeated boilerplate gives several hits and nothing to separate them; the
+  // first one wins, but the caller deserves to know it was a coin toss.
+  return {
+    start: best,
+    end: best + length,
+    rung,
+    hits: hits.length,
+    score: Math.max(0, bestScore),
+    ambiguous: hits.length > 1 && bestScore <= 0
+  };
 }
 
 function fuzzyWindow(hay, exact, prefix, suffix) {
@@ -268,7 +356,7 @@ function fuzzyWindow(hay, exact, prefix, suffix) {
     if (suffix && hay.slice(i + exact.length, i + exact.length + 32).startsWith(suffix)) score -= 0.5;
     if (score < bestScore) {
       bestScore = score;
-      best = { start: i, end: i + exact.length };
+      best = { start: i, end: i + exact.length, rung: 4, hits: 1, score: 0, distance: dist };
     }
   }
   return best;

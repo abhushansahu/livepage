@@ -11,6 +11,7 @@
   --sage: #3f6b52;
   --sage-2: #2f5240;
   --leaf: #7c9a6d;
+  --danger: #8a3a32;
   --shadow: 0 24px 70px rgba(28, 23, 18, 0.12);
 }
 
@@ -1615,6 +1616,7 @@ html[data-theme="dark"] {
   --sage: #8fbaa0;
   --sage-2: #a8cdb5;
   --leaf: #9dba8e;
+  --danger: #e3a098;
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
   color-scheme: dark;
 }
@@ -1667,3 +1669,8 @@ html[data-theme="dark"] .chip.waiting { color: #e39b93; }
 
 html[data-theme="dark"] .stat-cell.mid span { color: #8cbbe8; }
 html[data-theme="dark"] .stat-cell.done span { color: #83c9a8; }
+
+/* A highlight whose page no longer has a place for it. */
+.review-card.is-orphan {
+  border-left: 3px solid var(--danger);
+}
