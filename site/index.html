@@ -6,7 +6,7 @@
     <title>LivePage — think on the live web</title>
     <meta
       name="description"
-      content="A Chrome extension that turns any live webpage into a writable thinking surface: highlights, margin conversations, agent threads, a dashboard of waiting pages, and an Obsidian vault dump."
+      content="A Chrome extension that turns any live webpage into a writable thinking surface: an agent marks the passages worth stopping at, then highlights, margin conversations, forked agent threads, a dashboard of waiting pages, and an Obsidian vault dump."
     />
     <link rel="icon" href="./favicon.png" />
     <link rel="apple-touch-icon" href="./icon.png" />
@@ -21,6 +21,7 @@
           <span class="mark">LivePage</span>
         </a>
         <nav class="links">
+          <a href="#read">Reading</a>
           <a href="#install">Install</a>
           <a href="#limits">Limits</a>
           <a href="https://github.com/abhushansahu/livepage">GitHub</a>
@@ -33,7 +34,7 @@
           <p class="kicker">Chrome extension · 0.2.0</p>
           <h1>The page stays live. Your thoughts stay on it.</h1>
           <p class="lede">
-            Colored highlights, margin conversations, forked threads with Cursor or Claude Code, a dashboard of waiting pages, and an Obsidian dump — without clipping the web into a specimen.
+            An agent reads the long thing ahead of you and marks what is worth stopping at. You highlight, argue in the margin, and fork a thread with Cursor or Claude Code — on the live page, without clipping the web into a specimen.
           </p>
           <div class="cta">
             <a class="btn" href="#install">Load it unpacked</a>
@@ -65,10 +66,21 @@
                 It can fork when you and an agent take different readings of the same span.
               </p>
               <p>
+                <mark class="ai sand">An agent can read it first and mark only what carries the argument.</mark>
+                Its marks are dotted, because they are not yours until you keep one.
+              </p>
+              <p>
                 <mark class="moss">Dump the trail into a git vault when it is cool enough to own.</mark>
                 Until then, stay on the page.
               </p>
             </article>
+            <div class="rail" aria-hidden="true">
+              <i style="top:14%;background:#E8CF62"></i>
+              <i style="top:33%;background:#AF9ADA"></i>
+              <i class="hollow" style="top:52%;--t:#87BFDF"></i>
+              <i class="hollow" style="top:71%;--t:#D2AE76"></i>
+              <i style="top:88%;background:#8FC38F"></i>
+            </div>
             <div class="gutter">
               <div class="card">
                 <div class="stripe lemon"></div>
@@ -90,13 +102,34 @@
         </aside>
       </div>
 
+      <section id="read">
+        <h2>Reading the long thing</h2>
+        <p class="sub">The part that stops you is rarely the writing. It is not knowing where the argument is, or whether you got there.</p>
+        <div class="grid three">
+          <article class="tile">
+            <h3><kbd>⌥A</kbd> Marked before you start</h3>
+            <p>An agent reads the article and marks only the passages worth stopping at, in the same six colours. There is no target count — the prompt says so, because asking a model for five gets you five whether or not a fifth exists. An article that makes no point worth marking gets nothing, and says so.</p>
+            <p class="fine">Every quote is checked against the article before it becomes a mark. A paraphrase or an invention is thrown away rather than painted somewhere approximate.</p>
+          </article>
+          <article class="tile">
+            <h3>The shape down the edge</h3>
+            <p>Every marked passage as a tick at its own depth, your own highlights solid and an agent’s suggestions hollow, with how far you actually read shaded behind them. Click a tick to jump. It is the scrollbar an IDE gives you, for an argument instead of a file.</p>
+            <p class="fine"><kbd>⌥J</kbd> and <kbd>⌥K</kbd> move between marks without touching the mouse.</p>
+          </article>
+          <article class="tile">
+            <h3><kbd>⌥S</kbd> Terms explained in place</h3>
+            <p>Words an article leans on get a quiet underline; hover for what it means here, ⌘-click to jump to where it was defined. Answers are cached per page, so the second hover is instant. Noisy on a site you read daily — <kbd>⌥S</kbd> turns it off for that site and leaves it alone everywhere else.</p>
+          </article>
+        </div>
+      </section>
+
       <section id="what">
-        <h2>What it does</h2>
+        <h2>Thinking on it</h2>
         <p class="sub">Built as a layer over the Chrome you already live in. Nothing is stored just because you opened a tab.</p>
         <div class="grid">
           <article class="tile">
             <h3>On the page</h3>
-            <p>Select a span. Six highlight colors and a comment. Notes sit in a reserved right margin, aligned to the quote — Google Docs / Notion style, not a floating overlay.</p>
+            <p>Select a span. Six highlight colours and a comment. Notes sit in a reserved right margin, aligned to the quote — Google Docs / Notion style, not a floating overlay.</p>
             <div class="swatches">
               <span class="swatch"><span class="chip" style="background:#E8CF62"></span>Key idea</span>
               <span class="swatch"><span class="chip" style="background:#8FC38F"></span>Action</span>
@@ -111,8 +144,16 @@
             <p>Any message can branch. You and an agent can take different readings of the same span without overwriting each other. Ask Cursor or Claude Code; they get a parsed packet, not a second copy of the page.</p>
           </article>
           <article class="tile">
+            <h3>When the page changes underneath</h3>
+            <p>A highlight is a quote, so a rewritten page can leave it with nowhere to sit — and it would take a whole conversation with it. Those collect in a dock instead of vanishing, with the saved copy of the text around them, and re-attach to the passage where it lives now.</p>
+          </article>
+          <article class="tile">
             <h3>Scroll is the truth</h3>
             <p>Reading status is how far you actually got, not a clip checkbox. Opening a page and leaving leaves no trace. LivePage writes a record the first time you keep it: highlight, comment, star, list, tag, or import.</p>
+          </article>
+          <article class="tile">
+            <h3>Find the sentence, not the article</h3>
+            <p>Search returns the passage you marked and the thread on it, with the match shown in place — not a page card you then have to read again to find the line. Open the page and it scrolls to it.</p>
           </article>
           <article class="tile">
             <h3>Dashboard of open loops</h3>
@@ -140,7 +181,7 @@
           </li>
           <li>
             <div>
-              Browse as usual. <kbd>Alt+H</kbd> highlights a selection, <kbd>Alt+M</kbd> comments, <kbd>Alt+Shift+L</kbd> opens the dashboard.
+              Browse as usual. <kbd>⌥H</kbd> highlights a selection, <kbd>⌥M</kbd> comments, <kbd>⌥A</kbd> has an agent mark up the article, <kbd>⌥⇧L</kbd> opens the dashboard. Clicking the LivePage icon shows what is on for the page in front of you, with the key for each.
             </div>
           </li>
           <li>
@@ -156,15 +197,19 @@ cd livepage
 
       <section>
         <h2>Shortcuts</h2>
+        <p class="sub">⌥ is Option on a Mac, Alt on Windows and Linux.</p>
         <table>
           <thead>
             <tr><th>Action</th><th>Default</th></tr>
           </thead>
           <tbody>
-            <tr><td>Highlight selection</td><td>Alt+H</td></tr>
-            <tr><td>Comment on selection</td><td>Alt+M</td></tr>
-            <tr><td>Open dashboard</td><td>Alt+Shift+L</td></tr>
-            <tr><td>Add to reading list</td><td>Alt+Shift+R</td></tr>
+            <tr><td>Highlight selection</td><td><kbd>⌥H</kbd></td></tr>
+            <tr><td>Comment on selection</td><td><kbd>⌥M</kbd></td></tr>
+            <tr><td>Mark up this article</td><td><kbd>⌥A</kbd></td></tr>
+            <tr><td>Next / previous marked passage</td><td><kbd>⌥J</kbd> / <kbd>⌥K</kbd></td></tr>
+            <tr><td>Explained terms off for this site</td><td><kbd>⌥S</kbd></td></tr>
+            <tr><td>Open dashboard</td><td><kbd>⌥⇧L</kbd></td></tr>
+            <tr><td>Add to reading list</td><td><kbd>⌥⇧R</kbd></td></tr>
           </tbody>
         </table>
       </section>
@@ -173,9 +218,10 @@ cd livepage
         <h2>Limits, honestly</h2>
         <div class="limits">
           <p>This is an extension, not a research browser. It cannot rewrite navigation the way Horse Trails does.</p>
-          <p>Highlights use text-quote selectors. If a page rewrites the paragraph, the mark may not restore. Infinite-scroll feeds snapshot themselves when you highlight, so the anchor has somewhere to live.</p>
+          <p>Highlights use text-quote selectors. A page that rewrites the paragraph can still leave one with nowhere to sit — it collects in a dock with its thread intact rather than disappearing, and you re-attach it by selecting the passage where it lives now. Infinite-scroll feeds snapshot themselves when you highlight, so the anchor has somewhere to live.</p>
           <p>The extension runs on every http(s) page because the product is “think on the live web.” Harvest uses the cookies of this Chrome profile. If you are not logged into X here, LivePage cannot invent that session.</p>
-          <p>Agent replies stay on your machine. If the host is down, you still have the packet and can paste a reply back by hand.</p>
+          <p>Agent replies stay on your machine. Marking up an article shells out to the Cursor or Claude Code CLI already installed there, so it costs a real call and waits to be asked rather than running on every page you open. If the host is down, LivePage says so, and you still have the packet to paste a reply back by hand.</p>
+          <p><strong>No PDFs yet.</strong> LivePage works on http and https pages; a bundled viewer that would give PDFs the same margin is planned, not built. There is also no backup or restore yet — the vault dump is one-way, so a wiped Chrome profile takes your highlights with it.</p>
         </div>
       </section>
 

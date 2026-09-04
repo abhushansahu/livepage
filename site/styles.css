@@ -196,6 +196,7 @@ h1 {
 .dot:nth-child(3) { background: var(--moss); }
 
 .page {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr 220px;
   min-height: 420px;
@@ -232,11 +233,46 @@ mark.lemon { --hl: var(--lemon); }
 mark.moss { --hl: var(--moss); }
 mark.sky { --hl: var(--sky); }
 mark.iris { --hl: var(--iris); }
+mark.rose { --hl: var(--rose); }
+mark.sand { --hl: var(--sand); }
+
+/* A suggestion, not something you kept: it points at the sentence rather than
+   claiming it. */
+mark.ai {
+  background: none;
+  box-shadow: inset 0 -0.42em 0 color-mix(in srgb, var(--hl, var(--lemon)) 26%, transparent);
+  border-bottom: 1px dotted color-mix(in srgb, var(--hl, var(--lemon)) 90%, var(--ink));
+}
+
+/* The article's shape down the edge of the window. */
+.rail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 10px;
+  border-left: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+}
+
+.rail i {
+  position: absolute;
+  right: 2px;
+  width: 6px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.rail i.hollow {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--t);
+}
 
 .gutter {
   border-left: 1px solid var(--line-soft);
   background: color-mix(in srgb, var(--bg) 55%, var(--paper));
-  padding: 28px 12px 20px;
+  /* Clears the rail pinned to the right edge. */
+  padding: 28px 22px 20px 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -295,6 +331,21 @@ section h2 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
+}
+
+/* The reading tiles carry more, so they get more room each. */
+.grid.three .tile {
+  padding-bottom: 18px;
+}
+
+.tile .fine {
+  margin-top: 10px;
+  font-size: 13px;
+  opacity: 0.72;
+}
+
+.tile h3 kbd {
+  margin-right: 6px;
 }
 
 .tile {
@@ -435,7 +486,26 @@ footer {
 
 @media (max-width: 920px) {
   .hero, .page, .grid { grid-template-columns: 1fr; }
-  .gutter { border-left: 0; border-top: 1px solid var(--line-soft); flex-direction: row; overflow-x: auto; }
+  /* Stacked, the rail has no edge to run down. */
+  .rail { display: none; }
+  .gutter { border-left: 0; border-top: 1px solid var(--line-soft); flex-direction: row; overflow-x: auto; padding: 20px 12px; }
   .card { min-width: 180px; }
   h1 { font-size: 40px; }
+}
+
+
+/* Keys are named often enough here to deserve looking like keys. */
+kbd {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.86em;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--paper);
+  white-space: nowrap;
+}
+
+table kbd {
+  font-size: 0.9em;
 }
