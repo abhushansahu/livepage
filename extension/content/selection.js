@@ -29,12 +29,23 @@ export function rangeRect(range) {
  */
 const SHORTCUTS = { KeyA: "markup", KeyS: "symbols", KeyJ: "next-mark", KeyK: "prev-mark" };
 
+/**
+ * Held with Shift, a key means the more deliberate version of itself.
+ *
+ * ⌥A on a page already marked up repaints what was paid for; ⌥⇧A throws it
+ * away and reads the article again. Only keys named here care about Shift —
+ * the rest keep working with it held, because a reader jumping between marks
+ * should not have a shortcut die under a finger they left on Shift.
+ */
+const SHIFTED = { KeyA: "markup-again" };
+
 export function shortcutAction(event, { typing = false } = {}) {
   if (!event?.altKey || event.ctrlKey || event.metaKey) return null;
   // Held keys must not repeat a toggle.
   if (event.repeat) return null;
   // Option is a character key on a Mac; while you are writing, it is yours.
   if (typing) return null;
+  if (event.shiftKey && SHIFTED[event.code]) return SHIFTED[event.code];
   return SHORTCUTS[event.code] || null;
 }
 

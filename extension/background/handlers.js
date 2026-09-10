@@ -39,6 +39,7 @@ import {
   anchorMarkup,
   articleIsWorthMarking,
   buildMarkupPacket,
+  dropAlreadyKept,
   markCeiling,
   parseMarkupReply
 } from "../agent/markup.js";
@@ -691,7 +692,10 @@ async function markupPage(payload) {
   const contentHash = parsed.contentHash || "";
 
   const cached = await getMarkup(pageId, contentHash);
-  if (cached) return { ...cached, cached: true };
+  // Asking again is the one thing that may ignore the cache. It is always a
+  // deliberate act — a button, or ⌥⇧A — never something a page load does,
+  // because it spends an agent call on an article that already has an answer.
+  if (cached && !payload.force) return { ...cached, cached: true };
   // Loading a page may repaint an earlier pass but must never buy a new one.
   // An agent call is something you ask for.
   if (payload.cachedOnly) return { pageId, contentHash, marks: [], skipped: "not-asked" };
@@ -711,9 +715,16 @@ async function markupPage(payload) {
   const reply = cleanAgentReply(typeof result === "string" ? result : result.text);
   // Anchoring is the trust boundary: a quote the article does not contain is
   // dropped here rather than painted somewhere approximate.
-  const marks = anchorMarkup(
-    parseMarkupReply(reply, markCeiling(parsed.wordCount || 0)),
-    parsed.blocks || []
+  // Whatever you have already kept here is yours and is already on the page,
+  // so it is not a suggestion any more. Matters most on a second pass, where
+  // the agent has no idea it is re-reading an article you have worked over.
+  const owner = await getPage(pageId);
+  const marks = dropAlreadyKept(
+    anchorMarkup(
+      parseMarkupReply(reply, markCeiling(parsed.wordCount || 0)),
+      parsed.blocks || []
+    ),
+    owner?.highlights
   ).map((mark) => ({
     ...mark,
     id: uid("am")

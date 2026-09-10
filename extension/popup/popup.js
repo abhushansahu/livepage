@@ -4,7 +4,7 @@ import { formatRelative } from "../shared/time.js";
 import { parseTagInput, suggestedTagsForHost } from "../shared/tags.js";
 import { hostnameOf } from "../shared/url.js";
 import { resolveFlags } from "../shared/flags.js";
-import { symbolsMutedHere, toggleSymbolsForSite } from "../shared/site-prefs.js";
+import { mutedHere, toggleSiteSurface } from "../shared/site-prefs.js";
 import { looksLikePdfUrl } from "../pdf/route.js";
 
 const list = document.getElementById("list");
@@ -139,7 +139,7 @@ function renderSwitches() {
   if (!switches) return;
   const { flags } = resolveFlags(settings);
   const article = /^https?:/i.test(tabUrl);
-  const symbolsOff = symbolsMutedHere(settings, tabUrl);
+  const markupOn = flags.markup !== false && !mutedHere(settings, tabUrl, "markup");
 
   const rows = [];
 
@@ -156,37 +156,40 @@ function renderSwitches() {
   }
 
   rows.push(
-    {
-      id: "markup",
-      on: flags.markup !== false,
+    siteRow("markup", flags.markup !== false, {
       key: "⌥A",
-      label: "Mark the passages worth stopping at",
-      sub: flags.markup === false ? "Off everywhere" : "Press ⌥A on an article to run it"
-    },
-    {
-      id: "symbols",
-      on: flags.articleSymbols && !symbolsOff,
+      label: "Mark the passages worth stopping at"
+    }),
+    siteRow("symbols", Boolean(flags.articleSymbols), {
       key: "⌥S",
-      label: "Explain unfamiliar terms",
-      sub: !flags.articleSymbols
-        ? "Off everywhere"
-        : symbolsOff
-          ? `Off for ${host}`
-          : `On for ${host}`
-    },
-    {
-      id: "minimap",
-      on: flags.minimap !== false,
+      label: "Explain unfamiliar terms"
+    })
+  );
+
+  // Only where there is something to ask again about. A page LivePage cannot
+  // read, or one you have muted, has nothing to re-read.
+  if (article && markupOn) {
+    rows.push({
+      id: "rerun",
+      action: true,
+      key: "⌥⇧A",
+      label: "Read this page again",
+      sub: "Drops the marks on file and asks for a fresh pass"
+    });
+  }
+
+  rows.push(
+    siteRow("minimap", flags.minimap !== false, {
       key: "",
       label: "Show marked passages down the edge"
-    }
+    })
   );
 
   switches.innerHTML = rows
     .map(
       (row) => `
-      <button type="button" class="switch ${row.on ? "on" : ""}" data-switch="${row.id}">
-        <span class="dot"></span>
+      <button type="button" class="switch${row.action ? " is-action" : ""}${row.on ? " on" : ""}" data-switch="${row.id}">
+        <span class="${row.action ? "glyph" : "dot"}">${row.action ? "↻" : ""}</span>
         <span class="label">${escapeHtml(row.label)}${row.sub ? `<span class="sub">${escapeHtml(row.sub)}</span>` : ""}</span>
         <span class="key">${row.key}</span>
       </button>`
@@ -198,10 +201,42 @@ function renderSwitches() {
   });
 
   siteNote.textContent = article
-    ? "⌥J and ⌥K move between marked passages."
+    ? "⌥J and ⌥K move between marked passages. These rows are for this site; Settings turns one off everywhere."
     : "LivePage only works on http and https pages.";
 }
 
+/**
+ * One row for a surface that can be off here and on everywhere else.
+ *
+ * "Off everywhere" and "off for this site" are different answers and want
+ * different switches, so the row says which one it is rather than leaving a
+ * reader to wonder why the same toggle did something else last time.
+ */
+function siteRow(id, globallyOn, { key, label }) {
+  const offHere = mutedHere(settings, tabUrl, id);
+  return {
+    id,
+    on: globallyOn && !offHere,
+    key,
+    label,
+    sub: !globallyOn
+      ? "Off everywhere · turn it back on here"
+      : !host
+        ? ""
+        : offHere
+          ? `Off for ${host}`
+          : `On for ${host}`
+  };
+}
+
+/** The global flag standing behind each per-site row. */
+const GLOBAL_FLAG = { symbols: "articleSymbols", markup: "markup", minimap: "minimap" };
+
+/**
+ * A row means "here" — unless the surface is off everywhere, in which case
+ * there is nothing for a site to have an opinion about and the row turns it
+ * back on for good.
+ */
 async function onSwitch(id) {
   const { flags } = resolveFlags(settings);
   if (id === "pdf") {
@@ -209,28 +244,54 @@ async function onSwitch(id) {
     window.close();
     return;
   }
+  if (id === "rerun") {
+    await rerunMarkup();
+    return;
+  }
+  const flag = GLOBAL_FLAG[id];
+  if (!flag) return;
+  const globallyOn = id === "symbols" ? Boolean(flags.articleSymbols) : flags[flag] !== false;
   try {
-    if (id === "symbols") {
-      // Symbols are muted per site, so this row means "here", not everywhere —
-      // unless they are off globally, in which case there is nothing to mute.
-      if (!flags.articleSymbols) {
-        settings = await call("SAVE_SETTINGS", {
-          flags: { ...(settings.flags || {}), articleSymbols: true }
-        });
-      } else {
-        const next = toggleSymbolsForSite(settings, tabUrl);
-        settings = await call("SAVE_SETTINGS", { symbolsOffHosts: next.symbolsOffHosts });
-      }
-    } else {
-      const key = id === "markup" ? "markup" : "minimap";
+    if (!globallyOn) {
+      // Whatever this site said before is left where it was: turning a surface
+      // back on everywhere should not quietly forget the one page you muted.
       settings = await call("SAVE_SETTINGS", {
-        flags: { ...(settings.flags || {}), [key]: flags[key] === false }
+        flags: { ...(settings.flags || {}), [flag]: true }
       });
+      flash("On again, everywhere it was not already muted.");
+    } else {
+      const next = toggleSiteSurface(settings, tabUrl, id);
+      // Nowhere to pin a preference on a page with no host, so the row stays
+      // the global switch it used to be.
+      if (!next.host) {
+        settings = await call("SAVE_SETTINGS", {
+          flags: { ...(settings.flags || {}), [flag]: false }
+        });
+        flash("Off everywhere.");
+      } else {
+        settings = await call("SAVE_SETTINGS", next.patch);
+        flash(next.muted ? `Off for ${next.host}.` : `On for ${next.host}.`);
+      }
     }
     renderSwitches();
-    flash("Saved. Reload the page to see it there.");
   } catch (error) {
     flash(String(error.message || error));
+  }
+}
+
+/**
+ * Asks the page in front of you to read itself again.
+ *
+ * Sent to the tab rather than run from here, because a pass needs the article
+ * as rendered and the popup has a URL and nothing else.
+ */
+async function rerunMarkup() {
+  if (!tab?.id) return;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { broadcast: true, kind: "RERUN_MARKUP" });
+    window.close();
+  } catch {
+    flash("LivePage is not running on this page. Reload it and try again.");
   }
 }
 

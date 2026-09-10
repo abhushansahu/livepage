@@ -6,12 +6,20 @@ import {
   anchorMarkup,
   articleIsWorthMarking,
   buildMarkupPacket,
+  dropAlreadyKept,
   parseMarkupReply
 } from "../extension/agent/markup.js";
 import { looksLikeStableDocument, evaluateInfiniteScroll } from "../extension/parse/infinite-scroll.js";
 import { minimapTicks } from "../extension/content/minimap.js";
-import { symbolsMutedHere, toggleSymbolsForSite } from "../extension/shared/site-prefs.js";
+import {
+  SITE_SURFACES,
+  mutedHere,
+  symbolsMutedHere,
+  toggleSiteSurface,
+  toggleSymbolsForSite
+} from "../extension/shared/site-prefs.js";
 import { shortcutAction, isTypingTarget } from "../extension/content/selection.js";
+import { COLOR_IDS } from "../extension/shared/colors.js";
 
 const blocks = [
   { id: "b1", tag: "h2", text: "Methodology", heading: true },
@@ -31,23 +39,55 @@ const blocks = [
 
 test("the prompt refuses to name a target, and says none is a real answer", () => {
   const packet = buildMarkupPacket({ pageTitle: "T", url: "https://e.com", blocks });
-  assert.match(packet, /no target number/i);
+  assert.match(packet, /no quota/i);
   assert.match(packet, /\bzero\b/i);
   assert.match(packet, /padding/i);
   assert.match(packet, /verbatim|exactly/i);
   // A quota anywhere in the prompt is what produces padding; the only number
-  // allowed is the runaway guard, and it must read as a ceiling.
-  assert.match(packet, /Never mark more than \d+; if you are near that, you are padding/);
+  // allowed is the runaway guard, and it must read as a guard.
+  assert.match(packet, /Never mark more than \d+\. That is a guard against a runaway reply,\s*not a target/);
+});
+
+test("the prompt names under-marking as the likelier failure, not just padding", () => {
+  const packet = buildMarkupPacket({ pageTitle: "T", url: "https://e.com", blocks });
+  // The old prompt argued one side only, and a model reading it marked two
+  // passages in an essay and called that restraint.
+  assert.match(packet, /marked too little/i);
+  assert.match(packet, /marking too little is the more common one/i);
+  assert.match(packet, /every few\s*paragraphs/i);
+  // Both failures have to stay on the page; dropping the padding warning is
+  // how the ceiling starts getting filled.
+  assert.match(packet, /buries the real marks/i);
+});
+
+test("the prompt asks for the whole palette without forcing it", () => {
+  const packet = buildMarkupPacket({ pageTitle: "T", url: "https://e.com", blocks });
+  // Every colour has to arrive with the meaning that separates it from the
+  // others, or the model has nothing to choose on and defaults to the first.
+  for (const id of COLOR_IDS) assert.match(packet, new RegExp(`\\b${id}\\b`));
+  assert.match(packet, /entirely in one colour/i);
+  assert.match(packet, /three or more/i);
+  // A diversity rule that overrides the meaning is worse than no rule.
+  assert.match(packet, /Do not force a colour onto a passage/i);
 });
 
 test("the ceiling grows with the article instead of starving a long one", () => {
-  assert.equal(markCeiling(900), 4);
-  assert.equal(markCeiling(2000), 4);
-  assert.ok(markCeiling(8000) > markCeiling(2000));
-  assert.ok(markCeiling(15000) > markCeiling(8000));
-  // Still a ceiling, not a licence to mark a book.
+  assert.ok(markCeiling(2000) > markCeiling(900));
+  assert.ok(markCeiling(6000) > markCeiling(2000));
+  // Still a ceiling, not a licence to mark a book: past a certain length the
+  // reader is skimming a book anyway, and more ticks stop being navigation.
   assert.equal(markCeiling(400000), MAX_MARKS);
-  assert.equal(markCeiling(0), 4);
+  assert.equal(markCeiling(15000), MAX_MARKS);
+});
+
+test("an ordinary article is not held to a handful of marks", () => {
+  // The lengths most things anyone reads actually are. One per 700 words with
+  // a floor of four capped every one of these at four, which is a claim and
+  // nothing holding it up.
+  assert.ok(markCeiling(900) >= 6);
+  assert.ok(markCeiling(1500) >= 6);
+  assert.ok(markCeiling(2500) >= 8, "a long-read essay needs more than a note does");
+  assert.ok(markCeiling(0) >= 6, "an unmeasured article must not be the most starved of all");
 });
 
 test("a long article is told it may need more, a short one told not to reach", () => {
@@ -57,7 +97,7 @@ test("a long article is told it may need more, a short one told not to reach", (
   assert.match(long, new RegExp(`Never mark more than ${markCeiling(9000)}`));
 
   const short = buildMarkupPacket({ blocks, wordCount: 700 });
-  assert.match(short, /Do not look for more than are there/);
+  assert.match(short, /still makes more than one move/);
   assert.doesNotMatch(short, /stranded in the middle/);
 });
 
@@ -66,8 +106,10 @@ test("the reply is cut at the article's own ceiling, not a flat one", () => {
     { length: 40 },
     (_, i) => `lemon | a distinct quoted passage number ${i} here | reason`
   ).join("\n");
-  assert.equal(parseMarkupReply(reply, markCeiling(900)).length, 4);
+  assert.equal(parseMarkupReply(reply, markCeiling(900)).length, markCeiling(900));
   assert.equal(parseMarkupReply(reply, markCeiling(15000)).length, markCeiling(15000));
+  // A short article's ceiling has to actually bind, or the cut is not a cut.
+  assert.ok(markCeiling(900) < markCeiling(15000));
 });
 
 test("the prompt carries the colour vocabulary the product already uses", () => {
@@ -182,6 +224,39 @@ test("overlapping marks collapse so the page is not double-painted", () => {
       { color: "sand", quote: "underreporting of actual adoption", why: "b" }
     ],
     blocks
+  );
+  assert.equal(kept.length, 1);
+});
+
+test("a passage the article repeats is still a passage worth marking", () => {
+  // Ambiguity is scored from the prefix and suffix around a quote, and a model
+  // is never asked for either — so a repeated sentence scored loose and was
+  // thrown away, despite being the one thing we can be sure of: found whole in
+  // the article. It is common in practice; a refrain is usually the point.
+  const repeated = [
+    { id: "r1", tag: "p", text: "Adoption is not the same as usage, and the gap is the whole finding." },
+    { id: "r2", tag: "p", text: "Every measure we tried agreed on that much." },
+    { id: "r3", tag: "p", text: "Adoption is not the same as usage, and the gap is the whole finding." }
+  ];
+  const kept = anchorMarkup(
+    [{ color: "lemon", quote: "Adoption is not the same as usage, and the gap is the whole finding.", why: "the refrain" }],
+    repeated
+  );
+  assert.equal(kept.length, 1, "the first occurrence is taken rather than none");
+  assert.match(kept[0].text, /^Adoption is not the same as usage/);
+});
+
+test("taking the first occurrence still cannot double-paint one span", () => {
+  const repeated = [
+    { id: "r1", tag: "p", text: "Adoption is not the same as usage, and the gap is the whole finding." },
+    { id: "r2", tag: "p", text: "Adoption is not the same as usage, and the gap is the whole finding." }
+  ];
+  const kept = anchorMarkup(
+    [
+      { color: "lemon", quote: "Adoption is not the same as usage, and the gap is the whole finding.", why: "a" },
+      { color: "sand", quote: "not the same as usage, and the gap", why: "b" }
+    ],
+    repeated
   );
   assert.equal(kept.length, 1);
 });
@@ -323,6 +398,76 @@ test("no setting at all reads as nothing muted", () => {
   assert.equal(symbolsMutedHere(undefined, "https://example.com/a"), false);
 });
 
+
+// Every surface a reader can silence on one site works the same way, and the
+// point of the table is that they cannot drift apart.
+for (const surface of Object.keys(SITE_SURFACES)) {
+  test(`${surface} can be off for one site and on everywhere else`, () => {
+    const key = SITE_SURFACES[surface];
+    const off = toggleSiteSurface({}, "https://www.docs.example.com/a?x=1", surface);
+    assert.equal(off.muted, true);
+    assert.equal(off.host, "docs.example.com", "www. must not split a site in two");
+    assert.deepEqual(off.patch, { [key]: ["docs.example.com"] });
+
+    const settings = off.patch;
+    assert.equal(mutedHere(settings, "https://docs.example.com/another", surface), true);
+    assert.equal(mutedHere(settings, "https://elsewhere.com/a", surface), false);
+
+    const back = toggleSiteSurface(settings, "https://docs.example.com/a", surface);
+    assert.equal(back.muted, false);
+    assert.deepEqual(back.hosts, [], "turning it back on must not leave the host behind");
+  });
+}
+
+test("silencing one surface on a site says nothing about the others there", () => {
+  const settings = toggleSiteSurface({}, "https://noisy.example.com/a", "markup").patch;
+  assert.equal(mutedHere(settings, "https://noisy.example.com/a", "markup"), true);
+  assert.equal(mutedHere(settings, "https://noisy.example.com/a", "symbols"), false);
+  assert.equal(mutedHere(settings, "https://noisy.example.com/a", "minimap"), false);
+});
+
+test("a surface nobody has heard of cannot write to settings", () => {
+  const result = toggleSiteSurface({}, "https://example.com/a", "nonsense");
+  assert.equal(result.host, "");
+  assert.deepEqual(result.patch, {});
+  assert.equal(mutedHere({ nonsenseOffHosts: ["example.com"] }, "https://example.com/a", "nonsense"), false);
+});
+
+test("a page with no host cannot mute a surface, and does not corrupt the list", () => {
+  const settings = { markupOffHosts: ["a.com"] };
+  const result = toggleSiteSurface(settings, "not-a-url", "markup");
+  assert.equal(result.host, "");
+  assert.deepEqual(result.hosts, ["a.com"]);
+  assert.deepEqual(result.patch, {});
+});
+
+test("asking again does not re-suggest a passage you already kept", () => {
+  const marks = [
+    { text: "It is likely our results underestimate actual adoption.", color: "lemon" },
+    { text: "Surveys may lead to underreporting of actual adoption.", color: "sky" }
+  ];
+  const kept = dropAlreadyKept(marks, [
+    { text: "It is likely our results underestimate actual adoption." }
+  ]);
+  assert.equal(kept.length, 1);
+  assert.match(kept[0].text, /^Surveys may lead/);
+});
+
+test("a mark inside a longer highlight of yours is already yours", () => {
+  const kept = dropAlreadyKept(
+    [{ text: "results underestimate actual adoption" }],
+    [{ text: "It is likely our results underestimate actual adoption due to free tools." }]
+  );
+  assert.deepEqual(kept, []);
+});
+
+test("a highlight too short to be a quote cannot swallow the marks", () => {
+  const marks = [{ text: "It is likely our results underestimate adoption." }];
+  assert.equal(dropAlreadyKept(marks, [{ text: "the" }]).length, 1);
+  assert.equal(dropAlreadyKept(marks, []).length, 1);
+  assert.equal(dropAlreadyKept(marks, undefined).length, 1);
+});
+
 // On macOS, Option is the Alt key and composes a character with it, so the
 // letter never arrives as itself. These are the events Chrome actually emits
 // there; matching on `key` is why the shortcuts silently did nothing.
@@ -384,4 +529,17 @@ test("every shortcut is a distinct action, so none shadows another", () => {
   const actions = codes.map((code) => shortcutAction({ altKey: true, code }));
   assert.equal(new Set(actions).size, codes.length);
   assert.ok(actions.every(Boolean));
+});
+
+test("holding Shift asks for a fresh read, not the one already paid for", () => {
+  assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyA" }), "markup-again");
+  assert.equal(shortcutAction(macOption("KeyA", "å")), "markup");
+  // A rerun is an agent call, so it must not be a key held down.
+  assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyA", repeat: true }), null);
+  assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyA" }, { typing: true }), null);
+});
+
+test("Shift on a key that does not claim it leaves that key alone", () => {
+  assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyJ" }), "next-mark");
+  assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyS" }), "symbols");
 });
