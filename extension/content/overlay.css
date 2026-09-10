@@ -1132,13 +1132,49 @@ textarea:focus,
   background: var(--lp-danger);
 }
 
+/* The pill carries two answers to the same state: do the obvious thing, or
+   disagree with what the agent came back with and make it read again. Two
+   buttons rather than one clickable pill, so the second is reachable by
+   keyboard and says what it does out loud. */
+.markup-status .main,
+.markup-status .again {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.markup-status .again {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 13px;
+  opacity: 0.5;
+}
+
+.markup-status .again:hover,
+.markup-status .again:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, var(--lp-ink) 8%, transparent);
+}
+
 /* Said its piece, and shrank to something you can still glance at. */
 .markup-status.is-collapsed {
   padding: 7px;
   cursor: pointer;
 }
 
-.markup-status.is-collapsed .label {
+.markup-status.is-collapsed .label,
+.markup-status.is-collapsed .again {
   display: none;
 }
 
@@ -1152,7 +1188,7 @@ textarea:focus,
   display: inline;
 }
 
-.markup-status.is-idle,
-.markup-status.is-empty {
-  cursor: pointer;
+.markup-status.is-collapsed:hover .again,
+.markup-status.is-collapsed:focus-within .again {
+  display: inline-flex;
 }

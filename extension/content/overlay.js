@@ -68,9 +68,16 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
 .markup-status.is-idle .pulse { background: transparent; box-shadow: inset 0 0 0 1.5px #3f6b52; }
 .markup-status.is-empty .pulse { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(28,23,18,0.4); }
 .markup-status.is-error .pulse { background: #8a3a32; }
-.markup-status.is-collapsed .label { display: none; }
+.markup-status .main, .markup-status .again {
+  appearance: none; border: 0; background: transparent; font: inherit; color: inherit;
+  padding: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+.markup-status .again { flex: none; width: 18px; height: 18px; justify-content: center; opacity: 0.5; border-radius: 999px; }
+.markup-status .again:hover { opacity: 1; }
+.markup-status.is-collapsed .label, .markup-status.is-collapsed .again { display: none; }
 .markup-status.is-collapsed { padding: 7px; }
 .markup-status.is-collapsed:hover .label { display: inline; }
+.markup-status.is-collapsed:hover .again { display: inline-flex; }
 .markup-status.is-collapsed:hover { padding: 7px 12px; }
 @keyframes lp-markup-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 /* Enough of the rendered-message rules to stay readable if overlay.css loses
@@ -390,8 +397,24 @@ export class Overlay {
     el.hidden = false;
     el.className = `markup-status is-${state}`;
     el.title = copy.hint;
-    el.innerHTML = `<span class="pulse"></span><span class="label">${escapeHtml(copy.text)}</span>`;
-    el.onclick = () => this.handlers.onMarkupAction?.(this.markupState);
+    // Offered only once there is an answer to disagree with. While it is
+    // reading there is nothing to redo, and on a page never asked about the
+    // pill's own action already is "read this".
+    const rerunnable = state === "done" || state === "empty" || state === "error";
+    el.innerHTML =
+      `<button type="button" class="main"><span class="pulse"></span><span class="label">${escapeHtml(copy.text)}</span></button>` +
+      (rerunnable
+        ? `<button type="button" class="again" title="Read this page again \u00b7 \u2325\u21e7A" aria-label="Read this page again">\u21bb</button>`
+        : "");
+    el.onclick = null;
+    el.querySelector(".main").onclick = () => this.handlers.onMarkupAction?.(this.markupState);
+    const again = el.querySelector(".again");
+    if (again) {
+      again.onclick = (event) => {
+        event.stopPropagation();
+        this.handlers.onMarkupRerun?.();
+      };
+    }
 
     // Working has no end of its own; the others say their piece and shrink.
     if (state === "working") return;

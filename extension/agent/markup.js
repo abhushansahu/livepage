@@ -183,6 +183,28 @@ export function anchorMarkup(marks, blocks) {
   return kept;
 }
 
+/**
+ * Drops the marks you have already kept as your own highlights.
+ *
+ * This only bites on a second pass, and it is the reason a second pass is
+ * safe to offer. The agent reads the article, not your page, so asking again
+ * will happily suggest the sentence you kept the first time — and a
+ * suggestion to keep what you already own is noise drawn on top of your own
+ * colour. Containment either way, because a mark is rarely the exact span you
+ * dragged over.
+ */
+export function dropAlreadyKept(marks, highlights) {
+  const kept = (highlights || [])
+    .map((highlight) => normalizeText(highlight?.text || "").toLowerCase())
+    .filter((text) => text.length >= MIN_QUOTE);
+  if (!kept.length) return marks || [];
+  return (marks || []).filter((mark) => {
+    const text = normalizeText(mark?.text || "").toLowerCase();
+    if (!text) return false;
+    return !kept.some((own) => own.includes(text) || text.includes(own));
+  });
+}
+
 export function articleIsWorthMarking(parsed) {
   return (parsed?.wordCount || 0) >= MIN_WORDS && (parsed?.blocks || []).length >= 3;
 }

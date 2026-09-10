@@ -6,11 +6,18 @@ import {
   anchorMarkup,
   articleIsWorthMarking,
   buildMarkupPacket,
+  dropAlreadyKept,
   parseMarkupReply
 } from "../extension/agent/markup.js";
 import { looksLikeStableDocument, evaluateInfiniteScroll } from "../extension/parse/infinite-scroll.js";
 import { minimapTicks } from "../extension/content/minimap.js";
-import { symbolsMutedHere, toggleSymbolsForSite } from "../extension/shared/site-prefs.js";
+import {
+  SITE_SURFACES,
+  mutedHere,
+  symbolsMutedHere,
+  toggleSiteSurface,
+  toggleSymbolsForSite
+} from "../extension/shared/site-prefs.js";
 import { shortcutAction, isTypingTarget } from "../extension/content/selection.js";
 
 const blocks = [
@@ -323,6 +330,76 @@ test("no setting at all reads as nothing muted", () => {
   assert.equal(symbolsMutedHere(undefined, "https://example.com/a"), false);
 });
 
+
+// Every surface a reader can silence on one site works the same way, and the
+// point of the table is that they cannot drift apart.
+for (const surface of Object.keys(SITE_SURFACES)) {
+  test(`${surface} can be off for one site and on everywhere else`, () => {
+    const key = SITE_SURFACES[surface];
+    const off = toggleSiteSurface({}, "https://www.docs.example.com/a?x=1", surface);
+    assert.equal(off.muted, true);
+    assert.equal(off.host, "docs.example.com", "www. must not split a site in two");
+    assert.deepEqual(off.patch, { [key]: ["docs.example.com"] });
+
+    const settings = off.patch;
+    assert.equal(mutedHere(settings, "https://docs.example.com/another", surface), true);
+    assert.equal(mutedHere(settings, "https://elsewhere.com/a", surface), false);
+
+    const back = toggleSiteSurface(settings, "https://docs.example.com/a", surface);
+    assert.equal(back.muted, false);
+    assert.deepEqual(back.hosts, [], "turning it back on must not leave the host behind");
+  });
+}
+
+test("silencing one surface on a site says nothing about the others there", () => {
+  const settings = toggleSiteSurface({}, "https://noisy.example.com/a", "markup").patch;
+  assert.equal(mutedHere(settings, "https://noisy.example.com/a", "markup"), true);
+  assert.equal(mutedHere(settings, "https://noisy.example.com/a", "symbols"), false);
+  assert.equal(mutedHere(settings, "https://noisy.example.com/a", "minimap"), false);
+});
+
+test("a surface nobody has heard of cannot write to settings", () => {
+  const result = toggleSiteSurface({}, "https://example.com/a", "nonsense");
+  assert.equal(result.host, "");
+  assert.deepEqual(result.patch, {});
+  assert.equal(mutedHere({ nonsenseOffHosts: ["example.com"] }, "https://example.com/a", "nonsense"), false);
+});
+
+test("a page with no host cannot mute a surface, and does not corrupt the list", () => {
+  const settings = { markupOffHosts: ["a.com"] };
+  const result = toggleSiteSurface(settings, "not-a-url", "markup");
+  assert.equal(result.host, "");
+  assert.deepEqual(result.hosts, ["a.com"]);
+  assert.deepEqual(result.patch, {});
+});
+
+test("asking again does not re-suggest a passage you already kept", () => {
+  const marks = [
+    { text: "It is likely our results underestimate actual adoption.", color: "lemon" },
+    { text: "Surveys may lead to underreporting of actual adoption.", color: "sky" }
+  ];
+  const kept = dropAlreadyKept(marks, [
+    { text: "It is likely our results underestimate actual adoption." }
+  ]);
+  assert.equal(kept.length, 1);
+  assert.match(kept[0].text, /^Surveys may lead/);
+});
+
+test("a mark inside a longer highlight of yours is already yours", () => {
+  const kept = dropAlreadyKept(
+    [{ text: "results underestimate actual adoption" }],
+    [{ text: "It is likely our results underestimate actual adoption due to free tools." }]
+  );
+  assert.deepEqual(kept, []);
+});
+
+test("a highlight too short to be a quote cannot swallow the marks", () => {
+  const marks = [{ text: "It is likely our results underestimate adoption." }];
+  assert.equal(dropAlreadyKept(marks, [{ text: "the" }]).length, 1);
+  assert.equal(dropAlreadyKept(marks, []).length, 1);
+  assert.equal(dropAlreadyKept(marks, undefined).length, 1);
+});
+
 // On macOS, Option is the Alt key and composes a character with it, so the
 // letter never arrives as itself. These are the events Chrome actually emits
 // there; matching on `key` is why the shortcuts silently did nothing.
@@ -384,4 +461,17 @@ test("every shortcut is a distinct action, so none shadows another", () => {
   const actions = codes.map((code) => shortcutAction({ altKey: true, code }));
   assert.equal(new Set(actions).size, codes.length);
   assert.ok(actions.every(Boolean));
+});
+
+test("holding Shift asks for a fresh read, not the one already paid for", () => {
+  assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyA" }), "markup-again");
+  assert.equal(shortcutAction(macOption("KeyA", "å")), "markup");
+  // A rerun is an agent call, so it must not be a key held down.
+  assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyA", repeat: true }), null);
+  assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyA" }, { typing: true }), null);
+});
+
+test("Shift on a key that does not claim it leaves that key alone", () => {
+  assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyJ" }), "next-mark");
+  assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyS" }), "symbols");
 });

@@ -196,3 +196,18 @@ button.on {
   font-size: 11px;
   opacity: 0.6;
 }
+
+/* Not a switch: it does something once and leaves nothing behind it turned
+   on. The glyph in place of the dot is what says so at a glance. */
+.switch.is-action .glyph {
+  width: 8px;
+  flex: none;
+  font-size: 12px;
+  line-height: 1;
+  text-align: center;
+  opacity: 0.55;
+}
+
+.switch.is-action:hover .glyph {
+  opacity: 1;
+}

@@ -1095,25 +1095,39 @@
   }
 
   // extension/shared/site-prefs.js
+  var SITE_SURFACES = {
+    symbols: "symbolsOffHosts",
+    markup: "markupOffHosts",
+    minimap: "minimapOffHosts"
+  };
   function siteKey(url) {
     return hostnameOf(url);
   }
-  function symbolsMutedHere(settings2, url) {
+  function mutedHere(settings2, url, surface) {
+    const key = SITE_SURFACES[surface];
     const host = siteKey(url);
-    if (!host) return false;
-    return (settings2?.symbolsOffHosts || []).includes(host);
+    if (!key || !host) return false;
+    return (settings2?.[key] || []).includes(host);
   }
-  function toggleSymbolsForSite(settings2, url) {
+  function toggleSiteSurface(settings2, url, surface) {
+    const key = SITE_SURFACES[surface];
     const host = siteKey(url);
-    const current = settings2?.symbolsOffHosts || [];
-    if (!host) return { host: "", muted: false, symbolsOffHosts: current };
+    const current = key && settings2?.[key] || [];
+    if (!key || !host) return { surface, host: "", muted: false, hosts: current, patch: {} };
     const muted = current.includes(host);
+    const hosts = muted ? current.filter((item) => item !== host) : [...current, host];
     return {
+      surface,
       host,
       // Muted before means this turns them back on.
       muted: !muted,
-      symbolsOffHosts: muted ? current.filter((item) => item !== host) : [...current, host]
+      hosts,
+      patch: { [key]: hosts }
     };
+  }
+  function toggleSymbolsForSite(settings2, url) {
+    const next = toggleSiteSurface(settings2, url, "symbols");
+    return { host: next.host, muted: next.muted, symbolsOffHosts: next.hosts };
   }
 
   // extension/shared/time.js
@@ -1669,9 +1683,16 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
 .markup-status.is-idle .pulse { background: transparent; box-shadow: inset 0 0 0 1.5px #3f6b52; }
 .markup-status.is-empty .pulse { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(28,23,18,0.4); }
 .markup-status.is-error .pulse { background: #8a3a32; }
-.markup-status.is-collapsed .label { display: none; }
+.markup-status .main, .markup-status .again {
+  appearance: none; border: 0; background: transparent; font: inherit; color: inherit;
+  padding: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+.markup-status .again { flex: none; width: 18px; height: 18px; justify-content: center; opacity: 0.5; border-radius: 999px; }
+.markup-status .again:hover { opacity: 1; }
+.markup-status.is-collapsed .label, .markup-status.is-collapsed .again { display: none; }
 .markup-status.is-collapsed { padding: 7px; }
 .markup-status.is-collapsed:hover .label { display: inline; }
+.markup-status.is-collapsed:hover .again { display: inline-flex; }
 .markup-status.is-collapsed:hover { padding: 7px 12px; }
 @keyframes lp-markup-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 /* Enough of the rendered-message rules to stay readable if overlay.css loses
@@ -1962,8 +1983,17 @@ ${css}`;
       el.hidden = false;
       el.className = `markup-status is-${state}`;
       el.title = copy.hint;
-      el.innerHTML = `<span class="pulse"></span><span class="label">${escapeHtml2(copy.text)}</span>`;
-      el.onclick = () => this.handlers.onMarkupAction?.(this.markupState);
+      const rerunnable = state === "done" || state === "empty" || state === "error";
+      el.innerHTML = `<button type="button" class="main"><span class="pulse"></span><span class="label">${escapeHtml2(copy.text)}</span></button>` + (rerunnable ? `<button type="button" class="again" title="Read this page again \xB7 \u2325\u21E7A" aria-label="Read this page again">\u21BB</button>` : "");
+      el.onclick = null;
+      el.querySelector(".main").onclick = () => this.handlers.onMarkupAction?.(this.markupState);
+      const again = el.querySelector(".again");
+      if (again) {
+        again.onclick = (event) => {
+          event.stopPropagation();
+          this.handlers.onMarkupRerun?.();
+        };
+      }
       if (state === "working") return;
       this._markupHide = setTimeout(
         () => el.classList.add("is-collapsed"),
@@ -2734,10 +2764,12 @@ ${css}`;
     }
   }
   var SHORTCUTS = { KeyA: "markup", KeyS: "symbols", KeyJ: "next-mark", KeyK: "prev-mark" };
+  var SHIFTED = { KeyA: "markup-again" };
   function shortcutAction(event, { typing = false } = {}) {
     if (!event?.altKey || event.ctrlKey || event.metaKey) return null;
     if (event.repeat) return null;
     if (typing) return null;
+    if (event.shiftKey && SHIFTED[event.code]) return SHIFTED[event.code];
     return SHORTCUTS[event.code] || null;
   }
   function isTypingTarget(event, ownsEvent) {
@@ -3436,9 +3468,12 @@ ${css}`;
   var symbolsFlag = false;
   var symbolsMuted = false;
   var markupFlag = false;
+  var markupMuted = false;
+  var markupBusy = false;
   var markup = { marks: [], contentHash: "" };
   var minimap = null;
   var minimapFlag = true;
+  var minimapMuted = false;
   overlay.handlers = {
     onOpenHighlight: (id) => openOrCreateThread(id),
     onNote: (threadId, content) => mutate("ADD_MESSAGE", { pageId: page.id, threadId, message: { role: "user", content } }),
@@ -3461,21 +3496,29 @@ ${css}`;
     onOpenMention: (pageId, threadId) => openMention(pageId, threadId),
     onRefresh: () => refreshPage(),
     // The dot in the corner does whatever its state implies.
-    onMarkupAction: (state) => state === "done" ? jumpMark(1) : markupNow()
+    onMarkupAction: (state) => state === "done" ? jumpMark(1) : markupNow(),
+    // Its second button never implies anything: it always buys a fresh pass.
+    onMarkupRerun: () => markupNow({ force: true })
   };
   onBroadcast((message) => {
     if (message.kind === "CONTEXT_ACTION") handleContext(message.action);
     if (message.kind === "TOAST" && message.text) overlay.toast(message.text);
     if (message.kind === "CLEAR_MARKUP") clearAllMarks();
+    if (message.kind === "RERUN_MARKUP") markupNow({ force: true });
     if (message.kind === "JUMP_MARK") jumpMark(message.direction || 1);
     if (message.kind === "SETTINGS_CHANGED" && message.settings) {
+      const wasMarkup = markupOnHere();
+      const wasMinimap = minimapOnHere();
       settings = message.settings;
       overlay.setPreferences(settings);
       const next = resolveFlags(settings).flags;
       symbolsFlag = Boolean(next.articleSymbols);
       markupFlag = next.markup !== false;
       minimapFlag = next.minimap !== false;
-      if (symbolsMutedHere(settings, location.href) !== symbolsMuted || symbolsFlag !== Boolean(symbols)) {
+      readSitePrefs();
+      if (markupOnHere() !== wasMarkup) applyMarkup();
+      if (minimapOnHere() !== wasMinimap) refreshMinimap();
+      if (mutedHere(settings, location.href, "symbols") !== symbolsMuted || symbolsFlag !== Boolean(symbols)) {
         applySymbols(freshParse());
       }
     }
@@ -3500,6 +3543,7 @@ ${css}`;
     symbolsFlag = Boolean(flags.articleSymbols);
     markupFlag = flags.markup !== false;
     minimapFlag = flags.minimap !== false;
+    readSitePrefs();
     try {
       await overlay.ready;
     } catch (error) {
@@ -3614,15 +3658,19 @@ ${css}`;
       console.warn("LivePage anchor report failed", error);
     }
   }
-  async function runMarkup(parsed, { cachedOnly = false, manual = false } = {}) {
-    if (!markupFlag || infinite.infinite) return;
+  async function runMarkup(parsed, { cachedOnly = false, manual = false, force = false } = {}) {
+    if (!markupOnHere() || infinite.infinite) return;
+    if (markupBusy) return;
     clearMarks(document, markup.marks);
     markup = { marks: [], contentHash: parsed?.contentHash || "" };
     if (!articleIsWorthMarking(parsed)) {
       if (manual) overlay.toast("This page is too short to be worth marking up.");
       return;
     }
-    const announce = setTimeout(() => overlay.markupStatus("working"), 450);
+    markupBusy = true;
+    let announce = 0;
+    if (force) overlay.markupStatus("working");
+    else announce = setTimeout(() => overlay.markupStatus("working"), 450);
     try {
       const row = await call("MARKUP_PAGE", {
         url: location.href,
@@ -3630,7 +3678,10 @@ ${css}`;
         parsed,
         // Opening a page must never spend an agent call. Loading only repaints
         // what is already there; asking is what pays for a new pass.
-        cachedOnly
+        cachedOnly,
+        // Asking again throws away the answer already on file for this version
+        // of the article and reads it a second time.
+        force
       });
       clearTimeout(announce);
       markup = { marks: row?.marks || [], contentHash: row?.contentHash || "", agent: row?.agent };
@@ -3653,6 +3704,8 @@ ${css}`;
       clearTimeout(announce);
       console.warn("LivePage markup unavailable", error);
       overlay.markupStatus("error", { detail: markupError(error) });
+    } finally {
+      markupBusy = false;
     }
   }
   function markupError(error) {
@@ -3664,7 +3717,11 @@ ${css}`;
     return `Could not mark up: ${text.slice(0, 60)}`;
   }
   function refreshMinimap() {
-    if (!minimapFlag) return;
+    if (!minimapOnHere()) {
+      minimap?.destroy();
+      minimap = null;
+      return;
+    }
     const items = [];
     for (const highlight of page?.highlights || []) {
       const rect = highlightRect(highlight.id);
@@ -3717,16 +3774,40 @@ ${css}`;
       maxPercent: reachedPercent
     });
   }
-  function markupNow() {
+  function markupNow({ force = false } = {}) {
     if (!markupFlag) {
       overlay.toast("Marking up is off in Settings.");
+      return;
+    }
+    if (markupMuted) {
+      overlay.toast(`Marking up is off for ${siteKey(location.href)} \xB7 turn it back on from the toolbar`);
       return;
     }
     if (infinite.infinite) {
       overlay.toast("This is a feed, not an article.");
       return;
     }
-    runMarkup(freshParse(), { manual: true });
+    runMarkup(freshParse(), { manual: true, force });
+  }
+  function markupOnHere() {
+    return markupFlag && !markupMuted;
+  }
+  function minimapOnHere() {
+    return minimapFlag && !minimapMuted;
+  }
+  function readSitePrefs() {
+    markupMuted = mutedHere(settings, location.href, "markup");
+    minimapMuted = mutedHere(settings, location.href, "minimap");
+  }
+  function applyMarkup() {
+    if (!markupOnHere()) {
+      clearMarks(document, markup.marks);
+      markup = { marks: [], contentHash: markup.contentHash };
+      overlay.markupStatus(null);
+      refreshMinimap();
+      return;
+    }
+    runMarkup(freshParse(), { cachedOnly: true });
   }
   function jumpMark(direction) {
     if (!markup.marks.length) return;
@@ -3785,7 +3866,7 @@ ${css}`;
     return symbols?.count || 0;
   }
   function applySymbols(parsed) {
-    symbolsMuted = symbolsMutedHere(settings, location.href);
+    symbolsMuted = mutedHere(settings, location.href, "symbols");
     if (!symbolsFlag || symbolsMuted) {
       stopSymbols();
       return;
@@ -3992,6 +4073,7 @@ ${css}`;
       if (!action) return;
       event.preventDefault();
       if (action === "markup") markupNow();
+      if (action === "markup-again") markupNow({ force: true });
       if (action === "symbols") toggleSymbolsHere();
       if (action === "next-mark") jumpMark(1);
       if (action === "prev-mark") jumpMark(-1);

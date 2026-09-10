@@ -24,7 +24,7 @@ import {
 } from "./markup-marks.js";
 import { articleIsWorthMarking } from "../agent/markup.js";
 import { createMinimap, minimapTicks } from "./minimap.js";
-import { symbolsMutedHere, toggleSymbolsForSite } from "../shared/site-prefs.js";
+import { mutedHere, siteKey, toggleSymbolsForSite } from "../shared/site-prefs.js";
 import { Overlay } from "./overlay.js";
 import { toolbarAction, rangeRect, shortcutAction, isTypingTarget } from "./selection.js";
 import { COLOR_IDS } from "../shared/colors.js";
@@ -60,9 +60,12 @@ let symbolLoop = null;
 let symbolsFlag = false;
 let symbolsMuted = false;
 let markupFlag = false;
+let markupMuted = false;
+let markupBusy = false;
 let markup = { marks: [], contentHash: "" };
 let minimap = null;
 let minimapFlag = true;
+let minimapMuted = false;
 
 overlay.handlers = {
   onOpenHighlight: (id) => openOrCreateThread(id),
@@ -90,25 +93,35 @@ overlay.handlers = {
   onOpenMention: (pageId, threadId) => openMention(pageId, threadId),
   onRefresh: () => refreshPage(),
   // The dot in the corner does whatever its state implies.
-  onMarkupAction: (state) => (state === "done" ? jumpMark(1) : markupNow())
+  onMarkupAction: (state) => (state === "done" ? jumpMark(1) : markupNow()),
+  // Its second button never implies anything: it always buys a fresh pass.
+  onMarkupRerun: () => markupNow({ force: true })
 };
 
 onBroadcast((message) => {
   if (message.kind === "CONTEXT_ACTION") handleContext(message.action);
   if (message.kind === "TOAST" && message.text) overlay.toast(message.text);
   if (message.kind === "CLEAR_MARKUP") clearAllMarks();
+  if (message.kind === "RERUN_MARKUP") markupNow({ force: true });
   if (message.kind === "JUMP_MARK") jumpMark(message.direction || 1);
   if (message.kind === "SETTINGS_CHANGED" && message.settings) {
+    // What was on here a moment ago, so a switch thrown in the popup can be
+    // acted on rather than waiting for a reload.
+    const wasMarkup = markupOnHere();
+    const wasMinimap = minimapOnHere();
     settings = message.settings;
     overlay.setPreferences(settings);
     const next = resolveFlags(settings).flags;
     symbolsFlag = Boolean(next.articleSymbols);
     markupFlag = next.markup !== false;
     minimapFlag = next.minimap !== false;
+    readSitePrefs();
+    if (markupOnHere() !== wasMarkup) applyMarkup();
+    if (minimapOnHere() !== wasMinimap) refreshMinimap();
     // Another tab on this site may have just muted it. Anything else saved in
     // Settings is none of our business — re-parsing the page for it would be
     // rebuilding every symbol on the page for no reason.
-    if (symbolsMutedHere(settings, location.href) !== symbolsMuted || symbolsFlag !== Boolean(symbols)) {
+    if (mutedHere(settings, location.href, "symbols") !== symbolsMuted || symbolsFlag !== Boolean(symbols)) {
       applySymbols(freshParse());
     }
   }
@@ -139,6 +152,7 @@ async function boot() {
   symbolsFlag = Boolean(flags.articleSymbols);
   markupFlag = flags.markup !== false;
   minimapFlag = flags.minimap !== false;
+  readSitePrefs();
 
   try {
     await overlay.ready;
@@ -299,18 +313,25 @@ async function flushAnchorReport() {
  * too short to skim. The answer is cached against the article's content, so
  * this costs one call per version of a piece however often you return to it.
  */
-async function runMarkup(parsed, { cachedOnly = false, manual = false } = {}) {
-  if (!markupFlag || infinite.infinite) return;
+async function runMarkup(parsed, { cachedOnly = false, manual = false, force = false } = {}) {
+  if (!markupOnHere() || infinite.infinite) return;
+  // A pass already in flight is the answer to a second press. Without this,
+  // a reader who cannot see it working buys the same read twice.
+  if (markupBusy) return;
   clearMarks(document, markup.marks);
   markup = { marks: [], contentHash: parsed?.contentHash || "" };
   if (!articleIsWorthMarking(parsed)) {
     if (manual) overlay.toast("This page is too short to be worth marking up.");
     return;
   }
+  markupBusy = true;
 
   // A cached answer comes back at once, so say nothing for a moment first —
-  // a spinner that flashes and vanishes is worse than no spinner at all.
-  const announce = setTimeout(() => overlay.markupStatus("working"), 450);
+  // a spinner that flashes and vanishes is worse than no spinner at all. A
+  // forced pass has no cache to come back from, so it says so straight away.
+  let announce = 0;
+  if (force) overlay.markupStatus("working");
+  else announce = setTimeout(() => overlay.markupStatus("working"), 450);
   try {
     const row = await call("MARKUP_PAGE", {
       url: location.href,
@@ -318,7 +339,10 @@ async function runMarkup(parsed, { cachedOnly = false, manual = false } = {}) {
       parsed,
       // Opening a page must never spend an agent call. Loading only repaints
       // what is already there; asking is what pays for a new pass.
-      cachedOnly
+      cachedOnly,
+      // Asking again throws away the answer already on file for this version
+      // of the article and reads it a second time.
+      force
     });
     clearTimeout(announce);
     markup = { marks: row?.marks || [], contentHash: row?.contentHash || "", agent: row?.agent };
@@ -346,6 +370,8 @@ async function runMarkup(parsed, { cachedOnly = false, manual = false } = {}) {
     // did nothing. Say what went wrong, and leave it up.
     console.warn("LivePage markup unavailable", error);
     overlay.markupStatus("error", { detail: markupError(error) });
+  } finally {
+    markupBusy = false;
   }
 }
 
@@ -367,7 +393,13 @@ function markupError(error) {
  * on the page, and that changes as the page settles and as you keep things.
  */
 function refreshMinimap() {
-  if (!minimapFlag) return;
+  if (!minimapOnHere()) {
+    // Turned off for this site while it was drawn. Nothing to keep a torn-down
+    // strip around for; the next time it is on it is rebuilt from scratch.
+    minimap?.destroy();
+    minimap = null;
+    return;
+  }
   const items = [];
   for (const highlight of page?.highlights || []) {
     const rect = highlightRect(highlight.id);
@@ -421,17 +453,59 @@ function refreshMinimap() {
   });
 }
 
-/** Asks for a pass over this article, and pays for one if there is none. */
-function markupNow() {
+/**
+ * Asks for a pass over this article, and pays for one if there is none.
+ *
+ * `force` is the reader saying the answer on file is not good enough — a
+ * fresh read of the same article, at the cost of another agent call. It is
+ * never automatic for that reason.
+ */
+function markupNow({ force = false } = {}) {
   if (!markupFlag) {
     overlay.toast("Marking up is off in Settings.");
+    return;
+  }
+  if (markupMuted) {
+    overlay.toast(`Marking up is off for ${siteKey(location.href)} · turn it back on from the toolbar`);
     return;
   }
   if (infinite.infinite) {
     overlay.toast("This is a feed, not an article.");
     return;
   }
-  runMarkup(freshParse(), { manual: true });
+  runMarkup(freshParse(), { manual: true, force });
+}
+
+/** Whether the marks and the edge strip are wanted on this particular site. */
+function markupOnHere() {
+  return markupFlag && !markupMuted;
+}
+
+function minimapOnHere() {
+  return minimapFlag && !minimapMuted;
+}
+
+function readSitePrefs() {
+  markupMuted = mutedHere(settings, location.href, "markup");
+  minimapMuted = mutedHere(settings, location.href, "minimap");
+}
+
+/**
+ * Puts the page in line with whatever marking up now means here.
+ *
+ * Turning it off has to take the marks off the page; turning it back on has to
+ * put back whatever was already paid for — and only that. A switch thrown in
+ * the toolbar is not a request to spend an agent call.
+ */
+function applyMarkup() {
+  if (!markupOnHere()) {
+    clearMarks(document, markup.marks);
+    markup = { marks: [], contentHash: markup.contentHash };
+    overlay.markupStatus(null);
+    refreshMinimap();
+    return;
+  }
+  runMarkup(freshParse(), { cachedOnly: true });
 }
 
 /** Moves the reader between the marks. The whole point of making them. */
@@ -509,7 +583,7 @@ function mountSymbols(parsed) {
 
 /** Paints symbols unless this site is one you have turned them off for. */
 function applySymbols(parsed) {
-  symbolsMuted = symbolsMutedHere(settings, location.href);
+  symbolsMuted = mutedHere(settings, location.href, "symbols");
   if (!symbolsFlag || symbolsMuted) {
     stopSymbols();
     return;
@@ -748,6 +822,7 @@ function watchSelection() {
     // stray "ß" as well as us getting the shortcut.
     event.preventDefault();
     if (action === "markup") markupNow();
+    if (action === "markup-again") markupNow({ force: true });
     if (action === "symbols") toggleSymbolsHere();
     if (action === "next-mark") jumpMark(1);
     if (action === "prev-mark") jumpMark(-1);
