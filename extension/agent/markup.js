@@ -20,13 +20,24 @@ import { normalizeText } from "../parse/page-parser.js";
  * both to one number either starves the long piece or invites padding in the
  * short one. This scales with length and still sits well above what a good
  * reply needs, so it binds only on a runaway.
+ *
+ * It used to sit at one mark per 700 words with a floor of four, which meant
+ * every article under about 2,800 words — most of what anyone reads — was
+ * held to four marks whatever it argued. Four is not enough to carry an
+ * argument: a reader gets the claim and none of what it stands on.
+ *
+ * One per 250 with a floor of six is roughly a mark every couple of
+ * paragraphs, which is what the prompt now asks for. The number has to sit
+ * above a good reply rather than on top of it — a ceiling that trims what an
+ * honest read produced is a quota wearing a different hat, and the reader
+ * never learns which marks it took.
  */
 export function markCeiling(wordCount = 0) {
-  return Math.max(4, Math.min(24, Math.ceil((wordCount || 0) / 700)));
+  return Math.max(6, Math.min(MAX_MARKS, Math.ceil((wordCount || 0) / 250)));
 }
 
 /** The most any reply may contain, whatever the article. */
-export const MAX_MARKS = 24;
+export const MAX_MARKS = 32;
 
 /** Below this there is nothing to skim, and the call is not worth making. */
 export const MIN_WORDS = 320;
@@ -59,26 +70,55 @@ export function buildMarkupPacket({ pageTitle = "", url = "", blocks = [], wordC
     `actually saying**. Not the topic sentence of every section. Not context.`,
     `Not a passage that is merely well written.`,
     ``,
-    `There is no target number, and you are not being scored on finding one.`,
-    `An article making two real points gets two marks. One that makes none —`,
-    `an announcement, a listing, boilerplate — gets **zero**, and returning`,
-    `nothing is the correct answer there. Padding to look thorough is the one`,
-    `way to fail this: every extra mark makes the real ones harder to see.`,
+    `The test is what someone gets from your marks alone. They should come`,
+    `away holding the argument — what it claims, what those claims rest on,`,
+    `and where it turns. If they would finish with a headline and none of the`,
+    `reasoning under it, you marked too little.`,
+    ``,
+    `Both directions fail, and marking too little is the more common one.`,
+    `Padding with passages that carry nothing buries the real marks. But an`,
+    `article makes its case over several moves, and marking one of them hands`,
+    `a reader a gap they have no way of knowing is there. A piece that is`,
+    `arguing something usually gives you a passage worth stopping at every few`,
+    `paragraphs; if you have marked a whole article in two or three places,`,
+    `read it again, because you are summarising rather than marking.`,
+    ``,
+    `There is still no quota, and you are not scored on reaching one. An`,
+    `article that makes no point worth stopping at — an announcement, a`,
+    `listing, boilerplate — gets **zero**, and returning nothing is the`,
+    `correct answer there.`,
     ``,
     wordCount
       ? `This piece runs about ${wordCount} words. ${
           long
             ? `A piece this long usually carries several distinct points, and a reader skimming it needs enough marks to follow the argument from one end to the other — a long piece marked in three places leaves them stranded in the middle. Mark each point that carries it, including the evidence a point stands on where losing that evidence would leave the claim unsupported.`
-            : `A piece this short usually carries one or two points. Do not look for more than are there.`
+            : `A piece this short still makes more than one move — the claim, and whatever it rests on — so look for those rather than settling on the first sentence that sounds like a thesis.`
         }`
       : null,
-    `Never mark more than ${ceiling}; if you are near that, you are padding.`,
+    `Never mark more than ${ceiling}. That is a guard against a runaway reply,`,
+    `not a target and not a shape to aim at.`,
     ``,
     `## Colours`,
     ``,
-    `Pick the one that says what the passage *is*. Do not default to one.`,
+    `Six colours, and each is a different reason to stop. Choosing well is`,
+    `half of what a mark is worth: the colour tells a reader what kind of`,
+    `attention a passage wants before they have read a word of it.`,
     ``,
     palette,
+    ``,
+    `Ask what the passage *is*, not what it is about. The thing the piece is`,
+    `claiming is a key idea; the study, number or quotation holding that claim`,
+    `up is evidence; something a reader could go and do is an action; a risk`,
+    `or objection the author raises is a concern; a connection that travels`,
+    `somewhere beyond this article is an insight; something left unexplained`,
+    `is a question.`,
+    ``,
+    `An article marked entirely in one colour has thrown away most of what`,
+    `the marks could have said, and it is usually a sign of labelling rather`,
+    `than reading — a claim and the evidence under it are not the same kind`,
+    `of passage. Anything with an argument in it normally earns three or more`,
+    `of these. Do not force a colour onto a passage to spread them, and do`,
+    `not fall back on the first in the list.`,
     ``,
     `## Quoting`,
     ``,
@@ -168,7 +208,15 @@ export function anchorMarkup(marks, blocks) {
     const confidence = anchorConfidence(found, { exact: mark.quote });
     // Only a clean match survives. A loose one is the model having rewritten
     // the sentence, not the page having changed underneath us.
-    if (confidence !== "exact" && confidence !== "close") continue;
+    //
+    // The exception is a passage that occurs more than once. Ambiguity is
+    // scored from the prefix and suffix around a quote, and a model is never
+    // asked for either — so a sentence the article happens to repeat scored
+    // as loose and was thrown away, despite being the one thing we can be
+    // certain of: text found whole in the article. The first occurrence is
+    // taken, and the overlap check below stops two marks landing on one span.
+    const verbatim = found.rung === 1;
+    if (!verbatim && confidence !== "exact" && confidence !== "close") continue;
     if (used.some(([start, end]) => found.start < end && start < found.end)) continue;
     used.push([found.start, found.end]);
 
