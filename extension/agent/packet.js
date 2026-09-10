@@ -18,17 +18,24 @@ export const AGENT_TARGETS = {
 export const CURSOR_MODELS = [
   { id: "composer-2.5", label: "Composer 2.5" },
   { id: "auto", label: "Auto" },
+  { id: "claude-opus-5-thinking-high", label: "Claude Opus 5 Thinking" },
+  { id: "claude-sonnet-5-thinking-high", label: "Claude Sonnet 5 Thinking" },
+  { id: "claude-fable-5-thinking-high", label: "Claude Fable 5 Thinking" },
+  { id: "gpt-5.3-codex", label: "Codex 5.3" },
   { id: "gpt-5.2", label: "GPT-5.2" },
-  { id: "claude-4.6-opus", label: "Claude 4.6 Opus" },
-  { id: "claude-4.6-sonnet", label: "Claude 4.6 Sonnet" }
+  { id: "cursor-grok-4.6-high", label: "Cursor Grok 4.6" },
+  { id: "gemini-3.7-flash-high", label: "Gemini 3.7 Flash" }
 ];
 
 export const CLAUDE_CODE_MODELS = [
   { id: "sonnet", label: "Sonnet (Claude Code default)" },
   { id: "opus", label: "Opus" },
   { id: "haiku", label: "Haiku" },
-  { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
-  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }
+  { id: "fable", label: "Fable" },
+  { id: "claude-opus-5", label: "Claude Opus 5" },
+  { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
+  { id: "claude-fable-5", label: "Claude Fable 5" },
+  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" }
 ];
 
 export function buildAgentPacket({ page, thread, ask, ledger, agent = "cursor", model = "" }) {
