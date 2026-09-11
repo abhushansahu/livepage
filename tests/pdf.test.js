@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import {
   blocksFromItems,
   documentMetrics,
@@ -260,6 +261,16 @@ test("a viewer URL from another install is still recognised", () => {
   // origin — only the path and the file it carries.
   const other = viewerUrlFor("https://example.com/a.pdf", "chrome-extension://zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz/pdf/viewer.html");
   assert.equal(sourceUrlFrom(other), "https://example.com/a.pdf");
+});
+
+test("the manifest asks for local files, which the viewer cannot do without", () => {
+  // `looksLikePdfUrl` offers file: URLs, and the viewer fetches whatever it is
+  // given. Without this pattern Chrome refuses the read even with "Allow
+  // access to file URLs" ticked, and pdf.js can only call that a missing
+  // document — so the offer and the permission have to agree.
+  const manifest = JSON.parse(readFileSync(new URL("../extension/manifest.json", import.meta.url), "utf8"));
+  assert.ok(manifest.host_permissions.includes("file:///*"));
+  assert.equal(looksLikePdfUrl("file:///Users/me/papers/on-bullshit.pdf"), true);
 });
 
 test("an ordinary page is not a viewer URL", () => {

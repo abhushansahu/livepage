@@ -123,9 +123,9 @@ npm test
 
 - This is an extension, not a research browser. It cannot rewrite navigation the way Horse Trails does.
 - Agent replies go through a **local host** (`npm run agent-host`) that shells out to CLIs already on this machine. There is no cloud LivePage API. If the host is down, you still have the packet and paste-back. Optional: `LIVEPAGE_CURSOR_BIN` / `LIVEPAGE_CLAUDE_BIN` / `LIVEPAGE_AGENT_TOKEN`.
-- The extension runs on every http(s) page because the product is “think on the live web.” Host access is `http://*/*` and `https://*/*` for that, plus harvest/RSS fetches. Pages cannot load extension JS; only `overlay.css` is web-accessible.
+- The extension runs on every http(s) page because the product is “think on the live web.” Host access is `http://*/*` and `https://*/*` for that, plus harvest/RSS fetches, and `file:///*` so a PDF on disk can be read — that last one stays inert until you tick **Allow access to file URLs**. Pages cannot load extension JS; only `overlay.css` is web-accessible.
 - Highlights use text-quote selectors. A page that rewrites the paragraph can leave a highlight with nowhere to sit; it collects in a dock with its thread intact, and you re-attach it by selecting the passage where it lives now.
-- PDFs: a local file needs **Allow access to file URLs** ticked on `chrome://extensions` — no manifest key can request it. A highlight has to sit on one page; a selection crossing a page break is refused rather than quietly halved. `⌥A` markup and the edge minimap are not wired to PDFs yet. There is no auto-redirect of PDF URLs, by choice.
+- PDFs: a local file needs **Allow access to file URLs** ticked on `chrome://extensions`. The manifest asks for `file:///*`, but only you can grant it, and Chrome reports a refused read as a missing document. A highlight has to sit on one page; a selection crossing a page break is refused rather than quietly halved. `⌥A` markup and the edge minimap are not wired to PDFs yet. There is no auto-redirect of PDF URLs, by choice.
 - Chrome cannot `git push`. The vault dump is files; sync is your git (or Obsidian Git).
 - Very large `obsidian://` URIs can fail; the bound folder or downloaded markdown is the reliable copy.
 - Harvest uses the cookies of **this** Chrome profile. If you are not logged into X in this profile, LivePage cannot invent that session.
