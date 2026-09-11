@@ -62,7 +62,8 @@ export function parseDocument(doc, url = "") {
         id,
         tag,
         text,
-        heading: /^h[1-4]$/.test(tag)
+        heading: /^h[1-4]$/.test(tag),
+        links: linksIn(node, url)
       });
       if (/^h[1-4]$/.test(tag)) headings.push(text);
     }
@@ -88,6 +89,46 @@ export function parseDocument(doc, url = "") {
     contentHash: blockIdFromText(allText),
     blocks
   };
+}
+
+const MAX_LINKS_PER_BLOCK = 4;
+
+/**
+ * The links a paragraph carries, kept rather than flattened away.
+ *
+ * `textContent` is what every other field here is made of, and it destroys
+ * every href on the page. That is fine for anchoring a highlight and wrong for
+ * an agent: an article that says "the upstream fix" with a link to it becomes
+ * an article that alludes to a source nobody can reach. The words survive and
+ * the address does not, so the one question a reader actually asks — where
+ * does this number come from — has no answer left in the packet.
+ */
+function linksIn(node, pageUrl) {
+  const links = [];
+  const seen = new Set();
+  for (const anchor of node.querySelectorAll("a[href]")) {
+    const href = absoluteUrl(anchor.getAttribute("href"), pageUrl);
+    const text = normalizeText(anchor.textContent);
+    if (!href || !text || seen.has(href)) continue;
+    seen.add(href);
+    links.push({ text, href });
+    if (links.length >= MAX_LINKS_PER_BLOCK) break;
+  }
+  return links;
+}
+
+/**
+ * A page-relative href as somewhere you could actually go, or "" if it is not
+ * a place — `mailto:`, `javascript:` and a bare `#section` are not sources.
+ */
+export function absoluteUrl(href, base = "") {
+  if (!href) return "";
+  try {
+    const url = base ? new URL(href, base) : new URL(href);
+    return /^https?:$/.test(url.protocol) ? url.toString() : "";
+  } catch {
+    return "";
+  }
 }
 
 function pickRoot(doc) {

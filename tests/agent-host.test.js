@@ -3,7 +3,7 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import { realpath } from "node:fs/promises";
 import test from "node:test";
-import { parseAgentOutput, prepareWorkspace } from "../host/ask.mjs";
+import { claudeArgs, parseAgentOutput, prepareWorkspace } from "../host/ask.mjs";
 import {
   hostHeaderAllowed,
   listenAddress,
@@ -39,6 +39,37 @@ test("parseAgentOutput keeps plain text replies", () => {
   const parsed = parseAgentOutput("Just a paragraph.");
   assert.equal(parsed.text, "Just a paragraph.");
   assert.equal(parsed.sessionId, "");
+});
+
+test("a Claude ask may look things up, and has the turns to do it", () => {
+  const args = claudeArgs({ packet: "# LivePage\n", workspace: "/tmp/ws", model: "sonnet", resumeId: "" });
+  const tools = args.slice(args.indexOf("--allowedTools") + 1, args.indexOf("--disallowedTools"));
+  assert.ok(tools.includes("WebFetch"), "an agent that cannot open a link cannot check a source");
+  assert.ok(tools.includes("WebSearch"));
+  // One turn is not enough to reach for anything: asking for a page and
+  // reading it both cost a turn before there is a word to say.
+  assert.ok(Number(args[args.indexOf("--max-turns") + 1]) > 2);
+});
+
+test("the tool allowlist is last, so it cannot swallow the flags after it", () => {
+  const args = claudeArgs({ packet: "x", workspace: "/tmp/ws", model: "opus", resumeId: "ses_1" });
+  assert.equal(args.indexOf("--allowedTools"), args.lastIndexOf("--allowedTools"));
+  assert.ok(args.indexOf("--model") < args.indexOf("--allowedTools"));
+  assert.ok(args.indexOf("--resume") < args.indexOf("--allowedTools"));
+});
+
+test("a reading surface never asks the reader for a shell", () => {
+  const args = claudeArgs({ packet: "x", workspace: "/tmp/ws", model: "", resumeId: "" });
+  const denied = args.slice(args.indexOf("--disallowedTools") + 1);
+  for (const tool of ["Bash", "Edit", "Write"]) assert.ok(denied.includes(tool), tool);
+});
+
+test("a run that ran out of turns is not reported as a login problem", () => {
+  const parsed = parseAgentOutput(
+    JSON.stringify({ type: "result", is_error: true, subtype: "error_max_turns", session_id: "ses_9" })
+  );
+  assert.equal(parsed.text, "");
+  assert.equal(parsed.error, "error_max_turns");
 });
 
 test("guard rejects public origins and non-loopback Host headers", () => {

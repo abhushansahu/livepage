@@ -91,7 +91,8 @@
           id,
           tag,
           text,
-          heading: /^h[1-4]$/.test(tag)
+          heading: /^h[1-4]$/.test(tag),
+          links: linksIn(node, url)
         });
         if (/^h[1-4]$/.test(tag)) headings.push(text);
       }
@@ -109,6 +110,29 @@
       contentHash: blockIdFromText(allText),
       blocks: blocks2
     };
+  }
+  var MAX_LINKS_PER_BLOCK = 4;
+  function linksIn(node, pageUrl) {
+    const links = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const anchor of node.querySelectorAll("a[href]")) {
+      const href = absoluteUrl(anchor.getAttribute("href"), pageUrl);
+      const text = normalizeText(anchor.textContent);
+      if (!href || !text || seen.has(href)) continue;
+      seen.add(href);
+      links.push({ text, href });
+      if (links.length >= MAX_LINKS_PER_BLOCK) break;
+    }
+    return links;
+  }
+  function absoluteUrl(href, base = "") {
+    if (!href) return "";
+    try {
+      const url = base ? new URL(href, base) : new URL(href);
+      return /^https?:$/.test(url.protocol) ? url.toString() : "";
+    } catch {
+      return "";
+    }
   }
   function pickRoot(doc) {
     for (const selector of CONTENT_SELECTORS) {

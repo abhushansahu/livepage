@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { canonicalizeUrl, hostnameOf, pageIdFromUrl } from "../extension/shared/url.js";
 import { blockIdFromText } from "../extension/shared/id.js";
-import { uniqueBlocks } from "../extension/parse/page-parser.js";
+import { absoluteUrl, uniqueBlocks } from "../extension/parse/page-parser.js";
 import { hostLooksInfinite, evaluateInfiniteScroll } from "../extension/parse/infinite-scroll.js";
 import { toolbarAction } from "../extension/content/selection.js";
-import { buildAgentPacket, nextLedger } from "../extension/agent/packet.js";
+import { buildAgentPacket, linksFrom, nextLedger } from "../extension/agent/packet.js";
 import { pageToMarkdown, suggestedFilename } from "../extension/export/obsidian.js";
 
 test("canonicalizeUrl strips tracking and www", () => {
@@ -42,7 +42,7 @@ test("infinite hosts and feed roles are detected", () => {
   assert.match(result.reason, /infinite feed/);
 });
 
-test("agent packet includes only new blocks and the strict ask", () => {
+test("agent packet includes only new blocks, and sends the agent after sources", () => {
   const page = {
     id: "p_1",
     title: "Essay",
@@ -78,9 +78,68 @@ test("agent packet includes only new blocks and the strict ask", () => {
   assert.match(packet.markdown, /Does this span redefine reading\?/);
   assert.match(packet.markdown, /fresh evidence/);
   assert.doesNotMatch(packet.markdown, /already sent/);
-  assert.match(packet.markdown, /Answer STRICTLY the user ask/);
+  // The contract used to end at "answer strictly using this packet", which
+  // made "the page does not say" a complete answer. A reader who asks again
+  // wants the source opened, not the gap restated.
+  assert.match(packet.markdown, /go and get it/);
+  assert.doesNotMatch(packet.markdown, /STRICTLY/);
   const ledger = nextLedger({ sentBlockIds: ["b_old"] }, packet, page.id);
   assert.ok(ledger.sentBlockIds.includes("b_new"));
+});
+
+test("a packet carries the links the page was standing on", () => {
+  // `textContent` used to eat every href, so an article that cites an upstream
+  // fix arrived as an article that gestured at one. The agent could not name
+  // the source, let alone open it.
+  const page = {
+    id: "p1",
+    url: "https://site.test/report",
+    parsed: {
+      blocks: [
+        {
+          id: "b_new",
+          tag: "p",
+          text: "The 100,000 figure comes from the upstream fix.",
+          links: [{ text: "the upstream fix", href: "https://github.test/org/repo/pull/7" }]
+        }
+      ]
+    },
+    highlights: [],
+    threads: []
+  };
+  const packet = buildAgentPacket({ page, thread: null, ask: "Where does that number come from?" });
+  assert.match(packet.markdown, /## Where this page points/);
+  assert.match(packet.markdown, /\[the upstream fix\]\(https:\/\/github\.test\/org\/repo\/pull\/7\)/);
+});
+
+test("a page with no links gets no empty section", () => {
+  const page = {
+    id: "p1",
+    url: "https://site.test/report",
+    parsed: { blocks: [{ id: "b1", tag: "p", text: "No links here at all.", links: [] }] },
+    highlights: [],
+    threads: []
+  };
+  const packet = buildAgentPacket({ page, thread: null, ask: "What is this?" });
+  assert.doesNotMatch(packet.markdown, /Where this page points/);
+});
+
+test("only somewhere you could actually go counts as a link", () => {
+  assert.equal(absoluteUrl("/fix/7", "https://site.test/report"), "https://site.test/fix/7");
+  assert.equal(absoluteUrl("https://other.test/a"), "https://other.test/a");
+  assert.equal(absoluteUrl("#section", "https://site.test/report"), "https://site.test/report#section");
+  assert.equal(absoluteUrl("mailto:a@b.test", "https://site.test/report"), "");
+  assert.equal(absoluteUrl("javascript:void(0)", "https://site.test/report"), "");
+  assert.equal(absoluteUrl("", "https://site.test/report"), "");
+});
+
+test("packet links are deduped and capped", () => {
+  const blocks = Array.from({ length: 20 }, (_, i) => ({
+    links: [{ text: `link ${i}`, href: `https://site.test/${i}` }, { text: "same", href: "https://site.test/0" }]
+  }));
+  const links = linksFrom(blocks);
+  assert.equal(links.length, 12);
+  assert.equal(new Set(links.map((l) => l.href)).size, 12);
 });
 
 test("follow-up packets keep the thread and ask the agent to continue", () => {

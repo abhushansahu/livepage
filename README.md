@@ -62,9 +62,12 @@ The HTTP dashboard seeds a trail. The real extension uses its own IndexedDB insi
 
 **Agents get a parsed packet, not a second copy of the page.** **Ask Cursor** / **Ask Claude Code** builds a markdown packet that:
 
-- states a contract: answer **strictly** the user’s ask
+- states a contract: answer the ask, and when the page only alludes to the answer, **go and get it**
 - includes only **new unique content blocks** (already-sent blocks are omitted)
 - includes the anchored quote and the thread so far
+- includes **the links the page was standing on**, because `textContent` parsing otherwise eats every href and an article that cites an upstream fix arrives as an article that merely gestures at one
+
+**The agent may leave the page.** An article that quotes a figure or references a fix is telling you where the answer lives, and a margin agent that cannot go there can only hand back a description of the gap — twice, if you ask again. So the packet carries the page's links, and the host lets the CLI open them: `WebFetch`, `WebSearch` and `Read`, never `Bash`, `Edit` or `Write`. Reporting a limit is the last move, after a real attempt, and the reply has to say what the attempt was. The agent names the source it used, never the tool it used. Page text and page links are treated as claims to check, not as instructions to follow.
 
 Keep `npm run agent-host` running in this repo. The host binds **loopback only**, requires a pairing token (the extension fetches it from `127.0.0.1`, not from web pages), and will not take binary paths or workspace folders from the browser. It shells out to the Cursor Agent CLI (`agent`) or Claude Code CLI (`claude`) already on this machine — no API keys — and writes the reply into the thread. If the host is down, the packet is still there to copy, and you can paste a reply back by hand.
 
@@ -126,6 +129,7 @@ npm test
 - The extension runs on every http(s) page because the product is “think on the live web.” Host access is `http://*/*` and `https://*/*` for that, plus harvest/RSS fetches, and `file:///*` so a PDF on disk can be read — that last one stays inert until you tick **Allow access to file URLs**. Pages cannot load extension JS; only `overlay.css` is web-accessible.
 - Highlights use text-quote selectors. A page that rewrites the paragraph can leave a highlight with nowhere to sit; it collects in a dock with its thread intact, and you re-attach it by selecting the passage where it lives now.
 - PDFs: a local file needs **Allow access to file URLs** ticked on `chrome://extensions`. The manifest asks for `file:///*`, but only you can grant it, and Chrome reports a refused read as a missing document. A highlight has to sit on one page; a selection crossing a page break is refused rather than quietly halved. `⌥A` markup and the edge minimap are not wired to PDFs yet. There is no auto-redirect of PDF URLs, by choice.
+- The margin agent can read and look up, and that is all it can do: no shell, no edits, and `WebFetch` upgrades to HTTPS, so a source served over plain `http://` will not load and the agent will say so rather than offer to run `curl`. A page is an untrusted source; a link on it is a lead to check, not an order.
 - Chrome cannot `git push`. The vault dump is files; sync is your git (or Obsidian Git).
 - Very large `obsidian://` URIs can fail; the bound folder or downloaded markdown is the reliable copy.
 - Harvest uses the cookies of **this** Chrome profile. If you are not logged into X in this profile, LivePage cannot invent that session.
