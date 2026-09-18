@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { describe } from "node:test";
 import { readFileSync } from "node:fs";
 import {
   blocksFromItems,
@@ -227,7 +227,7 @@ test("a PDF with no metadata title falls back to its filename", () => {
   assert.equal(titleFromUrl("not a url"), "PDF");
 });
 
-test("looksLikePdfUrl accepts documents and refuses lookalikes", () => {
+describe("looksLikePdfUrl accepts documents and refuses lookalikes", () => {
   const table = [
     ["https://arxiv.org/pdf/1706.03762.pdf", true],
     ["https://example.com/a.pdf?download=1", true],
@@ -241,7 +241,9 @@ test("looksLikePdfUrl accepts documents and refuses lookalikes", () => {
     ["", false]
   ];
   for (const [url, expected] of table) {
-    assert.equal(looksLikePdfUrl(url), expected, url);
+    test(`${expected ? "accepts" : "refuses"} ${url || "an empty string"}`, () => {
+      assert.equal(looksLikePdfUrl(url), expected);
+    });
   }
 });
 

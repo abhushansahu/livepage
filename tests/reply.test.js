@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { describe } from "node:test";
 import { cleanAgentReply } from "../extension/agent/reply.js";
 
 test("the preamble that started this is removed", () => {
@@ -10,7 +10,7 @@ test("the preamble that started this is removed", () => {
   assert.equal(cleanAgentReply(reply), "This passage is setting up the shift from linear models to non-linear ones.");
 });
 
-test("other ways of saying the same thing are also removed", () => {
+describe("other ways of saying the same thing are also removed", () => {
   const openings = [
     "Let me read the packet first.",
     "I will check packet.md for the user's question.",
@@ -20,11 +20,13 @@ test("other ways of saying the same thing are also removed", () => {
     "Okay, let me read packet.md."
   ];
   for (const opening of openings) {
-    assert.equal(cleanAgentReply(`${opening}\nThe real answer.`), "The real answer.", opening);
+    test(opening, () => {
+      assert.equal(cleanAgentReply(`${opening}\nThe real answer.`), "The real answer.");
+    });
   }
 });
 
-test("an answer that merely sounds like a preamble is kept", () => {
+describe("an answer that merely sounds like a preamble is kept", () => {
   // Two conditions have to hold — an intent to act *and* a reference to our
   // own plumbing — because deleting a real first paragraph is much worse than
   // leaving a tidy-up line in.
@@ -35,7 +37,9 @@ test("an answer that merely sounds like a preamble is kept", () => {
     "I am not sure this passage supports that claim."
   ];
   for (const line of keep) {
-    assert.equal(cleanAgentReply(`${line}\nMore.`), `${line}\nMore.`, line);
+    test(line, () => {
+      assert.equal(cleanAgentReply(`${line}\nMore.`), `${line}\nMore.`);
+    });
   }
 });
 

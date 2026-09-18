@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { describe } from "node:test";
 import {
   PER_PAGE_LIMIT,
   highlightMatches,
@@ -201,23 +201,28 @@ test("a snippet with no match falls back to the opening of the text", () => {
   assert.ok(snippet.text.startsWith("nothing"));
 });
 
-test("the store and the shared matcher agree on every page", () => {
+describe("the store and the shared matcher agree on every page", () => {
+  // Named by what the page carries, so a divergence says which field the two
+  // matchers stopped agreeing about rather than which array index it was.
   const fixtures = [
-    page({ title: "On attention" }),
-    page({ tags: ["design"], title: "Untitled" }),
-    page({ highlights: [{ id: "h", text: "a marked passage", createdAt: 1 }] }),
-    page({
-      threads: [{ id: "t", highlightId: "h", messages: [{ id: "m", role: "agent", content: "a reply", createdAt: 1 }] }]
-    }),
-    page({ parsed: { excerpt: "an excerpt", headings: ["a heading"], blocks: [] } })
+    ["a page found by its title", page({ title: "On attention" })],
+    ["a page found by a tag", page({ tags: ["design"], title: "Untitled" })],
+    ["a page found by a marked passage", page({ highlights: [{ id: "h", text: "a marked passage", createdAt: 1 }] })],
+    [
+      "a page found by an agent reply",
+      page({
+        threads: [{ id: "t", highlightId: "h", messages: [{ id: "m", role: "agent", content: "a reply", createdAt: 1 }] }]
+      })
+    ],
+    ["a page found by its parsed text", page({ parsed: { excerpt: "an excerpt", headings: ["a heading"], blocks: [] } })]
   ];
-  for (const subject of fixtures) {
-    for (const query of ["attention", "design", "marked", "reply", "heading", "absent"]) {
-      assert.equal(
-        pageMatches(subject, query),
-        pageMatchesQuery(subject, query),
-        `divergence on "${query}"`
-      );
-    }
+  for (const [label, subject] of fixtures) {
+    describe(label, () => {
+      for (const query of ["attention", "design", "marked", "reply", "heading", "absent"]) {
+        test(`on "${query}"`, () => {
+          assert.equal(pageMatches(subject, query), pageMatchesQuery(subject, query));
+        });
+      }
+    });
   }
 });

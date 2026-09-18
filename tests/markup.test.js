@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { describe } from "node:test";
 import {
   MAX_MARKS,
   markCeiling,
@@ -113,7 +113,7 @@ test("the reply is cut at the article's own ceiling, not a flat one", () => {
   assert.ok(markCeiling(900) < markCeiling(15000));
 });
 
-test("the prompt carries the colour vocabulary the product already uses", () => {
+describe("the prompt carries the colour vocabulary the product already uses", () => {
   const packet = buildMarkupPacket({ blocks });
   for (const [id, meaning] of [
     ["lemon", "Key idea"],
@@ -123,8 +123,10 @@ test("the prompt carries the colour vocabulary the product already uses", () => 
     ["iris", "Insight"],
     ["sand", "Evidence"]
   ]) {
-    assert.ok(packet.includes(id), `missing colour ${id}`);
-    assert.ok(packet.includes(meaning), `missing meaning for ${id}`);
+    test(`${id} arrives with its meaning`, () => {
+      assert.ok(packet.includes(id), `missing colour ${id}`);
+      assert.ok(packet.includes(meaning), `missing meaning for ${id}`);
+    });
   }
 });
 
