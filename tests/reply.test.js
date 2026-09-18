@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { describe } from "node:test";
 import { cleanAgentReply } from "../extension/agent/reply.js";
 
 test("the preamble that started this is removed", () => {
@@ -10,7 +10,7 @@ test("the preamble that started this is removed", () => {
   assert.equal(cleanAgentReply(reply), "This passage is setting up the shift from linear models to non-linear ones.");
 });
 
-test("other ways of saying the same thing are also removed", () => {
+describe("other ways of saying the same thing are also removed", () => {
   const openings = [
     "Let me read the packet first.",
     "I will check packet.md for the user's question.",
@@ -20,11 +20,13 @@ test("other ways of saying the same thing are also removed", () => {
     "Okay, let me read packet.md."
   ];
   for (const opening of openings) {
-    assert.equal(cleanAgentReply(`${opening}\nThe real answer.`), "The real answer.", opening);
+    test(opening, () => {
+      assert.equal(cleanAgentReply(`${opening}\nThe real answer.`), "The real answer.");
+    });
   }
 });
 
-test("an answer that merely sounds like a preamble is kept", () => {
+describe("an answer that merely sounds like a preamble is kept", () => {
   // Two conditions have to hold — an intent to act *and* a reference to our
   // own plumbing — because deleting a real first paragraph is much worse than
   // leaving a tidy-up line in.
@@ -35,7 +37,9 @@ test("an answer that merely sounds like a preamble is kept", () => {
     "I am not sure this passage supports that claim."
   ];
   for (const line of keep) {
-    assert.equal(cleanAgentReply(`${line}\nMore.`), `${line}\nMore.`, line);
+    test(line, () => {
+      assert.equal(cleanAgentReply(`${line}\nMore.`), `${line}\nMore.`);
+    });
   }
 });
 
@@ -83,4 +87,37 @@ test("runs of blank lines are collapsed", () => {
 test("an empty reply says so rather than being blank", () => {
   assert.match(cleanAgentReply(""), /couldn’t form a useful reply/);
   assert.match(cleanAgentReply("Let me read packet.md."), /couldn’t form a useful reply/);
+});
+
+test("narration welded to the answer with no space still comes off", () => {
+  // How a CLI agent actually streams it: the narration and the first sentence
+  // of the answer arrive as one run of text with nothing between them. The
+  // whole thing was then one line too long to look like a preamble, so it went
+  // into the thread, the vault and the search index.
+  const reply =
+    "I'll start by reading the packet to see what's being asked." +
+    "The highlighted sentence is the author's verdict on what the model is under the hood.";
+  assert.equal(
+    cleanAgentReply(reply),
+    "The highlighted sentence is the author's verdict on what the model is under the hood."
+  );
+});
+
+test("a filename's own dot is not a sentence ending", () => {
+  // The narration most worth catching is the one that names packet.md, and a
+  // split allowed at any full stop would cut it there and leave the remainder
+  // of the narration behind as if it were the answer.
+  assert.equal(
+    cleanAgentReply("I'll read packet.md to find the latest user question.The answer is elsewhere."),
+    "The answer is elsewhere."
+  );
+  assert.doesNotMatch(
+    cleanAgentReply("I'll read packet.md to find the latest user question.\nThe answer is elsewhere."),
+    /^md /
+  );
+});
+
+test("a decimal inside a real answer survives", () => {
+  const reply = "I'll read packet.md first.\nThe readout is 0.82, not a sentence you have to parse.";
+  assert.equal(cleanAgentReply(reply), "The readout is 0.82, not a sentence you have to parse.");
 });

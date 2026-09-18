@@ -116,7 +116,7 @@ async function boot() {
   if (sourceUrl.startsWith("file:") && !(await canReadFiles())) {
     titleEl.textContent = titleFromUrl(sourceUrl);
     notice(
-      "<b>Chrome will not let LivePage read local files yet.</b> Open <code>chrome://extensions</code>, find LivePage, and turn on “Allow access to file URLs”. No manifest setting can ask for this on your behalf."
+      "<b>Chrome will not let LivePage read local files yet.</b> Open <code>chrome://extensions</code>, find LivePage, and turn on “Allow access to file URLs”. The manifest asks for <code>file:///*</code>; only you can grant it."
     );
     return;
   }
@@ -971,6 +971,16 @@ function reportProgress() {
     });
 }
 
+/**
+ * Whether Chrome will let us read `file:` URLs at all.
+ *
+ * Two separate things have to be true, and neither implies the other. The
+ * manifest has to list `file:///*` in `host_permissions` — without it a local
+ * PDF fails as a bare network error, which pdf.js can only report as
+ * `Missing PDF "file://…"`, as though the document were not there. And the
+ * user has to tick "Allow access to file URLs", which no manifest can ask for.
+ * This checks the half we cannot see from here.
+ */
 async function canReadFiles() {
   try {
     return await chrome.extension.isAllowedFileSchemeAccess();

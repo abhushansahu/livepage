@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { describe } from "node:test";
 import {
   MAX_MARKS,
   markCeiling,
@@ -7,6 +7,7 @@ import {
   articleIsWorthMarking,
   buildMarkupPacket,
   dropAlreadyKept,
+  parseMarkupGist,
   parseMarkupReply
 } from "../extension/agent/markup.js";
 import { looksLikeStableDocument, evaluateInfiniteScroll } from "../extension/parse/infinite-scroll.js";
@@ -112,7 +113,7 @@ test("the reply is cut at the article's own ceiling, not a flat one", () => {
   assert.ok(markCeiling(900) < markCeiling(15000));
 });
 
-test("the prompt carries the colour vocabulary the product already uses", () => {
+describe("the prompt carries the colour vocabulary the product already uses", () => {
   const packet = buildMarkupPacket({ blocks });
   for (const [id, meaning] of [
     ["lemon", "Key idea"],
@@ -122,8 +123,10 @@ test("the prompt carries the colour vocabulary the product already uses", () => 
     ["iris", "Insight"],
     ["sand", "Evidence"]
   ]) {
-    assert.ok(packet.includes(id), `missing colour ${id}`);
-    assert.ok(packet.includes(meaning), `missing meaning for ${id}`);
+    test(`${id} arrives with its meaning`, () => {
+      assert.ok(packet.includes(id), `missing colour ${id}`);
+      assert.ok(packet.includes(meaning), `missing meaning for ${id}`);
+    });
   }
 });
 
@@ -542,4 +545,75 @@ test("holding Shift asks for a fresh read, not the one already paid for", () => 
 test("Shift on a key that does not claim it leaves that key alone", () => {
   assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyJ" }), "next-mark");
   assert.equal(shortcutAction({ altKey: true, shiftKey: true, code: "KeyS" }), "symbols");
+});
+
+test("the prompt asks for the argument in plain words before it asks for marks", () => {
+  const packet = buildMarkupPacket({ pageTitle: "T", url: "https://e.com", blocks, wordCount: 1200 });
+  assert.match(packet, /## The gist, first/);
+  assert.match(packet, /plain language/i);
+  assert.match(packet, /does not have the background/i);
+  // The gist is for the reader who has not read the piece, so it cannot be a
+  // recap of the marks — they are the thing it has to make readable.
+  assert.match(packet, /not a summary of the marks/i);
+  assert.ok(packet.indexOf("## The gist, first") < packet.indexOf("## Colours"));
+  assert.match(packet, /## Gist/);
+  assert.match(packet, /## Marks/);
+});
+
+test("a two-section reply gives up its gist and its marks separately", () => {
+  const reply = [
+    "## Gist",
+    "Surveys undercount how much AI businesses actually use, because a firm on a free tool does not think of itself as a customer.",
+    "",
+    "## Marks",
+    "sand | surveys may lead to underreporting of actual adoption | the gap the paper is built on",
+    "lemon | our results underestimate actual adoption | what they conclude from it"
+  ].join("\n");
+
+  assert.match(parseMarkupGist(reply), /^Surveys undercount/);
+  const marks = parseMarkupReply(reply);
+  assert.equal(marks.length, 2);
+  assert.equal(marks[0].color, "sand");
+  // The gist prose must never leak into the marks: it has no pipes and no
+  // colour, so it falls out on its own, but a regression here paints prose on
+  // the page as if the article had said it.
+  assert.ok(marks.every((mark) => !/Surveys undercount/.test(mark.quote)));
+});
+
+test("a reply from before the gist existed is still all marks", () => {
+  const reply = "lemon | our results underestimate actual adoption | the conclusion";
+  assert.equal(parseMarkupGist(reply), "");
+  assert.equal(parseMarkupReply(reply).length, 1);
+});
+
+test("an article with nothing to explain gets no card", () => {
+  assert.equal(parseMarkupGist("## Gist\nNONE\n\n## Marks\nNONE"), "");
+  assert.equal(parseMarkupGist("## Gist\n\n## Marks\nNONE"), "");
+  assert.equal(parseMarkupGist(""), "");
+  assert.deepEqual(parseMarkupReply("## Gist\nNONE\n\n## Marks\nNONE"), []);
+});
+
+test("an article worth explaining but not worth marking keeps its gist", () => {
+  const reply = "## Gist\nOne careful argument, and no single sentence carries it.\n\n## Marks\nNONE";
+  assert.match(parseMarkupGist(reply), /One careful argument/);
+  assert.deepEqual(parseMarkupReply(reply), []);
+});
+
+test("a gist that is really the mark lines again is thrown away", () => {
+  const reply = "## Gist\nlemon | some quote | some reason\n\n## Marks\nlemon | some quote | some reason";
+  assert.equal(parseMarkupGist(reply), "");
+});
+
+test("markdown in the gist is flattened, because the card renders text", () => {
+  const reply = "## Gist\n- **Surveys** undercount `adoption`.\n\n## Marks\nNONE";
+  assert.equal(parseMarkupGist(reply), "Surveys undercount adoption.");
+});
+
+test("a runaway gist is cut at a sentence, not mid-word", () => {
+  const sentence = "This is a sentence about adoption and what it rests on. ";
+  const reply = `## Gist\n${sentence.repeat(40)}\n\n## Marks\nNONE`;
+  const gist = parseMarkupGist(reply);
+  assert.ok(gist.length <= 900);
+  assert.ok(gist.endsWith("."));
+  assert.ok(!/\bade?$|\bsente?$/.test(gist));
 });

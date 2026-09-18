@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { describe } from "node:test";
+import { readFileSync } from "node:fs";
 import {
   blocksFromItems,
   documentMetrics,
@@ -226,7 +227,7 @@ test("a PDF with no metadata title falls back to its filename", () => {
   assert.equal(titleFromUrl("not a url"), "PDF");
 });
 
-test("looksLikePdfUrl accepts documents and refuses lookalikes", () => {
+describe("looksLikePdfUrl accepts documents and refuses lookalikes", () => {
   const table = [
     ["https://arxiv.org/pdf/1706.03762.pdf", true],
     ["https://example.com/a.pdf?download=1", true],
@@ -240,7 +241,9 @@ test("looksLikePdfUrl accepts documents and refuses lookalikes", () => {
     ["", false]
   ];
   for (const [url, expected] of table) {
-    assert.equal(looksLikePdfUrl(url), expected, url);
+    test(`${expected ? "accepts" : "refuses"} ${url || "an empty string"}`, () => {
+      assert.equal(looksLikePdfUrl(url), expected);
+    });
   }
 });
 
@@ -260,6 +263,16 @@ test("a viewer URL from another install is still recognised", () => {
   // origin — only the path and the file it carries.
   const other = viewerUrlFor("https://example.com/a.pdf", "chrome-extension://zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz/pdf/viewer.html");
   assert.equal(sourceUrlFrom(other), "https://example.com/a.pdf");
+});
+
+test("the manifest asks for local files, which the viewer cannot do without", () => {
+  // `looksLikePdfUrl` offers file: URLs, and the viewer fetches whatever it is
+  // given. Without this pattern Chrome refuses the read even with "Allow
+  // access to file URLs" ticked, and pdf.js can only call that a missing
+  // document — so the offer and the permission have to agree.
+  const manifest = JSON.parse(readFileSync(new URL("../extension/manifest.json", import.meta.url), "utf8"));
+  assert.ok(manifest.host_permissions.includes("file:///*"));
+  assert.equal(looksLikePdfUrl("file:///Users/me/papers/on-bullshit.pdf"), true);
 });
 
 test("an ordinary page is not a viewer URL", () => {

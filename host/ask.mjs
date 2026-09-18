@@ -7,6 +7,30 @@ import { join } from "node:path";
 
 const DEFAULT_CURSOR_MODEL = "composer-2.5";
 const DEFAULT_CLAUDE_MODEL = "sonnet";
+
+/**
+ * Looking something up costs turns: one to ask for the page, one to read what
+ * came back, one to answer. The cap here was 1, so the first reach for a
+ * source ended the run as `error_max_turns` with no text at all — which this
+ * file then reported as "empty reply, are you logged in?". The agent was not
+ * refusing to check; it was being stopped mid-reach and blamed for it.
+ */
+const MAX_TURNS = "12";
+
+/**
+ * `claude -p` grants no permission it was not given, so an agent that can see
+ * a link still cannot open it, and silence reads to the user as unwillingness.
+ * This is an allowlist and stays one: reading and looking up, never writing.
+ */
+const LOOKUP_TOOLS = ["WebFetch", "WebSearch", "Read"];
+
+/**
+ * A margin thread is a place to read, so the agent answers or says it could
+ * not — it never asks the reader for a shell. Without this it offers to run
+ * curl when a fetch is refused, which is a prompt nobody reading an article
+ * wants, on a surface with no way to grant it.
+ */
+const DENIED_TOOLS = ["Bash", "Edit", "Write", "NotebookEdit"];
 const workspaces = new Map();
 
 export async function handleAsk(body = {}) {
@@ -92,7 +116,7 @@ async function askCursor({ workspace, model, resumeId }) {
   if (resumeId) args.push("--resume", resumeId);
   if (model) args.push("--model", model);
   args.push(
-    "Read packet.md in this workspace. It is a LivePage packet about a webpage the user highlighted. Continue the conversation in that packet. Answer STRICTLY the latest user ask. Reply with the answer only. Do not edit files."
+    "Read packet.md in this workspace. It is a LivePage packet about a webpage the user highlighted. Continue the conversation in that packet and answer the latest user ask. If the answer needs a source the page only alludes to, open the link or look it up rather than reporting that the page does not say. Reply with the answer only. Do not edit files."
   );
   let output = await runProcess(resolved.path, args, workspace);
   let parsed = parseAgentOutput(output);
@@ -114,25 +138,40 @@ async function askClaudeCode({ packet, workspace, model, resumeId }) {
       `Claude Code not found (${resolved.path}). Install the claude CLI and keep it on PATH.`
     );
   }
-  const args = [
-    "-p",
-    packet.length < 80000
-      ? packet
-      : "Read packet.md in this directory. Continue the conversation. Answer STRICTLY the latest user ask. Reply with the answer only. Do not edit files.",
-    "--output-format",
-    "json",
-    "--max-turns",
-    resumeId ? "4" : "1"
-  ];
-  if (resumeId) args.push("--resume", resumeId);
-  if (packet.length >= 80000) args.push("--add-dir", workspace);
-  if (model) args.push("--model", model);
+  const args = claudeArgs({ packet, workspace, model, resumeId });
   const output = await runProcess(resolved.path, args, workspace);
   const parsed = parseAgentOutput(output);
   if (!parsed.text) {
-    throw new Error("Claude Code returned an empty reply. Are you logged in (`claude`)?");
+    throw new Error(
+      parsed.error === "error_max_turns"
+        ? `Claude Code ran out of turns before it answered — it was still looking something up. Raise MAX_TURNS (now ${MAX_TURNS}) in host/ask.mjs.`
+        : `Claude Code returned an empty reply${parsed.error ? ` (${parsed.error})` : ""}. Are you logged in (\`claude\`)?`
+    );
   }
   return { ...parsed, workspace };
+}
+
+/** The command line for one Claude Code ask, kept separate so it is testable. */
+export function claudeArgs({ packet, workspace, model, resumeId }) {
+  const inline = packet.length < 80000;
+  const args = [
+    "-p",
+    inline
+      ? packet
+      : "Read packet.md in this directory. Continue the conversation and answer the latest user ask, looking a source up if the answer needs one. Reply with the answer only. Do not edit files.",
+    "--output-format",
+    "json",
+    "--max-turns",
+    MAX_TURNS
+  ];
+  if (resumeId) args.push("--resume", resumeId);
+  if (!inline) args.push("--add-dir", workspace);
+  if (model) args.push("--model", model);
+  // Last, because both flags are variadic and would otherwise swallow what
+  // follows them.
+  args.push("--allowedTools", ...LOOKUP_TOOLS);
+  args.push("--disallowedTools", ...DENIED_TOOLS);
+  return args;
 }
 
 export function parseAgentOutput(raw) {
@@ -162,7 +201,7 @@ export function parseAgentOutput(raw) {
       };
     }
   }
-  if (looksLikeJson(text)) return { text: "", sessionId: "" };
+  if (looksLikeJson(text)) return { text: "", sessionId: "", error: errorFromAgentJson(candidates) };
   return { text, sessionId: "" };
 }
 
@@ -178,6 +217,19 @@ function textFromAgentJson(row) {
       .join("")
       .trim();
     if (joined) return joined;
+  }
+  return "";
+}
+
+/**
+ * Why a run produced no text. A reply that failed for one reason should not be
+ * reported as another: "are you logged in?" sent the reader to check an
+ * account that was fine.
+ */
+function errorFromAgentJson(candidates) {
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const row = candidates[i];
+    if (row && typeof row === "object" && row.is_error) return String(row.subtype || "error");
   }
   return "";
 }
