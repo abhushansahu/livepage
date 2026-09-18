@@ -41,6 +41,7 @@ import {
   buildMarkupPacket,
   dropAlreadyKept,
   markCeiling,
+  parseMarkupGist,
   parseMarkupReply
 } from "../agent/markup.js";
 import { obsidianNewUri, pageToMarkdown, suggestedFilename } from "../export/obsidian.js";
@@ -680,7 +681,14 @@ async function askAgentLive(payload) {
  * page it was asked on and never bought twice.
  */
 /**
- * Reads an article ahead of you and marks the few passages worth stopping at.
+ * Reads an article ahead of you: lays out what it argues in plain words, and
+ * marks the few passages worth stopping at.
+ *
+ * Both answers come out of one pass, because both are things you only know by
+ * having read the whole piece — and a second call to summarise what the first
+ * call just read is an agent call spent on nothing. Either half can come back
+ * empty on its own: a piece can be worth explaining with no sentence worth
+ * marking, and a piece can be worth marking without being hard.
  *
  * Cached against the page and its content hash, so it runs once per version of
  * an article however often you come back. Nothing here creates a page record:
@@ -698,8 +706,8 @@ async function markupPage(payload) {
   if (cached && !payload.force) return { ...cached, cached: true };
   // Loading a page may repaint an earlier pass but must never buy a new one.
   // An agent call is something you ask for.
-  if (payload.cachedOnly) return { pageId, contentHash, marks: [], skipped: "not-asked" };
-  if (!articleIsWorthMarking(parsed)) return { pageId, contentHash, marks: [], skipped: "short" };
+  if (payload.cachedOnly) return { pageId, contentHash, gist: "", marks: [], skipped: "not-asked" };
+  if (!articleIsWorthMarking(parsed)) return { pageId, contentHash, gist: "", marks: [], skipped: "short" };
 
   const settings = await ensureAgentHostPaired();
   const agent = settings.agentDefault || "cursor";
@@ -731,7 +739,14 @@ async function markupPage(payload) {
   }));
 
   return {
-    ...(await putMarkup({ pageId, contentHash, url: payload.url || "", agent, marks })),
+    ...(await putMarkup({
+      pageId,
+      contentHash,
+      url: payload.url || "",
+      agent,
+      gist: parseMarkupGist(reply),
+      marks
+    })),
     cached: false
   };
 }
@@ -739,7 +754,7 @@ async function markupPage(payload) {
 async function readMarkup(payload) {
   const pageId = glossaryPageId(payload);
   const row = await getMarkup(pageId, payload.contentHash || "");
-  return row || { pageId, contentHash: payload.contentHash || "", marks: [] };
+  return row || { pageId, contentHash: payload.contentHash || "", gist: "", marks: [] };
 }
 
 /**

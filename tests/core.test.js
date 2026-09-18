@@ -5,7 +5,7 @@ import { blockIdFromText } from "../extension/shared/id.js";
 import { absoluteUrl, uniqueBlocks } from "../extension/parse/page-parser.js";
 import { hostLooksInfinite, evaluateInfiniteScroll } from "../extension/parse/infinite-scroll.js";
 import { toolbarAction } from "../extension/content/selection.js";
-import { buildAgentPacket, linksFrom, nextLedger } from "../extension/agent/packet.js";
+import { asksForClarity, buildAgentPacket, linksFrom, nextLedger } from "../extension/agent/packet.js";
 import { pageToMarkdown, suggestedFilename } from "../extension/export/obsidian.js";
 
 test("canonicalizeUrl strips tracking and www", () => {
@@ -283,4 +283,82 @@ test("selection toolbar stays up when the page collapses the live range", () => 
     toolbarAction({ liveHasRange: false, gestureSelected: true, savedRange: { collapsed: true } }),
     "hide"
   );
+});
+
+test("an ask shaped like a question is read as someone stuck", () => {
+  assert.equal(asksForClarity("What does a control plane actually do?"), true);
+  assert.equal(asksForClarity("why does that follow"), true);
+  assert.equal(asksForClarity("eli5"), true);
+  assert.equal(asksForClarity("I don't get this paragraph"), true);
+  assert.equal(asksForClarity("Explain the second half"), true);
+  // A brief is not a question, and answering it as though the reader were
+  // lost is its own kind of condescension.
+  assert.equal(asksForClarity("Draft a reply to this post"), false);
+  assert.equal(asksForClarity("Pull the numbers into a table"), false);
+  assert.equal(asksForClarity(""), false);
+});
+
+test("the colour already says they are lost, whatever they typed", () => {
+  // sky means "unclear or needs context" everywhere else in the product, so
+  // reaching for it is the reader saying so before they type a word.
+  assert.equal(asksForClarity("go on", { color: "sky" }), true);
+  assert.equal(asksForClarity("go on", { color: "lemon" }), false);
+});
+
+const clarityPage = {
+  id: "p_c",
+  title: "Control planes",
+  url: "https://site.test/control-planes",
+  canonicalUrl: "https://site.test/control-planes",
+  parsed: {
+    headings: [],
+    wordCount: 40,
+    blocks: [{ id: "b1", tag: "p", text: "The control plane watches the work as it unfolds." }]
+  },
+  highlights: [{ id: "hl1", color: "sky", text: "The control plane watches the work" }],
+  threads: [{ id: "th1", highlightId: "hl1", branchLabel: "main", messages: [] }]
+};
+
+test("a question in the margin is answered for someone who got stuck", () => {
+  const packet = buildAgentPacket({
+    page: clarityPage,
+    thread: clarityPage.threads[0],
+    ask: "What is a control plane?"
+  });
+  // The failure this guards against is the one reply with no value in it:
+  // the highlighted sentence, reworded and handed back.
+  assert.match(packet.markdown, /never hand it back reworded/);
+  assert.match(packet.markdown, /no background in this subject/);
+  // And the failure the first version of this contract caused: a good opening
+  // sentence, then a glossary of every noun in the passage, then a paragraph
+  // on the practical upshot. A margin card is not a page.
+  assert.match(packet.markdown, /at most three sentences/);
+  assert.match(packet.markdown, /Never a list, a heading, a bolded label/);
+  assert.match(packet.markdown, /not what each word in it means/);
+});
+
+test("a brief in the margin keeps the ordinary voice", () => {
+  const packet = buildAgentPacket({
+    page: { ...clarityPage, highlights: [{ id: "hl1", color: "lemon", text: "The control plane watches the work" }] },
+    thread: clarityPage.threads[0],
+    ask: "Summarise this into three bullets for the team."
+  });
+  assert.doesNotMatch(packet.markdown, /never hand it back reworded/);
+  assert.match(packet.markdown, /natural, concise language/);
+});
+
+test("a follow-up question stays in the thread and stays patient", () => {
+  const packet = buildAgentPacket({
+    page: clarityPage,
+    thread: {
+      ...clarityPage.threads[0],
+      messages: [
+        { role: "user", content: "What is a control plane?" },
+        { role: "agent", agent: "cursor", content: "It is the part that decides what runs." }
+      ]
+    },
+    ask: "Why does it need to be separate?"
+  });
+  assert.match(packet.markdown, /Stay in the thread/);
+  assert.match(packet.markdown, /never hand it back reworded/);
 });

@@ -1128,6 +1128,13 @@ textarea:focus,
   box-shadow: inset 0 0 0 1.5px var(--lp-muted);
 }
 
+/* Explained but not marked. Filled, because something was found — in the
+   lemon the gist card is edged with, so the dot and the card at the top of the
+   article read as the same answer rather than two unrelated ones. */
+.markup-status.is-gist .pulse {
+  background: #E8CF62;
+}
+
 .markup-status.is-error .pulse {
   background: var(--lp-danger);
 }

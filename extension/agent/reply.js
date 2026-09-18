@@ -87,9 +87,23 @@ function isPreamble(line) {
  * Removes a first sentence that is scaffolding, if the rest of the line is
  * real. Returns null when there is nothing to remove, so the caller can tell
  * "trimmed" from "nothing left".
+ *
+ * The space after the full stop is optional, and that is not pedantry. A CLI
+ * agent streams its narration and its answer as one run of text, and they
+ * arrive welded: "…to see what's being asked.The highlighted sentence is…".
+ * With a required space the split failed, the whole thing became one long
+ * line, and the line was then too long to look like a preamble — so the
+ * narration went into the thread, the vault and the search index exactly as
+ * this file exists to prevent.
+ *
+ * A bare full stop is not enough on its own, though: the narration we most
+ * want to catch is the one that says `packet.md`, and a split allowed
+ * anywhere would cut it at that dot and leave "md to find the latest user
+ * question…" in the thread. So a missing space is only accepted before a
+ * capital, which is a sentence starting rather than a filename continuing.
  */
 function dropLeadingSentence(line) {
-  const match = /^(.{10,}?[.!?])\s+(\S.*)$/.exec(line.trim().replace(/`/g, ""));
+  const match = /^(.{10,}?[.!?])(?:\s+|(?=[A-Z]))(\S.*)$/.exec(line.trim().replace(/`/g, ""));
   if (!match) return null;
   const [, first, rest] = match;
   if (!isPreamble(first)) return null;

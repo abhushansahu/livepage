@@ -67,6 +67,7 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
 .markup-status.is-working .pulse { animation: lp-markup-pulse 1.3s ease-in-out infinite; }
 .markup-status.is-idle .pulse { background: transparent; box-shadow: inset 0 0 0 1.5px #3f6b52; }
 .markup-status.is-empty .pulse { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(28,23,18,0.4); }
+.markup-status.is-gist .pulse { background: #E8CF62; }
 .markup-status.is-error .pulse { background: #8a3a32; }
 .markup-status .main, .markup-status .again {
   appearance: none; border: 0; background: transparent; font: inherit; color: inherit;
@@ -389,6 +390,11 @@ export class Overlay {
         text: `${count} passage${count === 1 ? "" : "s"} marked \u00b7 \u2325J to move between them`,
         hint: `${count} passage${count === 1 ? "" : "s"} marked`
       },
+      // Read, and what it found was an explanation rather than a passage.
+      // That is not the same answer as "nothing here", and saying "nothing"
+      // over a card sitting at the top of the article calls the product a
+      // liar about work it just did.
+      gist: { text: "Explained at the top \u00b7 nothing worth marking", hint: "The gist is at the top of the article" },
       empty: { text: "Nothing here worth marking", hint: "Read, and nothing was worth marking" },
       error: { text: detail || "Could not reach the agent", hint: detail || "Could not reach the agent" }
     }[state];
@@ -400,7 +406,7 @@ export class Overlay {
     // Offered only once there is an answer to disagree with. While it is
     // reading there is nothing to redo, and on a page never asked about the
     // pill's own action already is "read this".
-    const rerunnable = state === "done" || state === "empty" || state === "error";
+    const rerunnable = state === "done" || state === "gist" || state === "empty" || state === "error";
     el.innerHTML =
       `<button type="button" class="main"><span class="pulse"></span><span class="label">${escapeHtml(copy.text)}</span></button>` +
       (rerunnable

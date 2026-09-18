@@ -263,7 +263,11 @@ test("symbol explanation packet asks for contextual knowledge without repeating 
     ]
   });
   assert.match(packet, /Term: control plane/);
-  assert.match(packet, /Wikipedia lead-section style/);
+  // The register is the point of this surface: it is only ever reached by
+  // someone the sentence already lost, so a definition built out of more
+  // unknown terms is no help at all.
+  assert.match(packet, /plain-language version/);
+  assert.match(packet, /Never explain it using another term the reader would have to look up/);
   assert.match(packet, /general knowledge to supply missing background/);
   assert.match(packet, /Do not quote, repeat, or closely paraphrase/);
   assert.match(packet, /Agents use tools/);

@@ -16,7 +16,12 @@ const STRIP_SELECTORS = [
   "[role='banner']",
   "[role='contentinfo']",
   "[role='complementary']",
-  "[aria-hidden='true']"
+  "[aria-hidden='true']",
+  // LivePage's own furniture. The gist card is real text sitting in the
+  // article, so a parse that counted it would change the content hash the
+  // moment it was drawn — and the hash is what says an article has already
+  // been read. The page would then re-read itself forever, once per card.
+  ".lp-ignore"
 ].join(",");
 
 const CONTENT_SELECTORS = [
@@ -34,7 +39,7 @@ export function parseDocument(doc, url = "") {
   const source = doc.cloneNode(true);
   source.querySelectorAll(STRIP_SELECTORS).forEach((el) => el.remove());
 
-  const root = pickRoot(source) || source.body || source.documentElement;
+  const root = pickContentRoot(source) || source.body || source.documentElement;
   const blocks = [];
   const headings = [];
   const seen = new Set();
@@ -131,7 +136,15 @@ export function absoluteUrl(href, base = "") {
   }
 }
 
-function pickRoot(doc) {
+/**
+ * The element the article actually lives in, or the body when a page offers
+ * nothing better.
+ *
+ * Exported because the content script has to find the same element in the
+ * live document — the gist card belongs at the top of the article, and two
+ * different ideas of where an article starts would put it somewhere else.
+ */
+export function pickContentRoot(doc) {
   for (const selector of CONTENT_SELECTORS) {
     const el = doc.querySelector(selector);
     if (el && normalizeText(el.textContent).length > 200) return el;

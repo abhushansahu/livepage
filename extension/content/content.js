@@ -23,6 +23,7 @@ import {
   unwrapMark
 } from "./markup-marks.js";
 import { articleIsWorthMarking } from "../agent/markup.js";
+import { clearGist, scrollToGist, showGist } from "./gist-card.js";
 import { createMinimap, minimapTicks } from "./minimap.js";
 import { mutedHere, siteKey, toggleSymbolsForSite } from "../shared/site-prefs.js";
 import { Overlay } from "./overlay.js";
@@ -62,7 +63,7 @@ let symbolsMuted = false;
 let markupFlag = false;
 let markupMuted = false;
 let markupBusy = false;
-let markup = { marks: [], contentHash: "" };
+let markup = { marks: [], gist: "", contentHash: "" };
 let minimap = null;
 let minimapFlag = true;
 let minimapMuted = false;
@@ -93,7 +94,14 @@ overlay.handlers = {
   onOpenMention: (pageId, threadId) => openMention(pageId, threadId),
   onRefresh: () => refreshPage(),
   // The dot in the corner does whatever its state implies.
-  onMarkupAction: (state) => (state === "done" ? jumpMark(1) : markupNow()),
+  onMarkupAction: (state) => {
+    if (state === "done") return jumpMark(1);
+    // Explained but not marked: the answer is a card at the top of the
+    // article, and from halfway down the page the pill is the only part of it
+    // you can see.
+    if (state === "gist") return void scrollToGist();
+    return markupNow();
+  },
   // Its second button never implies anything: it always buys a fresh pass.
   onMarkupRerun: () => markupNow({ force: true })
 };
@@ -319,7 +327,8 @@ async function runMarkup(parsed, { cachedOnly = false, manual = false, force = f
   // a reader who cannot see it working buys the same read twice.
   if (markupBusy) return;
   clearMarks(document, markup.marks);
-  markup = { marks: [], contentHash: parsed?.contentHash || "" };
+  clearGist();
+  markup = { marks: [], gist: "", contentHash: parsed?.contentHash || "" };
   if (!articleIsWorthMarking(parsed)) {
     if (manual) overlay.toast("This page is too short to be worth marking up.");
     return;
@@ -345,7 +354,12 @@ async function runMarkup(parsed, { cachedOnly = false, manual = false, force = f
       force
     });
     clearTimeout(announce);
-    markup = { marks: row?.marks || [], contentHash: row?.contentHash || "", agent: row?.agent };
+    markup = {
+      marks: row?.marks || [],
+      gist: row?.gist || "",
+      contentHash: row?.contentHash || "",
+      agent: row?.agent
+    };
     // Nobody has asked for a pass here yet. That is a state of its own, and
     // the reason the corner looked identical whether an agent had read the
     // page and found nothing or had never been asked at all.
@@ -357,8 +371,13 @@ async function runMarkup(parsed, { cachedOnly = false, manual = false, force = f
       overlay.markupStatus(manual ? "empty" : null);
       return;
     }
+    // An article can be worth explaining and still have nothing worth
+    // marking — a piece that argues one thing carefully gives a reader the
+    // gist and no passage to stop at. Those are separate answers, so an empty
+    // mark set no longer throws the gist away with it.
+    const gistShown = paintGist({ reveal: row?.cached === false });
     if (!markup.marks.length) {
-      overlay.markupStatus("empty");
+      overlay.markupStatus(gistShown ? "gist" : "empty");
       return;
     }
     paintMarks(document.body, markup.marks, { reveal: row?.cached === false });
@@ -373,6 +392,22 @@ async function runMarkup(parsed, { cachedOnly = false, manual = false, force = f
   } finally {
     markupBusy = false;
   }
+}
+
+/**
+ * Puts the gist at the top of the article, if this pass produced one.
+ *
+ * Separate from the marks because the two answers fail independently: a gist
+ * can land where every quote was thrown away for not matching the article,
+ * and an article can be worth marking without being hard enough to need
+ * explaining.
+ */
+function paintGist({ reveal = false } = {}) {
+  return showGist(markup.gist, {
+    reveal,
+    markCount: markup.marks.length,
+    onJumpToMark: () => jumpMark(1)
+  });
 }
 
 /** Turns a failure into something a reader can act on. */
@@ -500,7 +535,8 @@ function readSitePrefs() {
 function applyMarkup() {
   if (!markupOnHere()) {
     clearMarks(document, markup.marks);
-    markup = { marks: [], contentHash: markup.contentHash };
+    clearGist();
+    markup = { marks: [], gist: "", contentHash: markup.contentHash };
     overlay.markupStatus(null);
     refreshMinimap();
     return;
@@ -544,7 +580,8 @@ async function keepMark(markId) {
 
 async function clearAllMarks() {
   clearMarks(document, markup.marks);
-  markup = { marks: [], contentHash: markup.contentHash };
+  clearGist();
+  markup = { marks: [], gist: "", contentHash: markup.contentHash };
   try {
     await call("CLEAR_MARKUP", { url: location.href });
   } catch (error) {

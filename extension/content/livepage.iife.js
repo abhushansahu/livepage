@@ -50,7 +50,12 @@
     "[role='banner']",
     "[role='contentinfo']",
     "[role='complementary']",
-    "[aria-hidden='true']"
+    "[aria-hidden='true']",
+    // LivePage's own furniture. The gist card is real text sitting in the
+    // article, so a parse that counted it would change the content hash the
+    // moment it was drawn — and the hash is what says an article has already
+    // been read. The page would then re-read itself forever, once per card.
+    ".lp-ignore"
   ].join(",");
   var CONTENT_SELECTORS = [
     "article",
@@ -65,7 +70,7 @@
   function parseDocument(doc, url = "") {
     const source = doc.cloneNode(true);
     source.querySelectorAll(STRIP_SELECTORS).forEach((el) => el.remove());
-    const root = pickRoot(source) || source.body || source.documentElement;
+    const root = pickContentRoot(source) || source.body || source.documentElement;
     const blocks2 = [];
     const headings = [];
     const seen = /* @__PURE__ */ new Set();
@@ -134,7 +139,7 @@
       return "";
     }
   }
-  function pickRoot(doc) {
+  function pickContentRoot(doc) {
     for (const selector of CONTENT_SELECTORS) {
       const el = doc.querySelector(selector);
       if (el && normalizeText(el.textContent).length > 200) return el;
@@ -167,13 +172,13 @@
     "infinite-scroll"
   ];
   function hostLooksInfinite(url) {
-    let host = "";
+    let host2 = "";
     try {
-      host = new URL(url).hostname.replace(/^www\./i, "");
+      host2 = new URL(url).hostname.replace(/^www\./i, "");
     } catch {
       return false;
     }
-    return KNOWN_HOSTS.some((known) => host === known || host.endsWith(`.${known}`));
+    return KNOWN_HOSTS.some((known) => host2 === known || host2.endsWith(`.${known}`));
   }
   var STABLE_PATHS = [{ hosts: ["x.com", "twitter.com"], pattern: /^\/[^/]+\/article\/\d+/ }];
   function looksLikeStableDocument(url) {
@@ -183,9 +188,9 @@
     } catch {
       return false;
     }
-    const host = parsed.hostname.replace(/^www\./i, "");
+    const host2 = parsed.hostname.replace(/^www\./i, "");
     return STABLE_PATHS.some(
-      (rule) => rule.hosts.some((known) => host === known || host.endsWith(`.${known}`)) && rule.pattern.test(parsed.pathname)
+      (rule) => rule.hosts.some((known) => host2 === known || host2.endsWith(`.${known}`)) && rule.pattern.test(parsed.pathname)
     );
   }
   function domLooksInfinite(doc = document) {
@@ -958,6 +963,168 @@
     return (parsed?.wordCount || 0) >= MIN_WORDS && (parsed?.blocks || []).length >= 3;
   }
 
+  // extension/content/gist-card.js
+  var HOST_TAG = "lp-gist";
+  var CSS2 = `
+:host { all: initial; display: block; margin: 0 0 1.4em; }
+.card {
+  box-sizing: border-box;
+  border: 1px solid rgba(28, 23, 18, 0.14);
+  border-left: 3px solid #E8CF62;
+  border-radius: 10px;
+  background: #fffcf7;
+  color: #1c1712;
+  padding: 13px 15px 12px;
+  font: 15px/1.55 ui-sans-serif, "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 6px 18px rgba(28, 23, 18, 0.07);
+}
+.top { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.label {
+  flex: 1;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8a6d1f;
+}
+.fold, .close {
+  border: 0;
+  background: none;
+  padding: 2px 5px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: #756b61;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+}
+.fold:hover, .close:hover { background: rgba(28, 23, 18, 0.07); color: #1c1712; }
+.body { margin: 0; color: #2b241d; }
+.marks {
+  margin-top: 9px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  color: #7a6a4e;
+  text-align: left;
+}
+.marks:hover { color: #1c1712; text-decoration: underline; }
+:host(.is-folded) .body, :host(.is-folded) .marks { display: none; }
+:host(.is-folded) .card { padding-bottom: 10px; }
+:host(.is-folded) .top { margin-bottom: 0; }
+
+/* Drawn in rather than snapped in, for the same reason the marks are: a pass
+   takes a while, and an answer that appears fully formed reads as one that was
+   always there. */
+:host(.is-fresh) .card { animation: lp-gist-in 420ms ease-out both; }
+@keyframes lp-gist-in {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :host(.is-fresh) .card { animation: none; }
+}
+
+:host-context(html.lp-theme-dark) .card {
+  border-color: rgba(238, 230, 219, 0.18);
+  border-left-color: #E8CF62;
+  background: #211e1a;
+  color: #ece5db;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.42);
+}
+:host-context(html.lp-theme-dark) .body { color: #d7cfc4; }
+:host-context(html.lp-theme-dark) .label { color: #d3b45f; }
+:host-context(html.lp-theme-dark) .fold, :host-context(html.lp-theme-dark) .close { color: #a3998e; }
+:host-context(html.lp-theme-dark) .fold:hover, :host-context(html.lp-theme-dark) .close:hover {
+  background: rgba(238, 230, 219, 0.1);
+  color: #ece5db;
+}
+:host-context(html.lp-theme-dark) .marks { color: #b6a684; }
+`;
+  var host = null;
+  var shadow = null;
+  function showGist(text, { reveal = false, markCount = 0, onJumpToMark } = {}) {
+    const gist = String(text || "").trim();
+    if (!gist) {
+      clearGist();
+      return false;
+    }
+    const mount = gistMount();
+    if (!mount) return false;
+    if (!host) {
+      host = document.createElement(HOST_TAG);
+      host.className = "lp-ignore";
+      shadow = host.attachShadow({ mode: "open" });
+      shadow.innerHTML = `
+      <style>${CSS2}</style>
+      <div class="card">
+        <div class="top">
+          <span class="label">In plain words</span>
+          <button type="button" class="fold" title="Fold this away">\u2013</button>
+          <button type="button" class="close" title="Dismiss until this article changes" aria-label="Dismiss">\xD7</button>
+        </div>
+        <p class="body"></p>
+        <button type="button" class="marks" hidden></button>
+      </div>
+    `;
+      shadow.querySelector(".fold").onclick = () => {
+        const folded = host.classList.toggle("is-folded");
+        shadow.querySelector(".fold").textContent = folded ? "+" : "\u2013";
+      };
+      shadow.querySelector(".close").onclick = () => clearGist();
+    }
+    if (host.parentNode !== mount.parent || host.nextSibling !== mount.before) {
+      mount.parent.insertBefore(host, mount.before);
+    }
+    shadow.querySelector(".body").textContent = gist;
+    const jump = shadow.querySelector(".marks");
+    jump.hidden = !markCount;
+    if (markCount) {
+      jump.textContent = `${markCount} passage${markCount === 1 ? "" : "s"} marked below \xB7 \u2325J to move between them`;
+      jump.onclick = () => onJumpToMark?.();
+    }
+    host.classList.toggle("is-fresh", Boolean(reveal));
+    return true;
+  }
+  function scrollToGist() {
+    if (!host?.isConnected) return false;
+    host.classList.remove("is-folded");
+    const fold = shadow?.querySelector(".fold");
+    if (fold) fold.textContent = "\u2013";
+    window.scrollTo({ top: host.getBoundingClientRect().top + window.scrollY - 90, behavior: "smooth" });
+    return true;
+  }
+  function clearGist() {
+    host?.remove();
+    host = null;
+    shadow = null;
+  }
+  var FIRST_PROSE = "p, li, blockquote, pre";
+  function gistMount() {
+    const root = pickContentRoot(document);
+    if (!root) return null;
+    for (const node of root.querySelectorAll(FIRST_PROSE)) {
+      if (node.closest(".lp-ignore") || node.closest(HOST_TAG)) continue;
+      if ((node.textContent || "").trim().length < 80) continue;
+      let target = node;
+      while (target.parentElement && target.parentElement !== root && !precededBy(target)) {
+        target = target.parentElement;
+      }
+      if (!target.parentElement) continue;
+      return { parent: target.parentElement, before: target };
+    }
+    return root.firstElementChild ? { parent: root, before: root.firstElementChild } : null;
+  }
+  function precededBy(element) {
+    let previous = element.previousElementSibling;
+    while (previous && (previous.tagName.toLowerCase() === HOST_TAG || previous.classList?.contains("lp-ignore"))) {
+      previous = previous.previousElementSibling;
+    }
+    return Boolean(previous);
+  }
+
   // extension/content/minimap.js
   function minimapTicks(items, docHeight) {
     const height = docHeight || 0;
@@ -973,20 +1140,20 @@
     })).sort((a, b) => a.pct - b.pct);
   }
   function createMinimap() {
-    const host = document.createElement("div");
-    host.className = "lp-ignore lp-minimap";
-    host.setAttribute("data-lp", "minimap");
-    const shadow = host.attachShadow({ mode: "open" });
-    shadow.innerHTML = `<style>${CSS2}</style><div class="rail"><div class="read"></div><div class="here"></div></div>`;
-    const rail = shadow.querySelector(".rail");
-    const read = shadow.querySelector(".read");
-    const here = shadow.querySelector(".here");
+    const host2 = document.createElement("div");
+    host2.className = "lp-ignore lp-minimap";
+    host2.setAttribute("data-lp", "minimap");
+    const shadow2 = host2.attachShadow({ mode: "open" });
+    shadow2.innerHTML = `<style>${CSS3}</style><div class="rail"><div class="read"></div><div class="here"></div></div>`;
+    const rail = shadow2.querySelector(".rail");
+    const read = shadow2.querySelector(".read");
+    const here = shadow2.querySelector(".here");
     let onJump = null;
     return {
-      host,
+      host: host2,
       attach() {
-        if (host.parentNode !== document.documentElement) {
-          document.documentElement.appendChild(host);
+        if (host2.parentNode !== document.documentElement) {
+          document.documentElement.appendChild(host2);
         }
         document.documentElement.style.setProperty("--lp-minimap", "12px");
       },
@@ -995,7 +1162,7 @@
       },
       render(ticks) {
         rail.querySelectorAll(".tick").forEach((el) => el.remove());
-        host.hidden = !ticks.length;
+        host2.hidden = !ticks.length;
         if (!ticks.length) return;
         for (const tick of ticks) {
           const el = document.createElement("button");
@@ -1015,11 +1182,11 @@
       },
       destroy() {
         document.documentElement.style.removeProperty("--lp-minimap");
-        host.remove();
+        host2.remove();
       }
     };
   }
-  var CSS2 = `
+  var CSS3 = `
 :host { all: initial; }
 .rail {
   position: fixed; top: 0; right: 0; bottom: 0; width: 12px;
@@ -1129,20 +1296,20 @@
   }
   function mutedHere(settings2, url, surface) {
     const key = SITE_SURFACES[surface];
-    const host = siteKey(url);
-    if (!key || !host) return false;
-    return (settings2?.[key] || []).includes(host);
+    const host2 = siteKey(url);
+    if (!key || !host2) return false;
+    return (settings2?.[key] || []).includes(host2);
   }
   function toggleSiteSurface(settings2, url, surface) {
     const key = SITE_SURFACES[surface];
-    const host = siteKey(url);
+    const host2 = siteKey(url);
     const current = key && settings2?.[key] || [];
-    if (!key || !host) return { surface, host: "", muted: false, hosts: current, patch: {} };
-    const muted = current.includes(host);
-    const hosts = muted ? current.filter((item) => item !== host) : [...current, host];
+    if (!key || !host2) return { surface, host: "", muted: false, hosts: current, patch: {} };
+    const muted = current.includes(host2);
+    const hosts = muted ? current.filter((item) => item !== host2) : [...current, host2];
     return {
       surface,
-      host,
+      host: host2,
       // Muted before means this turns them back on.
       muted: !muted,
       hosts,
@@ -1706,6 +1873,7 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
 .markup-status.is-working .pulse { animation: lp-markup-pulse 1.3s ease-in-out infinite; }
 .markup-status.is-idle .pulse { background: transparent; box-shadow: inset 0 0 0 1.5px #3f6b52; }
 .markup-status.is-empty .pulse { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(28,23,18,0.4); }
+.markup-status.is-gist .pulse { background: #E8CF62; }
 .markup-status.is-error .pulse { background: #8a3a32; }
 .markup-status .main, .markup-status .again {
   appearance: none; border: 0; background: transparent; font: inherit; color: inherit;
@@ -1737,10 +1905,10 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
 .msg .body .root { border-top: 1px solid currentColor; padding: 0 0.15em; }
 `;
   function makeHost(kind) {
-    const host = document.createElement("div");
-    host.className = "lp-ignore";
-    host.setAttribute("data-lp", kind);
-    return host;
+    const host2 = document.createElement("div");
+    host2.className = "lp-ignore";
+    host2.setAttribute("data-lp", kind);
+    return host2;
   }
   var Overlay = class {
     /**
@@ -2000,6 +2168,11 @@ ${css}`;
           text: `${count} passage${count === 1 ? "" : "s"} marked \xB7 \u2325J to move between them`,
           hint: `${count} passage${count === 1 ? "" : "s"} marked`
         },
+        // Read, and what it found was an explanation rather than a passage.
+        // That is not the same answer as "nothing here", and saying "nothing"
+        // over a card sitting at the top of the article calls the product a
+        // liar about work it just did.
+        gist: { text: "Explained at the top \xB7 nothing worth marking", hint: "The gist is at the top of the article" },
         empty: { text: "Nothing here worth marking", hint: "Read, and nothing was worth marking" },
         error: { text: detail || "Could not reach the agent", hint: detail || "Could not reach the agent" }
       }[state];
@@ -2007,7 +2180,7 @@ ${css}`;
       el.hidden = false;
       el.className = `markup-status is-${state}`;
       el.title = copy.hint;
-      const rerunnable = state === "done" || state === "empty" || state === "error";
+      const rerunnable = state === "done" || state === "gist" || state === "empty" || state === "error";
       el.innerHTML = `<button type="button" class="main"><span class="pulse"></span><span class="label">${escapeHtml2(copy.text)}</span></button>` + (rerunnable ? `<button type="button" class="again" title="Read this page again \xB7 \u2325\u21E7A" aria-label="Read this page again">\u21BB</button>` : "");
       el.onclick = null;
       el.querySelector(".main").onclick = () => this.handlers.onMarkupAction?.(this.markupState);
@@ -3082,7 +3255,7 @@ ${css}`;
   }
   function enableArticleSymbols(doc, parsed, options = {}) {
     const symbols2 = extractArticleSymbols(parsed?.blocks || []);
-    const root = symbols2.length ? pickRoot2(doc) : null;
+    const root = symbols2.length ? pickRoot(doc) : null;
     if (!root) return { count: 0, destroy() {
     } };
     const symbolByKey = new Map(symbols2.map((symbol) => [symbol.key, symbol]));
@@ -3407,7 +3580,7 @@ ${css}`;
     if (!needle) return null;
     return blocks2.find((block) => normalizeSpace(block.text).includes(needle)) || null;
   }
-  function pickRoot2(doc) {
+  function pickRoot(doc) {
     for (const selector of ROOT_SELECTORS) {
       const root = doc.querySelector(selector);
       if (root && root.textContent.trim().length > 200) return root;
@@ -3494,7 +3667,7 @@ ${css}`;
   var markupFlag = false;
   var markupMuted = false;
   var markupBusy = false;
-  var markup = { marks: [], contentHash: "" };
+  var markup = { marks: [], gist: "", contentHash: "" };
   var minimap = null;
   var minimapFlag = true;
   var minimapMuted = false;
@@ -3520,7 +3693,11 @@ ${css}`;
     onOpenMention: (pageId, threadId) => openMention(pageId, threadId),
     onRefresh: () => refreshPage(),
     // The dot in the corner does whatever its state implies.
-    onMarkupAction: (state) => state === "done" ? jumpMark(1) : markupNow(),
+    onMarkupAction: (state) => {
+      if (state === "done") return jumpMark(1);
+      if (state === "gist") return void scrollToGist();
+      return markupNow();
+    },
     // Its second button never implies anything: it always buys a fresh pass.
     onMarkupRerun: () => markupNow({ force: true })
   };
@@ -3686,7 +3863,8 @@ ${css}`;
     if (!markupOnHere() || infinite.infinite) return;
     if (markupBusy) return;
     clearMarks(document, markup.marks);
-    markup = { marks: [], contentHash: parsed?.contentHash || "" };
+    clearGist();
+    markup = { marks: [], gist: "", contentHash: parsed?.contentHash || "" };
     if (!articleIsWorthMarking(parsed)) {
       if (manual) overlay.toast("This page is too short to be worth marking up.");
       return;
@@ -3708,7 +3886,12 @@ ${css}`;
         force
       });
       clearTimeout(announce);
-      markup = { marks: row?.marks || [], contentHash: row?.contentHash || "", agent: row?.agent };
+      markup = {
+        marks: row?.marks || [],
+        gist: row?.gist || "",
+        contentHash: row?.contentHash || "",
+        agent: row?.agent
+      };
       if (row?.skipped === "not-asked") {
         overlay.markupStatus("idle");
         return;
@@ -3717,8 +3900,9 @@ ${css}`;
         overlay.markupStatus(manual ? "empty" : null);
         return;
       }
+      const gistShown = paintGist({ reveal: row?.cached === false });
       if (!markup.marks.length) {
-        overlay.markupStatus("empty");
+        overlay.markupStatus(gistShown ? "gist" : "empty");
         return;
       }
       paintMarks(document.body, markup.marks, { reveal: row?.cached === false });
@@ -3731,6 +3915,13 @@ ${css}`;
     } finally {
       markupBusy = false;
     }
+  }
+  function paintGist({ reveal = false } = {}) {
+    return showGist(markup.gist, {
+      reveal,
+      markCount: markup.marks.length,
+      onJumpToMark: () => jumpMark(1)
+    });
   }
   function markupError(error) {
     const text = String(error?.message || error || "");
@@ -3826,7 +4017,8 @@ ${css}`;
   function applyMarkup() {
     if (!markupOnHere()) {
       clearMarks(document, markup.marks);
-      markup = { marks: [], contentHash: markup.contentHash };
+      clearGist();
+      markup = { marks: [], gist: "", contentHash: markup.contentHash };
       overlay.markupStatus(null);
       refreshMinimap();
       return;
@@ -3862,7 +4054,8 @@ ${css}`;
   }
   async function clearAllMarks() {
     clearMarks(document, markup.marks);
-    markup = { marks: [], contentHash: markup.contentHash };
+    clearGist();
+    markup = { marks: [], gist: "", contentHash: markup.contentHash };
     try {
       await call("CLEAR_MARKUP", { url: location.href });
     } catch (error) {

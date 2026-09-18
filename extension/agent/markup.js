@@ -3,8 +3,9 @@ import { locateQuote, anchorConfidence } from "../parse/quote.js";
 import { normalizeText } from "../parse/page-parser.js";
 
 /**
- * Reading an article ahead of you and marking the few passages worth stopping
- * at, in the colours the product already uses to mean something.
+ * Reading an article ahead of you: laying out what it argues in plain words,
+ * and marking the few passages worth stopping at, in the colours the product
+ * already uses to mean something.
  *
  * The point is to be able to skim: if everything is marked, nothing is. So
  * there is no target count anywhere in the prompt. Asking for a number is how
@@ -44,6 +45,16 @@ export const MIN_WORDS = 320;
 
 const MAX_QUOTE = 300;
 const MIN_QUOTE = 16;
+
+/**
+ * The gist is a card at the top of an article, not a second article.
+ *
+ * Long enough for a claim and what it rests on, short enough that reading it
+ * is never the slower option. Past this it is trimmed at a sentence boundary
+ * rather than mid-word, because a gist cut off in the middle reads as broken
+ * rather than as long.
+ */
+const MAX_GIST = 900;
 
 export function buildMarkupPacket({ pageTitle = "", url = "", blocks = [], wordCount = 0 } = {}) {
   const ceiling = markCeiling(wordCount);
@@ -98,6 +109,28 @@ export function buildMarkupPacket({ pageTitle = "", url = "", blocks = [], wordC
     `Never mark more than ${ceiling}. That is a guard against a runaway reply,`,
     `not a target and not a shape to aim at.`,
     ``,
+    `## The gist, first`,
+    ``,
+    `Before the marks, lay the article's argument out in plain language, for`,
+    `someone who has not read it and does not have the background it assumes.`,
+    ``,
+    `Two to four sentences. Say what it claims and what that rests on, in the`,
+    `words you would use explaining it to a friend who works in something`,
+    `else. Where the piece leans on a term or an idea it never explains,`,
+    `explain that here — the unexplained thing is usually the reason a reader`,
+    `bounces off, and there is nowhere else in this reply to put it.`,
+    ``,
+    `Say the thing itself. Not "this article argues that", not "the author`,
+    `explores" — a reader who wanted a description of the article would have`,
+    `read the headline. No jargon you have not unpacked in the same breath,`,
+    `and nothing about what the piece is *like* rather than what it says.`,
+    ``,
+    `This is not a summary of the marks below and must not read as one. It is`,
+    `what someone needs in order to understand the marks at all.`,
+    ``,
+    `A piece with no argument to lay out — an announcement, a listing — gets`,
+    `exactly \`NONE\` here, the same as it gets no marks.`,
+    ``,
     `## Colours`,
     ``,
     `Six colours, and each is a different reason to stop. Choosing well is`,
@@ -132,12 +165,19 @@ export function buildMarkupPacket({ pageTitle = "", url = "", blocks = [], wordC
     ``,
     `## Reply format`,
     ``,
-    `One mark per line, nothing else — no preamble, no numbering, no closing`,
-    `remark. If nothing is worth marking, reply with exactly \`NONE\`.`,
+    `Two headings, in this order, and nothing else — no preamble, no`,
+    `numbering, no closing remark.`,
     ``,
     `\`\`\``,
+    `## Gist`,
+    `<the plain-language argument, or NONE>`,
+    ``,
+    `## Marks`,
     `color | exact quote from the article | why this is worth stopping at`,
     `\`\`\``,
+    ``,
+    `One mark per line under \`## Marks\`. If nothing is worth marking, that`,
+    `section is the single word \`NONE\`.`,
     ``,
     `The reason is for the reader, in under 12 words. Say what the passage`,
     `gives them, not that it is important.`,
@@ -153,13 +193,66 @@ export function buildMarkupPacket({ pageTitle = "", url = "", blocks = [], wordC
     .join("\n");
 }
 
+const GIST_HEADING = /^\s*#{0,4}\s*gist\b\s*:?\s*$/i;
+const MARKS_HEADING = /^\s*#{0,4}\s*marks?\b\s*:?\s*$/i;
+
+/**
+ * Splits one reply into its two halves.
+ *
+ * A reply without the headings is still a reply: older passes, and models
+ * that ignore the format, hand back bare mark lines. Those are all marks and
+ * no gist, which is exactly what this feature used to be — so a page marked
+ * before the gist existed still repaints rather than coming back empty.
+ */
+function splitSections(reply) {
+  const lines = String(reply || "").split(/\r?\n/);
+  const marksAt = lines.findIndex((line) => MARKS_HEADING.test(line));
+  const gistAt = lines.findIndex((line) => GIST_HEADING.test(line));
+  if (marksAt < 0 && gistAt < 0) return { gist: "", marks: String(reply || "") };
+
+  const marks = marksAt >= 0 ? lines.slice(marksAt + 1).join("\n") : "";
+  if (gistAt < 0) return { gist: "", marks };
+  // Anything between the two headings, or to the end when the model never
+  // opened a marks section — an article with nothing worth marking still has
+  // an argument worth laying out.
+  const end = marksAt > gistAt ? marksAt : lines.length;
+  return { gist: lines.slice(gistAt + 1, end).join("\n"), marks };
+}
+
+/**
+ * The article's argument in plain words, or "" when there was none to have.
+ *
+ * Held to the same standard as the marks: malformed is dropped rather than
+ * guessed at. The difference is that a bad gist cannot be caught the way a
+ * bad quote can — there is no article text to check it against — so the only
+ * guards available are shape and length.
+ */
+export function parseMarkupGist(reply) {
+  const raw = splitSections(reply).gist;
+  const text = normalizeText(
+    raw
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/^\s*#{1,6}\s*/gm, "")
+      .replace(/^\s*[-*]\s+/gm, "")
+      .replace(/\*\*|__|[`*_]/g, "")
+  );
+  if (!text || /^none\.?$/i.test(text)) return "";
+  // A "gist" the model built out of the mark lines is the marks again, which
+  // the reader is already about to see painted on the page.
+  if (text.includes(" | ")) return "";
+  if (text.length <= MAX_GIST) return text;
+  const cut = text.slice(0, MAX_GIST);
+  const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "));
+  return (stop > MAX_GIST / 2 ? cut.slice(0, stop + 1) : cut).trim();
+}
+
 /**
  * Reads the model's reply into proposals. Anything malformed is dropped
  * rather than guessed at — a mark in the wrong place is worse than a missing
  * one, because the reader trusts it.
  */
 export function parseMarkupReply(reply, ceiling = MAX_MARKS) {
-  const text = String(reply || "").trim();
+  const text = splitSections(reply).marks.trim();
   if (!text || /^none\.?$/i.test(text)) return [];
   const marks = [];
   const seen = new Set();
