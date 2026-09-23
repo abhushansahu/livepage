@@ -6,30 +6,52 @@
     <link rel="stylesheet" href="./popup.css" />
   </head>
   <body>
-    <p class="mark">LivePage</p>
-    <h1 id="title">This page</h1>
-    <p class="domain" id="domain"></p>
-    <div class="actions">
-      <button type="button" id="reading">Add to reading list</button>
-      <button type="button" id="star">☆ Bookmark</button>
-    </div>
-    <label>
-      Tags
-      <input id="tags" placeholder="machine learning, later" />
-    </label>
-    <p class="hint">Comma-separated. Alt+Shift+R also adds to the reading list.</p>
-    <p class="status" id="status" hidden></p>
+    <header class="top">
+      <span class="wordmark">LivePage</span>
+      <span class="top-acts">
+        <button type="button" class="icon-btn" id="dashboard" title="Open Home (⌥⇧L)" aria-label="Open Home"></button>
+        <button type="button" class="icon-btn" id="options" title="Settings" aria-label="Settings"></button>
+      </span>
+    </header>
 
-    <h2>On this page</h2>
-    <div class="switches" id="switches"></div>
-    <p class="hint" id="site-note"></p>
+    <section class="page" id="page">
+      <div class="page-head">
+        <span class="page-glyph" id="glyph" aria-hidden="true"></span>
+        <div class="page-main">
+          <p class="page-title" id="title">This page</p>
+          <p class="page-meta"><span id="domain"></span><span id="state"></span></p>
+        </div>
+      </div>
+      <span class="page-bar" id="bar" hidden><i></i></span>
+      <div class="acts" id="acts">
+        <button type="button" class="chip-btn" id="reading"><span class="ico"></span><span class="txt">Reading list</span></button>
+        <button type="button" class="chip-btn" id="star"><span class="ico"></span><span class="txt">Star</span></button>
+        <button type="button" class="chip-btn" id="letgo" hidden><span class="ico"></span><span class="txt">Let go</span></button>
+      </div>
+      <div class="tags" id="tags-row">
+        <span id="tag-chips"></span>
+        <input id="tags" class="tag-input" placeholder="+ tag" aria-label="Add a tag" />
+      </div>
+    </section>
 
-    <h2>Waiting</h2>
-    <div id="list"></div>
-    <footer>
-      <button id="dashboard">Open dashboard</button>
-      <button id="options">Settings</button>
-    </footer>
+    <section class="gist" id="gist" hidden>
+      <p class="sec-label"><span class="spark" aria-hidden="true"></span>The gist <span class="sec-note" id="gist-when"></span></p>
+      <p class="gist-text" id="gist-text"></p>
+      <p class="gist-more" id="gist-more"></p>
+    </section>
+
+    <section class="onpage">
+      <p class="sec-label">On this page</p>
+      <div class="switches" id="switches"></div>
+      <p class="site-note" id="site-note"></p>
+    </section>
+
+    <section class="waiting">
+      <p class="sec-label">Waiting for you <span class="sec-note" id="waiting-count"></span><button type="button" class="sec-more" id="waiting-more">Home</button></p>
+      <div class="wlist" id="list"></div>
+    </section>
+
+    <p class="toast" id="status" role="status" hidden></p>
     <script type="module" src="./popup.js"></script>
   </body>
 </html>
