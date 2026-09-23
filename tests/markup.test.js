@@ -617,3 +617,36 @@ test("a runaway gist is cut at a sentence, not mid-word", () => {
   assert.ok(gist.endsWith("."));
   assert.ok(!/\bade?$|\bsente?$/.test(gist));
 });
+
+describe("the several ways a model writes a heading", () => {
+  const GIST = "Surveys undercount how much AI firms actually use, because a firm on a free tool does not count itself.";
+  const MARK = "sand | our results underestimate actual adoption | the gap the paper is built on";
+
+  // Every one of these is a model that did the work and typed it differently.
+  // Reading them strictly threw the gist away and drew nothing, which is the
+  // one failure indistinguishable from the feature not existing.
+  const WRITTEN = {
+    "as instructed": `## Gist\n${GIST}\n\n## Marks\n${MARK}`,
+    "with no blank line between the sections": `## Gist\n${GIST}\n## Marks\n${MARK}`,
+    "bolded instead of headed": `**Gist**\n${GIST}\n\n**Marks**\n${MARK}`,
+    "with a colon instead of a hash": `Gist:\n${GIST}\n\nMarks:\n${MARK}`,
+    "running on from the colon": `Gist: ${GIST}\n\nMarks:\n${MARK}`,
+    "with one hash": `# Gist\n${GIST}\n\n# Marks\n${MARK}`,
+    "with three": `### Gist\n${GIST}\n\n### Marks\n${MARK}`,
+    "unlabelled above a marks section": `${GIST}\n\n## Marks\n${MARK}`
+  };
+
+  for (const [how, reply] of Object.entries(WRITTEN)) {
+    test(how, () => {
+      assert.match(parseMarkupGist(reply), /^Surveys undercount/);
+      assert.equal(parseMarkupReply(reply).length, 1);
+    });
+  }
+
+  test("a gist opening on the word gist is not read as its own heading", () => {
+    // Trailing text counts only after a colon, or this sentence would lose
+    // its first three words.
+    const reply = `## Gist\nGist aside, the paper argues that surveys undercount adoption badly.\n\n## Marks\n${MARK}`;
+    assert.match(parseMarkupGist(reply), /^Gist aside/);
+  });
+});

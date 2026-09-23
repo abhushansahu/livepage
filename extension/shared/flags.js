@@ -3,6 +3,8 @@
  * Experiment supplies defaults; explicit settings.flags always win.
  */
 
+export const DASHBOARD_LAYOUTS = ["feed", "lists", "compact", "home"];
+
 export const FLAG_DEFAULTS = {
   forYouFeed: true,
   readingList: true,
@@ -16,7 +18,7 @@ export const FLAG_DEFAULTS = {
   orphanRecovery: true,
   markup: true,
   minimap: true,
-  dashboardLayout: "compact"
+  dashboardLayout: "home"
 };
 
 export const EXPERIMENTS = {
@@ -51,6 +53,15 @@ export const EXPERIMENTS = {
           dashboardLayout: "compact",
           localTweets: false
         }
+      },
+      D: {
+        label: "D · home",
+        hint: "One calm column: what you were mid-way through, what is waiting, and the rooms as tabs.",
+        flags: {
+          forYouFeed: true,
+          dashboardLayout: "home",
+          localTweets: false
+        }
       }
     }
   }
@@ -58,11 +69,12 @@ export const EXPERIMENTS = {
 
 export const DEFAULT_EXPERIMENT = {
   id: "dashboard-density",
-  variant: "C"
+  variant: "D"
 };
 
 export function resolveFlags(settings = {}) {
-  const experiment = normalizeExperiment(settings.experiment);
+  const migrated = migrateExperiment(settings);
+  const experiment = normalizeExperiment(migrated.experiment);
   const variantFlags =
     EXPERIMENTS[experiment.id]?.variants?.[experiment.variant]?.flags || {};
   const legacy = {};
@@ -76,9 +88,9 @@ export function resolveFlags(settings = {}) {
     ...FLAG_DEFAULTS,
     ...variantFlags,
     ...legacy,
-    ...(settings.flags || {})
+    ...(migrated.flags || {})
   };
-  if (!["feed", "lists", "compact"].includes(flags.dashboardLayout)) {
+  if (!DASHBOARD_LAYOUTS.includes(flags.dashboardLayout)) {
     flags.dashboardLayout = FLAG_DEFAULTS.dashboardLayout;
   }
   return { flags, experiment };
@@ -111,6 +123,20 @@ export function firstVisibleFilter(flags = FLAG_DEFAULTS, preferred = "home") {
   const items = navItems(flags);
   if (items.some((item) => item.id === preferred)) return preferred;
   return items[0]?.id || "reading";
+}
+
+/**
+ * "C · portal" was the install default before "D · home" existed, so every
+ * older profile carries it whether or not anyone picked it. Settings marks a
+ * variant it saved with `chosen`; a C without that mark is the old default,
+ * and moves to the new one together with the layout the old default wrote.
+ */
+function migrateExperiment(settings) {
+  const experiment = settings.experiment;
+  if (!experiment || experiment.variant !== "C" || experiment.chosen) return settings;
+  const flags = { ...(settings.flags || {}) };
+  if (flags.dashboardLayout === "compact") delete flags.dashboardLayout;
+  return { ...settings, experiment: { ...experiment, variant: "D" }, flags };
 }
 
 function normalizeExperiment(value) {

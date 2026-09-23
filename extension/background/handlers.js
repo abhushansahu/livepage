@@ -13,6 +13,7 @@ import {
   saveSettings,
   searchPages,
   searchHighlights,
+  getLatestMarkup,
   getMarkup,
   putMarkup,
   deleteMarkup,
@@ -25,7 +26,8 @@ import {
   listGlossary,
   putGloss,
   recordEvent,
-  listEvents
+  listEvents,
+  mirrorPendingCount
 } from "../storage/store.js";
 import {
   buildAgentPacket,
@@ -34,6 +36,7 @@ import {
   nextLedger
 } from "../agent/packet.js";
 import { pairAgentHost, pingAgentHost, runAgentAsk } from "../agent/host-client.js";
+import { drainMirror, mirrorHostStatus } from "../storage/mirror.js";
 import { cleanAgentReply } from "../agent/reply.js";
 import {
   anchorMarkup,
@@ -132,6 +135,8 @@ export async function handleMessage(message) {
       return markupPage(payload);
     case "GET_MARKUP":
       return readMarkup(payload);
+    case "LATEST_MARKUP":
+      return getLatestMarkup(glossaryPageId(payload));
     case "CLEAR_MARKUP":
       return { cleared: await deleteMarkup(glossaryPageId(payload)) };
     case "KEEP_MARK":
@@ -142,6 +147,10 @@ export async function handleMessage(message) {
       return readGlossary(payload);
     case "PING_AGENT_HOST":
       return pingAgentHostStatus();
+    case "MIRROR_STATUS":
+      return mirrorStatus();
+    case "MIRROR_DRAIN":
+      return drainMirrorNow();
     case "RESET_LEDGER":
       return saveLedger({
         pageId: payload.pageId,
@@ -599,6 +608,28 @@ async function makePacket(payload) {
     await putPage(page);
   }
   return { packet, page, thread };
+}
+
+/**
+ * Pushes queued writes to the host. A stale token is the one failure worth
+ * handling here: re-pair once and go again, since pairing is free on this
+ * machine. Everything else waits for the next alarm.
+ */
+export async function drainMirrorNow() {
+  let settings = await getSettings();
+  let result = await drainMirror(settings);
+  if (result.reason === "unpaired" || result.reason === "unauthorized") {
+    await pingAgentHostStatus();
+    settings = await getSettings();
+    result = await drainMirror(settings);
+  }
+  return result;
+}
+
+async function mirrorStatus() {
+  const settings = await getSettings();
+  const [pending, host] = await Promise.all([mirrorPendingCount(), mirrorHostStatus(settings)]);
+  return { pending, host };
 }
 
 async function pingAgentHostStatus() {

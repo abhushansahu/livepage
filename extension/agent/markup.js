@@ -193,8 +193,21 @@ export function buildMarkupPacket({ pageTitle = "", url = "", blocks = [], wordC
     .join("\n");
 }
 
-const GIST_HEADING = /^\s*#{0,4}\s*gist\b\s*:?\s*$/i;
-const MARKS_HEADING = /^\s*#{0,4}\s*marks?\b\s*:?\s*$/i;
+/**
+ * The two headings, written the several ways a model actually writes them.
+ *
+ * A heading is formatting, and formatting is the instruction models drift from
+ * first: asked for `## Gist` they will hand back `**Gist**`, or `Gist:` with
+ * the paragraph running on from the colon. Every one of those is a model that
+ * did the work and typed it differently, and reading them strictly threw the
+ * gist away and showed the reader nothing — the one failure that looks exactly
+ * like the feature not existing.
+ *
+ * Trailing text is only taken after a colon, so a gist that happens to open
+ * with the word "gist" is not mistaken for its own heading.
+ */
+const GIST_HEADING = /^\s*(?:#{1,4}\s*)?(?:\*\*|__)?\s*gist\s*(?:\*\*|__)?\s*(?::\s*(.*))?$/i;
+const MARKS_HEADING = /^\s*(?:#{1,4}\s*)?(?:\*\*|__)?\s*marks?\s*(?:\*\*|__)?\s*:?\s*$/i;
 
 /**
  * Splits one reply into its two halves.
@@ -211,12 +224,21 @@ function splitSections(reply) {
   if (marksAt < 0 && gistAt < 0) return { gist: "", marks: String(reply || "") };
 
   const marks = marksAt >= 0 ? lines.slice(marksAt + 1).join("\n") : "";
-  if (gistAt < 0) return { gist: "", marks };
+  if (gistAt < 0) {
+    // A marks section with prose above it and no heading over that prose. The
+    // model laid the argument out and simply did not label it, which is a
+    // reply that did the work — and the pipe check downstream is what stops a
+    // stray mark line being read as an argument.
+    return { gist: lines.slice(0, marksAt).join("\n"), marks };
+  }
   // Anything between the two headings, or to the end when the model never
   // opened a marks section — an article with nothing worth marking still has
   // an argument worth laying out.
   const end = marksAt > gistAt ? marksAt : lines.length;
-  return { gist: lines.slice(gistAt + 1, end).join("\n"), marks };
+  // `Gist: the argument starts right here` puts the first words on the
+  // heading's own line.
+  const inline = GIST_HEADING.exec(lines[gistAt])?.[1] || "";
+  return { gist: [inline, ...lines.slice(gistAt + 1, end)].join("\n"), marks };
 }
 
 /**

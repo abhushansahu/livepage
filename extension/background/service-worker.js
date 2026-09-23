@@ -1,5 +1,6 @@
 import { handleMessage } from "./handlers.js";
-import { getSettings, unreadPages, upsertImportedPages } from "../storage/store.js";
+import { getSettings, onMirrorEnqueued, unreadPages, upsertImportedPages } from "../storage/store.js";
+import { drainMirrorNow } from "./handlers.js";
 import { syncSaves } from "../import/sync.js";
 import { syncRssFeeds } from "../import/rss.js";
 import { resolveFlags } from "../shared/flags.js";
@@ -9,6 +10,15 @@ const DASHBOARD_PATH = "dashboard/index.html";
 const ALARM = "livepage-unread-reminder";
 const SYNC_ALARM = "livepage-sync-saves";
 const RSS_ALARM = "livepage-sync-rss";
+const MIRROR_ALARM = "livepage-mirror";
+
+// A write becomes a drain a moment later, so a burst of highlights goes as
+// one batch; the alarm is the catch-all for a host that was down at the time.
+let mirrorTimer = 0;
+onMirrorEnqueued(() => {
+  clearTimeout(mirrorTimer);
+  mirrorTimer = setTimeout(() => drainMirrorNow().catch(() => {}), 1500);
+});
 
 chrome.runtime.onInstalled.addListener(async () => {
   chrome.contextMenus.removeAll(() => {
@@ -49,6 +59,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   });
   await refreshBadge();
   await scheduleReminder();
+  await scheduleMirror();
   await scheduleSync();
   await scheduleRss();
 });
@@ -58,6 +69,8 @@ chrome.runtime.onStartup.addListener(async () => {
   await scheduleReminder();
   await scheduleSync();
   await scheduleRss();
+  await scheduleMirror();
+  drainMirrorNow().catch(() => {});
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -167,6 +180,10 @@ chrome.action.onClicked.addListener(() => {
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === MIRROR_ALARM) {
+    await drainMirrorNow().catch(() => {});
+    return;
+  }
   if (alarm.name === SYNC_ALARM) {
     const settings = await getSettings();
     const { flags } = resolveFlags(settings);
@@ -252,6 +269,11 @@ async function scheduleReminder() {
   await chrome.alarms.clear(ALARM);
   if (!settings.remindersEnabled) return;
   chrome.alarms.create(ALARM, { when, periodInMinutes: 24 * 60 });
+}
+
+async function scheduleMirror() {
+  await chrome.alarms.clear(MIRROR_ALARM);
+  chrome.alarms.create(MIRROR_ALARM, { periodInMinutes: 1 });
 }
 
 async function scheduleSync() {

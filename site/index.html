@@ -6,263 +6,213 @@
     <title>LivePage — think on the live web</title>
     <meta
       name="description"
-      content="A Chrome extension that turns any live webpage into a writable thinking surface: an agent marks the passages worth stopping at, then highlights, margin conversations, forked agent threads, a dashboard of waiting pages, and an Obsidian vault dump."
+      content="A Chrome extension that turns any live webpage into a writable thinking surface: an agent reads the article ahead of you, you argue in the margin with Cursor or Claude Code, and a calm home screen keeps what is waiting on you."
     />
     <link rel="icon" href="./favicon.png" />
     <link rel="apple-touch-icon" href="./icon.png" />
-    <meta name="theme-color" content="#f4efe6" />
+    <meta name="theme-color" content="#fafafa" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" />
     <link rel="stylesheet" href="./styles.css" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("lp-theme");
+          if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div class="wrap">
       <header class="top">
         <a class="brand" href="./">
-          <img src="./icon.png" alt="" width="36" height="36" />
-          <span class="mark">LivePage</span>
+          <img src="./icon.png" alt="" width="28" height="28" />
+          <span>LivePage</span>
+          <span class="version">0.4.0</span>
         </a>
         <nav class="links">
-          <a href="#read">Reading</a>
-          <a href="#install">Install</a>
+          <a href="#surfaces">Surfaces</a>
+          <a href="#new">What's new</a>
+          <a href="#install" class="keep">Install</a>
           <a href="#limits">Limits</a>
-          <a href="https://github.com/abhushansahu/livepage">GitHub</a>
-          <button class="ghost" type="button" id="theme" aria-label="Toggle theme">Dark</button>
+          <a href="https://github.com/abhushansahu/livepage" class="keep">GitHub</a>
+          <button type="button" id="theme" aria-label="Toggle theme">Theme</button>
         </nav>
       </header>
 
-      <div class="hero">
-        <div>
-          <p class="kicker">Chrome extension · 0.2.0</p>
-          <h1>The page stays live. Your thoughts stay on it.</h1>
-          <p class="lede">
-            An agent reads the long thing ahead of you and marks what is worth stopping at. You highlight, argue in the margin, and fork a thread with Cursor or Claude Code — on the live page, without clipping the web into a specimen.
-          </p>
-          <div class="cta">
-            <a class="btn" href="#install">Load it unpacked</a>
-            <a class="ghost" href="https://github.com/abhushansahu/livepage">Source on GitHub</a>
-          </div>
-          <p class="note">Not on the Chrome Web Store. Load the <code>extension/</code> folder into the Chrome you already use.</p>
+      <section class="hero">
+        <span class="eyebrow">Chrome extension · local-first · no accounts</span>
+        <h1>The page stays live. <mark>Your thoughts stay on it.</mark></h1>
+        <p class="lede">
+          An agent reads the long thing ahead of you and marks what is worth stopping at. You highlight, argue in the margin, and hand a question to Cursor or Claude Code without leaving the page. A home screen keeps what is still waiting on you, and lets you let go of what is not.
+        </p>
+        <div class="cta">
+          <a class="btn" href="#install">Load it unpacked</a>
+          <a class="btn secondary" href="https://github.com/abhushansahu/livepage">Source on GitHub</a>
         </div>
+        <p class="note">Not on the Chrome Web Store. It loads into the Chrome you already use, signed in as you already are.</p>
 
-        <aside class="stage" aria-label="Preview of LivePage on an article">
-          <div class="stage-bar">
-            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-            <span>example.com/essay</span>
+        <figure class="shot hero-shot">
+          <img src="./img/article.png" width="2160" height="1350" alt="An article with one sentence highlighted and a margin card beside it holding a short thread and an Ask Claude Code button" />
+        </figure>
+
+        <div class="swatches" aria-label="The six highlight colours">
+          <i style="background: var(--lemon)"></i>
+          <i style="background: var(--moss)"></i>
+          <i style="background: var(--sky)"></i>
+          <i style="background: var(--rose)"></i>
+          <i style="background: var(--iris)"></i>
+          <i style="background: var(--sand)"></i>
+          <span>Key idea · Action · Question · Concern · Insight · Evidence. A claim and the evidence under it are different kinds of passage, and the colours say which.</span>
+        </div>
+      </section>
+
+      <div id="surfaces">
+        <section class="surface">
+          <figure class="shot">
+            <img src="./img/article.png" width="2160" height="1350" loading="lazy" alt="The margin card beside a highlighted sentence" />
+          </figure>
+          <div>
+            <span class="eyebrow">On the page</span>
+            <h2>The margin sits beside the sentence, not at the edge of the window.</h2>
+            <p>Select a span and a quiet toolbar offers six colours and a comment. The card lands next to the paragraph it belongs to, joined by a short line in its colour. On a split screen it folds into a rail of dots and opens over the page, so the article keeps its width.</p>
+            <p>A thread can fork. You and an agent can take different readings of the same span without overwriting each other. Ask goes to the Cursor or Claude Code CLI already on your machine, with the page's links in hand so the agent can go and check rather than guess.</p>
+            <div class="keys"><span>Keys</span><kbd>⌥H</kbd><kbd>⌥M</kbd><kbd>⌘↵</kbd></div>
           </div>
-          <div class="page">
-            <article class="article">
-              <p class="kicker">LivePage demo</p>
-              <h2>A selection on a live page is a decision site</h2>
-              <p>
-                Most tools treat the web as something to clip and file. That misses the moment that actually matters:
-                <mark class="lemon">you are in the habitat of the page, mid-thought</mark>, and you need a cheap way to couple, mark fog, or park a why.
-              </p>
-              <p>
-                Reader views strip the visual rhetoric that steered your attention. Annotation that only works after capture is annotation of a specimen,
-                <mark class="iris">not of the living animal</mark>.
-              </p>
-              <p>
-                A margin note is not a dead sticker.
-                <mark class="sky">It is an unfinished cognitive thread.</mark>
-                It can fork when you and an agent take different readings of the same span.
-              </p>
-              <p>
-                <mark class="ai sand">An agent can read it first and mark only what carries the argument.</mark>
-                Its marks are dotted, because they are not yours until you keep one.
-              </p>
-              <p>
-                <mark class="moss">Dump the trail into a git vault when it is cool enough to own.</mark>
-                Until then, stay on the page.
-              </p>
-            </article>
-            <div class="rail" aria-hidden="true">
-              <i style="top:14%;background:#E8CF62"></i>
-              <i style="top:33%;background:#AF9ADA"></i>
-              <i class="hollow" style="top:52%;--t:#87BFDF"></i>
-              <i class="hollow" style="top:71%;--t:#D2AE76"></i>
-              <i style="top:88%;background:#8FC38F"></i>
-            </div>
-            <div class="gutter">
-              <div class="card">
-                <div class="stripe lemon"></div>
-                <strong>Key idea</strong>
-                Stay in the habitat. Do not leave to take notes elsewhere.
-              </div>
-              <div class="card">
-                <div class="stripe sky"></div>
-                <strong>Question · <span class="who">you</span></strong>
-                What would make returning here cheaper than opening a new tab?
-              </div>
-              <div class="card">
-                <div class="stripe moss"></div>
-                <strong>Action · <span class="who">agent</span></strong>
-                Linear in <span class="math">θ</span> means the prediction
-                <span class="math">h<sub>θ</sub>(x) = θ<sup>⊤</sup>ϕ(x)</span> is a weighted sum,
-                whatever <span class="math">ϕ</span> does.
-              </div>
-            </div>
+        </section>
+
+        <section class="surface flip">
+          <div>
+            <span class="eyebrow">Before you read</span>
+            <h2>An agent marks the passages worth stopping at, and says what the piece argues.</h2>
+            <p>Press <kbd>⌥A</kbd> on an article and an agent reads it, writes the argument in plain words above the first paragraph, and marks the claims and what they rest on in the same six colours. Every quote is checked against the article before it is painted, so nothing approximate lands on the page.</p>
+            <p>Its marks are dotted, because they are not yours until you keep one. Down the right edge is the article's shape: every marked passage as a tick at its depth, with how far you have actually read shaded behind it.</p>
+            <div class="keys"><span>Keys</span><kbd>⌥A</kbd><kbd>⌥J</kbd><kbd>⌥K</kbd><kbd>⌥⇧A</kbd></div>
           </div>
-        </aside>
+          <figure class="shot">
+            <img src="./img/pane.png" width="2160" height="1350" loading="lazy" alt="The dashboard's side pane showing the agent's gist, the passages it marked, tags, and a highlight with its thread" />
+          </figure>
+        </section>
+
+        <section class="surface">
+          <figure class="shot">
+            <img src="./img/home.png" width="2160" height="1350" loading="lazy" alt="The home screen: a greeting, four counts, pick up where you left off, and a list of pages waiting for you" />
+          </figure>
+          <div>
+            <span class="eyebrow">Home</span>
+            <h2>One calm column of what is actually waiting on you.</h2>
+            <p>Nothing is stored just because you opened it. A page is kept the moment you highlight, star, list, tag or import it, so the counts mean something. Pick up where you left off comes first, then what is waiting, then a thread that needs your reply.</p>
+            <p>Some of it will stop being interesting. Let go, and the page stops counting as waiting without being deleted. It stays findable, and Undo is right there for six seconds.</p>
+            <div class="keys"><span>Keys</span><kbd>⌥⇧L</kbd><kbd>⌥⇧R</kbd><kbd>⌘K</kbd></div>
+          </div>
+        </section>
+
+        <section class="surface flip">
+          <div>
+            <span class="eyebrow">Settings</span>
+            <h2>Every switch says what it does, and saves as you flip it.</h2>
+            <p>Reading, agents, home layout, feeds, vault, reminders and data, in one column with a section rail. The six colours are real swatches, the layouts are small drawings you click, and the agent host shows whether it is reachable.</p>
+            <p>The host also keeps a copy of everything you write in a database on your machine, beside its pairing token. The browser is still what LivePage reads. The copy is there so a wiped profile is no longer the end of your highlights.</p>
+          </div>
+          <figure class="shot">
+            <img src="./img/settings.png" width="2160" height="1350" loading="lazy" alt="The settings page with a section rail, colour swatches, a strength slider, a theme control and labelled switches" />
+          </figure>
+        </section>
       </div>
 
-      <section id="read">
-        <h2>Reading the long thing</h2>
-        <p class="sub">The part that stops you is rarely the writing. It is not knowing where the argument is, or whether you got there.</p>
-        <div class="grid three">
-          <article class="tile">
-            <h3><kbd>⌥A</kbd> Marked before you start</h3>
-            <p>An agent reads the article and marks only the passages worth stopping at, in the same six colours. There is no target count — asking a model for five gets you five whether or not a fifth exists — so it is judged on coverage instead: you should get the argument from the marks alone, the claims and what they rest on. An article that makes no point worth marking gets nothing, and says so.</p>
-            <p>The colours are meant to carry weight. A claim is a key idea; the number holding it up is evidence; the risk the author names is a concern. A page marked all in one colour has thrown away most of what the marks could have said.</p>
-            <p class="fine">Every quote is checked against the article before it becomes a mark. A paraphrase or an invention is thrown away rather than painted somewhere approximate.</p>
-            <p class="fine">Read it wrong? <kbd>⌥⇧A</kbd>, or the ↻ beside the dot in the corner, throws that answer away and asks for a fresh one. A second pass never re-suggests a passage you already kept.</p>
-          </article>
-          <article class="tile">
-            <h3>The shape down the edge</h3>
-            <p>Every marked passage as a tick at its own depth, your own highlights solid and an agent’s suggestions hollow, with how far you actually read shaded behind them. Click a tick to jump. It is the scrollbar an IDE gives you, for an argument instead of a file.</p>
-            <p class="fine"><kbd>⌥J</kbd> and <kbd>⌥K</kbd> move between marks without touching the mouse.</p>
-          </article>
-          <article class="tile">
-            <h3>PDFs get the same margin</h3>
-            <p>Open a paper in LivePage’s own reader and it behaves like any other page: select, highlight, ask, and the conversation sits beside the passage. The record is keyed on the PDF’s own URL, so it is the same page in the dashboard and the same note in the vault as if you had read it on the web.</p>
-            <p class="fine">Each highlight remembers its page number, so it comes back when you scroll to it. A scanned PDF has no text to select, and LivePage says so rather than pretending.</p>
-          </article>
-          <article class="tile">
-            <h3><kbd>⌥S</kbd> Terms explained in place</h3>
-            <p>Words an article leans on get a quiet underline; hover for what it means here, ⌘-click to jump to where it was defined. Answers are cached per page, so the second hover is instant. Noisy on a site you read daily — <kbd>⌥S</kbd> turns it off for that site and leaves it alone everywhere else.</p>
-          </article>
-        </div>
+      <section class="plain" id="new">
+        <span class="eyebrow">0.4.0</span>
+        <h2>What's new</h2>
+        <p class="sub">A redesign of every surface you look at, and the first step of moving the store out of the browser.</p>
+        <ul class="new">
+          <li style="--dot: var(--lemon)"><span><b>The margin card</b> sits beside the text, tapers on narrower windows, and folds to a rail on a split screen. Resize is smooth.</span></li>
+          <li style="--dot: var(--moss)"><span><b>Home</b> replaces the portal dashboard: one column, pick up where you left off, waiting for you, rooms as tabs, tools in a menu.</span></li>
+          <li style="--dot: var(--sky)"><span><b>The side pane</b> shows the agent's gist and the passages it marked, then your highlights and threads, with a reply box.</span></li>
+          <li style="--dot: var(--rose)"><span><b>Let go</b> of a page from any row or the pane. It stops counting as waiting, stays findable, and Undo lasts six seconds.</span></li>
+          <li style="--dot: var(--iris)"><span><b>Settings</b> rebuilt in the same tokens, saving as you change things, with a live host pill and layout drawings.</span></li>
+          <li style="--dot: var(--sand)"><span><b>The host mirror</b>: every write is queued and carried to a SQLite file the agent host keeps. IndexedDB stays primary for now.</span></li>
+          <li><span><b>The send button</b> has a face: a pen for a comment, a spark for an ask, and it lets go of the message on click.</span></li>
+          <li><span><b>Article symbols, minimap and PDFs</b> carry over unchanged from 0.3.</span></li>
+        </ul>
       </section>
 
-      <section id="what">
-        <h2>Thinking on it</h2>
-        <p class="sub">Built as a layer over the Chrome you already live in. Nothing is stored just because you opened a tab.</p>
-        <div class="grid">
-          <article class="tile">
-            <h3>On the page</h3>
-            <p>Select a span. Six highlight colours and a comment. Notes sit in a reserved right margin, aligned to the quote — Google Docs / Notion style, not a floating overlay.</p>
-            <div class="swatches">
-              <span class="swatch"><span class="chip" style="background:#E8CF62"></span>Key idea</span>
-              <span class="swatch"><span class="chip" style="background:#8FC38F"></span>Action</span>
-              <span class="swatch"><span class="chip" style="background:#87BFDF"></span>Question</span>
-              <span class="swatch"><span class="chip" style="background:#DF9EAE"></span>Concern</span>
-              <span class="swatch"><span class="chip" style="background:#AF9ADA"></span>Insight</span>
-              <span class="swatch"><span class="chip" style="background:#D2AE76"></span>Evidence</span>
-            </div>
-          </article>
-          <article class="tile">
-            <h3>Threads can fork</h3>
-            <p>Any message can branch. You and an agent can take different readings of the same span without overwriting each other. Ask Cursor or Claude Code; they get a parsed packet, not a second copy of the page.</p>
-          </article>
-          <article class="tile">
-            <h3>What comes back is readable</h3>
-            <p>Agents answer in markdown with LaTeX in it, because that is how anything mathematical gets written. So <code>h_\theta(x) = \theta^\top x</code> arrives as <span class="math">h<sub>θ</sub>(x) = θ<sup>⊤</sup>x</span> — greek, sub- and superscripts, fractions and the common operators, with lists and code kept as lists and code.</p>
-            <p class="fine">A CLI agent narrates what it is about to do. “I’ll read <code>packet.md</code> to find the latest question” never reaches the thread, and so never reaches the vault.</p>
-          </article>
-          <article class="tile">
-            <h3>When the page changes underneath</h3>
-            <p>A highlight is a quote, so a rewritten page can leave it with nowhere to sit — and it would take a whole conversation with it. Those collect in a dock instead of vanishing, with the saved copy of the text around them, and re-attach to the passage where it lives now.</p>
-          </article>
-          <article class="tile">
-            <h3>Scroll is the truth</h3>
-            <p>Reading status is how far you actually got, not a clip checkbox. Opening a page and leaving leaves no trace. LivePage writes a record the first time you keep it: highlight, comment, star, list, tag, or import.</p>
-          </article>
-          <article class="tile">
-            <h3>Find the sentence, not the article</h3>
-            <p>Search returns the passage you marked and the thread on it, with the match shown in place — not a page card you then have to read again to find the line. Open the page and it scrolls to it.</p>
-          </article>
-          <article class="tile">
-            <h3>Dashboard of open loops</h3>
-            <p>Untouched Watch Later, X bookmarks, Reddit saves, RSS, half-read pages, and comments still waiting keep coming back. Hide rooms that get loud. Variant A is feed-first; B starts in lists.</p>
-          </article>
-          <article class="tile">
-            <h3>This Chrome’s sessions</h3>
-            <p>Harvest X bookmarks, Reddit saved, and YouTube Watch Later from the profile you already signed into. No second login. Feeds can be added from a page that advertises RSS, or from Settings.</p>
-          </article>
-          <article class="tile">
-            <h3>Obsidian / git vault</h3>
-            <p>Bind a vault folder. Write vault dumps ordinary markdown plus <code>catalog.json</code>. GitHub is the sync bus between machines. Chrome cannot push for you.</p>
-          </article>
-        </div>
-      </section>
-
-      <section id="install">
-        <h2>Install</h2>
-        <p class="sub">Load unpacked into the Chrome you already use. Homebrew cannot inject an extension into that profile.</p>
+      <section class="plain" id="install">
+        <span class="eyebrow">Install</span>
+        <h2>Load unpacked into the Chrome you already use.</h2>
+        <p class="sub">Homebrew cannot inject an extension into that profile, so there is no formula. Three steps, then it is on every page.</p>
         <ol class="steps">
-          <li>
-            <div>
-              Clone the repo, then open <code>chrome://extensions</code>, enable Developer mode, and <strong>Load unpacked</strong> → select the <code>extension/</code> folder. Pin LivePage.
-            </div>
-          </li>
-          <li>
-            <div>
-              Browse as usual. <kbd>⌥H</kbd> highlights a selection, <kbd>⌥M</kbd> comments, <kbd>⌥A</kbd> has an agent mark up the article, <kbd>⌥⇧L</kbd> opens the dashboard. Clicking the LivePage icon shows what is on for the page in front of you, with the key for each — and each of those rows is about that site, not the whole web, so a surface you like on essays can be off on the one place it gets in the way.
-            </div>
-          </li>
-          <li>
-            <div>
-              For in-thread agent replies, keep <code>npm run agent-host</code> running in the repo. The host binds loopback only and pairs with this extension — web pages cannot invoke it. No cloud API keys.
-            </div>
-          </li>
+          <li><div><b>Clone, then load.</b> Open <code>chrome://extensions</code>, enable Developer mode, choose <b>Load unpacked</b> and select the <code>extension/</code> folder. Pin LivePage.</div></li>
+          <li><div><b>Keep the host running.</b> <code>npm run agent-host</code> in the repo. It binds loopback only, pairs with the extension on its own, and shells out to the Cursor or Claude Code CLI already on this machine. No API keys.</div></li>
+          <li><div><b>Read as usual.</b> <kbd>⌥A</kbd> on an article has an agent mark it up. <kbd>⌥⇧L</kbd> opens Home. Reload the extension after <code>git pull</code>.</div></li>
         </ol>
-        <pre><code>git clone https://github.com/abhushansahu/livepage
+        <pre>git clone https://github.com/abhushansahu/livepage
 cd livepage
-# chrome://extensions → Load unpacked → extension/</code></pre>
+npm install
+npm run agent-host
+# chrome://extensions → Load unpacked → extension/</pre>
       </section>
 
-      <section>
-        <h2>Shortcuts</h2>
+      <section class="plain" id="shortcuts">
+        <span class="eyebrow">Shortcuts</span>
+        <h2>Every action has a key.</h2>
         <p class="sub">⌥ is Option on a Mac, Alt on Windows and Linux.</p>
         <table>
-          <thead>
-            <tr><th>Action</th><th>Default</th></tr>
-          </thead>
+          <thead><tr><th>Action</th><th>Default</th></tr></thead>
           <tbody>
             <tr><td>Highlight selection</td><td><kbd>⌥H</kbd></td></tr>
             <tr><td>Comment on selection</td><td><kbd>⌥M</kbd></td></tr>
+            <tr><td>Send the comment, or the ask</td><td><kbd>⌘↵</kbd></td></tr>
             <tr><td>Mark up this article</td><td><kbd>⌥A</kbd></td></tr>
             <tr><td>Read this article again</td><td><kbd>⌥⇧A</kbd></td></tr>
             <tr><td>Next / previous marked passage</td><td><kbd>⌥J</kbd> / <kbd>⌥K</kbd></td></tr>
             <tr><td>Explained terms off for this site</td><td><kbd>⌥S</kbd></td></tr>
-            <tr><td>Open dashboard</td><td><kbd>⌥⇧L</kbd></td></tr>
+            <tr><td>Open Home</td><td><kbd>⌥⇧L</kbd></td></tr>
             <tr><td>Add to reading list</td><td><kbd>⌥⇧R</kbd></td></tr>
           </tbody>
         </table>
       </section>
 
-      <section id="limits">
-        <h2>Limits, honestly</h2>
+      <section class="plain" id="limits">
+        <span class="eyebrow">Limits</span>
+        <h2>Honestly.</h2>
         <div class="limits">
-          <p>This is an extension, not a research browser. It cannot rewrite navigation the way Horse Trails does.</p>
-          <p>Highlights use text-quote selectors. A page that rewrites the paragraph can still leave one with nowhere to sit — it collects in a dock with its thread intact rather than disappearing, and you re-attach it by selecting the passage where it lives now. Infinite-scroll feeds snapshot themselves when you highlight, so the anchor has somewhere to live.</p>
-          <p>The extension runs on every http(s) page because the product is “think on the live web.” Harvest uses the cookies of this Chrome profile. If you are not logged into X here, LivePage cannot invent that session.</p>
-          <p>Agent replies stay on your machine. Marking up an article shells out to the Cursor or Claude Code CLI already installed there, so it costs a real call and waits to be asked rather than running on every page you open. If the host is down, LivePage says so, and you still have the packet to paste a reply back by hand.</p>
-          <p><strong>PDFs, with edges.</strong> They open in LivePage’s reader rather than taking over Chrome’s — from the popup, or by right-clicking a link to one. A local file needs “Allow access to file URLs” ticked on <code>chrome://extensions</code>, which no extension can ask for on your behalf. A highlight has to sit on one page; a selection crossing a page break is refused rather than quietly halved. Marking up with <kbd>⌥A</kbd> is not wired to PDFs yet.</p>
-          <p><strong>No backup or restore yet.</strong> The vault dump is one-way, so a wiped Chrome profile takes your highlights with it.</p>
+          <p><b>It is an extension, not a browser.</b> It cannot rewrite navigation, and it runs on every http(s) page because the product is “think on the live web.”</p>
+          <p><b>Highlights are text quotes, not positions.</b> A page that rewrites a paragraph can leave one with nowhere to sit. It waits in a dock with its thread, and you can re-attach it by selecting the passage where it lives now. Infinite-scroll feeds are snapshotted the moment you highlight.</p>
+          <p><b>Agents cost a real call.</b> Marking up an article shells out to the Cursor or Claude Code CLI on your machine. Nothing runs when you merely open a page; an article already read repaints for free.</p>
+          <p><b>Harvest uses this Chrome's sessions.</b> X bookmarks, Reddit saved and YouTube Watch Later come from the profile you are already signed into. Nothing is sent anywhere.</p>
+          <p><b>PDFs open in LivePage's reader, never by hijack.</b> The popup and the link menu offer it. A scanned PDF has no text layer to select, and LivePage says so.</p>
+          <p><b>The host's copy is a mirror, not yet the store.</b> It receives every write from now on; it does not backfill what was already in the browser, and LivePage does not read from it yet. The vault dump remains one way.</p>
         </div>
       </section>
 
       <footer>
-        <span>LivePage 0.2.0 · local-first · unpacked Chrome extension</span>
+        <span>LivePage 0.4.0 · local-first · unpacked Chrome extension</span>
         <a href="https://github.com/abhushansahu/livepage">abhushansahu/livepage</a>
       </footer>
     </div>
+
     <script>
-      const root = document.documentElement;
-      const btn = document.getElementById("theme");
-      const stored = localStorage.getItem("lp-theme");
-      const preferDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      const initial = stored || (preferDark ? "dark" : "coffee");
-      apply(initial);
-      btn.addEventListener("click", () => {
-        apply(root.getAttribute("data-theme") === "dark" ? "coffee" : "dark");
-      });
-      function apply(theme) {
-        if (theme === "dark") root.setAttribute("data-theme", "dark");
-        else root.removeAttribute("data-theme");
-        btn.textContent = theme === "dark" ? "Light" : "Dark";
-        localStorage.setItem("lp-theme", theme);
-        document.querySelector('meta[name="theme-color"]').setAttribute("content", theme === "dark" ? "#17140f" : "#f4efe6");
-      }
+      (function () {
+        var root = document.documentElement;
+        var btn = document.getElementById("theme");
+        var meta = document.querySelector('meta[name="theme-color"]');
+        function current() {
+          var set = root.getAttribute("data-theme");
+          if (set) return set;
+          return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        function apply(theme) {
+          root.setAttribute("data-theme", theme);
+          meta.setAttribute("content", theme === "dark" ? "#0f0f10" : "#fafafa");
+          btn.textContent = theme === "dark" ? "Light" : "Dark";
+          try { localStorage.setItem("lp-theme", theme); } catch (e) {}
+        }
+        btn.textContent = current() === "dark" ? "Light" : "Dark";
+        meta.setAttribute("content", current() === "dark" ? "#0f0f10" : "#fafafa");
+        btn.addEventListener("click", function () { apply(current() === "dark" ? "light" : "dark"); });
+      })();
     </script>
   </body>
 </html>

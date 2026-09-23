@@ -11,6 +11,7 @@ import {
   tokenMatches
 } from "../host/guard.mjs";
 import { createAgentServer } from "../host/server.mjs";
+import { looksLikeMarkupPacket, shapeOfMarkupReply } from "../host/journal.mjs";
 
 test("parseAgentOutput reads Cursor/Claude json result and session id", () => {
   const parsed = parseAgentOutput(
@@ -178,3 +179,60 @@ function request(port, { method = "GET", path, headers, body }) {
     req.end();
   });
 }
+
+test("a markup reply is logged by its shape, not by its size alone", () => {
+  // The two cases nobody could tell apart from the page: a model that never
+  // wrote a gist, and a model that wrote one we then dropped. The log has to
+  // separate them, so it reports the headings the parser will look for.
+  const wrote = shapeOfMarkupReply("## Gist\nThe argument.\n\n## Marks\nsand | a quote | why");
+  assert.match(wrote, /gistHeading=yes/);
+  assert.match(wrote, /marksHeading=yes/);
+  assert.match(wrote, /pipeLines=1/);
+
+  const didNot = shapeOfMarkupReply("sand | a quote | why\nlemon | another | because");
+  assert.match(didNot, /gistHeading=NO/);
+  assert.match(didNot, /pipeLines=2/);
+
+  // Written a way the old parser refused. The log reports it as present,
+  // because the log has to stay true on the day the parser is what is wrong.
+  assert.match(shapeOfMarkupReply("**Gist**\nThe argument."), /gistHeading=yes/);
+});
+
+test("only a markup packet is logged as one", () => {
+  assert.equal(looksLikeMarkupPacket("# Mark up this article for a reader who has not read it\n\nbody"), true);
+  assert.equal(looksLikeMarkupPacket("# LivePage\n\nYou are Cursor Agent, answering in the margin."), false);
+  assert.equal(looksLikeMarkupPacket(""), false);
+});
+
+test("the host writes a line for every ask, and says what came back", async () => {
+  const log = `${tmpdir()}/livepage-journal-${Date.now()}.log`;
+  process.env.LIVEPAGE_AGENT_LOG = log;
+  process.env.LIVEPAGE_AGENT_QUIET = "1";
+  // Port 0 so the suite never fights the host someone has running in another
+  // shell — the real one binds 17321, and a test that needs that port fails
+  // for a reason that has nothing to do with what it is testing.
+  process.env.LIVEPAGE_AGENT_PORT = "0";
+  const { server } = await createAgentServer({
+    token: "tok",
+    ask: async () => ({ text: "## Gist\nPlainly put.\n\n## Marks\nNONE" })
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const port = server.address().port;
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/ask`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer tok" },
+      body: JSON.stringify({ agent: "cursor", packet: "# Mark up this article for a reader who has not read it" })
+    });
+    assert.equal(response.status, 200);
+    const { readFile } = await import("node:fs/promises");
+    const written = await readFile(log, "utf8");
+    assert.match(written, /markup -> agent=cursor/);
+    assert.match(written, /markup <- .*gistHeading=yes/);
+  } finally {
+    server.close();
+    delete process.env.LIVEPAGE_AGENT_LOG;
+    delete process.env.LIVEPAGE_AGENT_QUIET;
+    delete process.env.LIVEPAGE_AGENT_PORT;
+  }
+});

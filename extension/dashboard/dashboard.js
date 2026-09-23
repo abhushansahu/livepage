@@ -3,13 +3,13 @@ import { formatRelative } from "../shared/time.js";
 import { COLORS, COLOR_IDS } from "../shared/colors.js";
 import { downloadMarkdown } from "../export/download.js";
 import { ensureDemoHabitat } from "./demo-seed.js";
-import { isWaiting, progressLabel, progressOf, reviewItems } from "../shared/progress.js";
+import { deriveReadState, isWaiting, progressLabel, progressOf, reviewItems } from "../shared/progress.js";
 import { anchorItems } from "../shared/anchors.js";
 import { highlightMatches, pageMatchesQuery } from "../shared/search.js";
 import { cssEscape } from "../parse/quote.js";
 import { viewerUrlFor } from "../pdf/route.js";
 import { renderMessage } from "../shared/markdown.js";
-import { composeFeed, sourceGlyph, sourceLabel } from "../shared/feed.js";
+import { composeFeed, reasonFor, sourceGlyph, sourceLabel } from "../shared/feed.js";
 import { sourceColor, sourceKey } from "../shared/source-meta.js";
 import { icon, sourceIcon } from "../shared/icons.js";
 import { isBookmark, isReadingList, isRss, isSave } from "../shared/lists.js";
@@ -45,7 +45,16 @@ function liveUrlFor(page, hash = "") {
 if (location.protocol !== "chrome-extension:" && !globalThis.__LP_BRIDGE) {
   const { handleMessage } = await import("../background/handlers.js");
   globalThis.__LP_BRIDGE = (type, payload) => handleMessage({ type, payload });
+  // Outside the extension there is no service worker to drain the mirror, so
+  // a queued write drains itself a moment later.
+  const { onMirrorEnqueued } = await import("../storage/store.js");
+  let mirrorTimer = 0;
+  onMirrorEnqueued(() => {
+    clearTimeout(mirrorTimer);
+    mirrorTimer = setTimeout(() => globalThis.__LP_BRIDGE("MIRROR_DRAIN", {}).catch(() => {}), 1500);
+  });
 }
+
 
 /** Each room owns one hue, so nav, section rule, and counts all read as a set. */
 const ROOMS = {
@@ -311,8 +320,11 @@ function render() {
   const room = state.filter;
   const passages = state.searchMode === "passages" ? passageResults() : [];
   renderSearchMode(passages);
+  renderHomeChrome();
   if (state.searchMode === "passages" && passagesAvailable()) {
     els.view.innerHTML = passagesHtml(passages);
+  } else if (isHome()) {
+    els.view.innerHTML = room === "home" ? homeLayoutHtml(pages, bucket, homeFeed) : homeRoomHtml(room, bucket, pages);
   } else if (room === "review") {
     const body = isPortal() ? portalRowsHtml(room, review) : reviewHtml(review);
     els.view.innerHTML = body + anchorHtml(bucket.anchors);
@@ -1013,18 +1025,479 @@ function bindView() {
       render();
     };
   }
+  bindHome();
 }
+
+/* ── The pane ──────────────────────────────────────────────────────────────
+   One page, opened from any row. Header, then what the agent made of it,
+   then where you are in it, then what you made of it. Every action the old
+   drawer had is still here; the rare ones moved behind "…".
+   ────────────────────────────────────────────────────────────────────────── */
+
+const PANE_ICONS = {
+  more: `<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="3" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="13" cy="8" r="1.4" fill="currentColor"/></svg>`,
+  trash: `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M4 4.5l.7 8.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8l.7-8.2"/></svg>`,
+  letgo: `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5c1.6 0 2.4-1.2 3.5-1.2S8.4 9.5 10 9.5s2.4-1.2 3.5-1.2"/><path d="M3 12.5c1.6 0 2.4-1.2 3.5-1.2s1.9 1.2 3.5 1.2 2.4-1.2 3.5-1.2"/><path d="M8 2.5v4M6.2 4.3 8 2.5l1.8 1.8"/></svg>`,
+  back: `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4 3 7.5 6.5 11"/><path d="M3 7.5h6.5a3.5 3.5 0 0 1 0 7H8"/></svg>`,
+  spark: `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M8 1.5 9.6 6.4 14.5 8 9.6 9.6 8 14.5 6.4 9.6 1.5 8 6.4 6.4Z" fill="currentColor"/></svg>`
+};
+
+function closeDrawer({ rerender = true } = {}) {
+  if (!els.drawer || els.drawer.hidden) return;
+  els.drawer.hidden = true;
+  state.activeId = null;
+  document.body.classList.remove("drawer-open");
+  if (rerender) render();
+}
+
+let paneListenersInstalled = false;
+function installPaneListeners() {
+  if (paneListenersInstalled) return;
+  paneListenersInstalled = true;
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || els.drawer.hidden) return;
+    const menu = els.drawer.querySelector(".pane-menu:not([hidden])");
+    if (menu) {
+      menu.hidden = true;
+      return;
+    }
+    if (event.target instanceof HTMLElement && event.target.closest("input, textarea")) return;
+    closeDrawer();
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (els.drawer.hidden) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (els.drawer.contains(target)) return;
+    // A click on a row is a request to switch pages, not to close.
+    if (target.closest("[data-id], .home-toast")) return;
+    closeDrawer();
+  });
+}
+
+/**
+ * A quiet line at the bottom of the window. `undo` is a function; the toast
+ * offers it for six seconds, then lets the action stand.
+ */
+function homeToast(text, { undo = null, duration = 6000 } = {}) {
+  document.querySelectorAll(".home-toast").forEach((el) => el.remove());
+  const toast = document.createElement("div");
+  toast.className = "home-toast";
+  toast.setAttribute("role", "status");
+  toast.innerHTML = `<span class="home-toast-text"></span>${undo ? `<button type="button" class="home-toast-undo">Undo</button>` : ""}`;
+  toast.querySelector(".home-toast-text").textContent = text;
+  document.body.appendChild(toast);
+  let timer = setTimeout(() => toast.remove(), duration);
+  toast.querySelector(".home-toast-undo")?.addEventListener("click", async () => {
+    clearTimeout(timer);
+    toast.remove();
+    await undo?.();
+  });
+  toast.addEventListener("pointerenter", () => clearTimeout(timer));
+  toast.addEventListener("pointerleave", () => {
+    timer = setTimeout(() => toast.remove(), 2500);
+  });
+  return toast;
+}
+
+function paneAvatar(m) {
+  const agent = m.role === "agent";
+  const letter = agent ? (m.agent || "a").slice(0, 1).toUpperCase() : "Y";
+  return `<span class="pane-avatar ${agent ? "is-agent" : "is-you"}" aria-hidden="true">${escapeHtml(letter)}</span>`;
+}
+
+function paneAuthor(m) {
+  if (m.role !== "agent") return "You";
+  const key = String(m.agent || "");
+  if (key === "cursor") return "Cursor";
+  if (key === "claude" || key === "claude-code") return "Claude Code";
+  return key ? `Agent (${key})` : "Agent";
+}
+
+function paneProgress(page) {
+  const p = progressOf(page);
+  if (page.readState === "released") return { label: "Let go", p };
+  if (page.readState === "parked") return { label: "Parked", p };
+  if (p >= 90) return { label: "Read through ✓", p, done: true };
+  if (!page.openedAt && !page.lastVisitedAt) return { label: "Not opened", p: 0 };
+  if (p > 0) return { label: `Read ${p}%`, p };
+  return { label: "Opened, not read", p: 0 };
+}
+
+/* ── Home layout ────────────────────────────────────────────────────────────
+   One calm column, meant to be the page a new tab opens on. Sections are by
+   state (mid-way, waiting, needs a reply), never by source; the rooms are
+   tabs under the fold. Everything else the portal keeps on screen at once —
+   tools, tags, the experiment note — is behind the "…" menu or inside a room.
+   ────────────────────────────────────────────────────────────────────────── */
+
+function isHome() {
+  return state.flags.dashboardLayout === "home";
+}
+
+const HOME_ROOMS = ["reading", "bookmarked", "saves", "rss", "review"];
+
+function renderHomeChrome() {
+  const top = document.getElementById("home-top");
+  if (!top) return;
+  top.hidden = !isHome();
+  if (!isHome()) return;
+  const input = document.getElementById("home-search");
+  if (input && input.value !== state.query) input.value = state.query;
+}
+
+function greetingLine() {
+  const h = new Date().getHours();
+  const word = h < 5 ? "Late night" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  const date = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  return `${word} · ${date}`;
+}
+
+function sectionHead(label, count, more = "") {
+  return `<header class="hs-head"><span class="hs-label">${label}</span>${count ? `<span class="hs-count">${count}</span>` : ""}${more}</header>`;
+}
+
+function ageOf(page) {
+  const ts = page.lastVisitedAt || page.importMeta?.importedAt || page.createdAt || page.updatedAt;
+  return ts ? formatRelative(ts) : "";
+}
+
+/** The one thing a row says about progress: a bar, a tick, or a dot. */
+function homeState(page) {
+  const p = progressOf(page);
+  if (p >= 90) return { kind: "done" };
+  if (p > 8) return { kind: "bar", p };
+  return { kind: "dot" };
+}
+
+function homeRow(page, { reason = "", roomy = false, quote = "" } = {}) {
+  const st = homeState(page);
+  const meta = [page.domain, ageOf(page)].filter(Boolean).join(" · ");
+  return `
+    <article class="hrow ${roomy ? "is-roomy" : ""} ${state.activeId === page.id ? "is-on" : ""}" data-id="${page.id}">
+      <span class="hrow-glyph" aria-hidden="true">${sourceIcon(sourceKey(page), { size: 15 })}</span>
+      <div class="hrow-main">
+        <p class="hrow-title">${st.kind === "dot" ? `<i class="hrow-dot"></i>` : ""}${escapeHtml(page.title || page.url)}${st.kind === "done" ? `<span class="hrow-done" title="Read through">✓</span>` : ""}</p>
+        ${quote ? `<q class="hrow-quote">${escapeHtml(clip(quote, 120))}</q>` : ""}
+        <p class="hrow-meta">${escapeHtml(meta)}${reason && roomy ? `<span class="hrow-reason">${escapeHtml(reason)}</span>` : ""}</p>
+        ${st.kind === "bar" ? `<span class="hrow-bar"><i style="width:${st.p}%"></i></span>` : ""}
+      </div>
+      <div class="hrow-acts">
+        <button type="button" class="act ${page.inReadingList ? "is-on" : ""}" data-reading="${page.id}" title="${page.inReadingList ? "In reading list" : "Add to reading list"}" aria-label="Reading list">${icon("reading", { size: 14 })}</button>
+        <button type="button" class="act ${page.bookmarked ? "is-on" : ""}" data-star="${page.id}" title="${page.bookmarked ? "Bookmarked" : "Bookmark"}" aria-label="Bookmark">${icon("star", { size: 14 })}</button>
+        <button type="button" class="act act-letgo" data-letgo="${page.id}" title="Let go — it stops counting as waiting, and stays findable" aria-label="Let go">${icon("letgo", { size: 14 })}</button>
+      </div>
+    </article>`;
+}
+
+/**
+ * Letting go is the answer to a list that keeps things you no longer want.
+ * It is not deletion: the page stays kept and searchable, it just stops being
+ * something you owe. The row leaves first and the store catches up, and the
+ * toast holds the way back for a few seconds.
+ */
+async function letGo(pageId, rowEl) {
+  const page = state.pages.find((p) => p.id === pageId);
+  if (!page) return;
+  const previous = page.readState || "unread";
+  if (rowEl) {
+    rowEl.classList.add("is-leaving");
+    await new Promise((r) => setTimeout(r, 180));
+  }
+  await call("SET_READ_STATE", { id: pageId, readState: "released" });
+  await reload();
+  homeToast(`Let go of “${clip(page.title || page.domain || "this page", 48)}”`, {
+    undo: async () => {
+      await call("SET_READ_STATE", { id: pageId, readState: previous });
+      await reload();
+    }
+  });
+}
+
+
+function homeReplyRow(item) {
+  const page = item.page;
+  return `
+    <article class="hrow is-reply" data-id="${page.id}" data-highlight="${item.highlight?.id || ""}">
+      <span class="hrow-glyph" aria-hidden="true">${icon("review", { size: 15 })}</span>
+      <div class="hrow-main">
+        <p class="hrow-title">${escapeHtml(clip(item.highlight?.text || page.title || "", 100))}</p>
+        <p class="hrow-meta">${escapeHtml(page.domain)} · ${item.last.role === "agent" ? "agent" : "you"}, ${formatRelative(item.last.at || item.last.createdAt)} · ${escapeHtml(clip(item.last.content, 80))}</p>
+      </div>
+    </article>`;
+}
+
+function homeEmpty(title, body) {
+  return `<div class="hempty"><p class="hempty-title">${title}</p><p class="hempty-body">${body}</p></div>`;
+}
+
+function roomTabs(bucket, active) {
+  const counts = {
+    reading: bucket.readingList.length,
+    bookmarked: bucket.bookmarks.length,
+    saves: bucket.saves.length,
+    rss: bucket.rss.length,
+    review: bucket.awaiting.length
+  };
+  const allowed = new Set(navItems(state.flags).map((i) => i.id));
+  const tabs = HOME_ROOMS.filter((id) => allowed.has(id))
+    .map((id) => `<button type="button" class="htab ${active === id ? "is-on" : ""}" data-room="${id}">${ROOMS[id].title}${counts[id] ? `<span>${counts[id]}</span>` : ""}</button>`)
+    .join("");
+  const sort = active
+    ? `<select class="hsort" id="home-sort" aria-label="Sort">
+        <option value="recent">Recent</option>
+        <option value="oldest-unread">Oldest unread</option>
+        <option value="never-opened">Never opened</option>
+        <option value="bookmarked">Bookmarked first</option>
+        <option value="title">Title</option>
+      </select>`
+    : "";
+  return `<nav class="htabs">${tabs}${sort}</nav>`;
+}
+
+function homeLayoutHtml(pages, bucket, feed) {
+  const feedPages = feed.filter((item) => item.page && item.kind !== "local_tweet");
+  const midway = pages
+    .filter((p) => {
+      const pr = progressOf(p);
+      return pr > 8 && pr < 90 && p.readState !== "parked" && p.readState !== "released";
+    })
+    .sort((a, b) => (b.lastVisitedAt || 0) - (a.lastVisitedAt || 0));
+  // Mid-way pages first; a thread waiting on you fills the rest, but as a
+  // reply row, not as a page row — a finished article you still owe a reply
+  // is a reply to write, not a page to read again.
+  const continueIds = new Set();
+  const cont = [];
+  for (const p of midway) { if (cont.length >= 3) break; cont.push({ page: p }); continueIds.add(p.id); }
+  if (cont.length < 3) {
+    for (const r of bucket.awaiting) {
+      if (cont.length >= 3) break;
+      if (continueIds.has(r.page.id)) continue;
+      cont.push({ page: r.page, reply: r }); continueIds.add(r.page.id);
+    }
+  }
+  const waiting = feedPages.filter((item) => !continueIds.has(item.page.id));
+  const waitingShown = waiting.slice(0, 7);
+  const replies = bucket.awaiting.filter((r) => !continueIds.has(r.page.id)).slice(0, 5);
+  const query = state.query.trim();
+
+  if (query) {
+    const hits = pages;
+    return `
+      <div class="home">
+        ${sectionHead(`Results for “${escapeHtml(query)}”`, hits.length)}
+        ${hits.length ? `<div class="hlist">${hits.slice(0, 40).map((p) => homeRow(p)).join("")}</div>` : homeEmpty("Nothing matches", "Try fewer words, or a #tag.")}
+      </div>`;
+  }
+
+  const stats = `
+    <p class="hstats">
+      <span><b>${bucket.waiting.length}</b> waiting</span>
+      <span><b>${midway.length}</b> mid-way</span>
+      <span><b>${bucket.awaiting.length}</b> to answer</span>
+      <span><b>${bucket.bookmarks.length}</b> starred</span>
+    </p>`;
+
+  const contHtml = cont.length
+    ? `<section class="hsec">${sectionHead("Pick up where you left off")}<div class="hlist">${cont
+        .map((c) => (c.reply ? homeReplyRow(c.reply) : homeRow(c.page, { roomy: true, reason: reasonFor(c.page, {}) })))
+        .join("")}</div></section>`
+    : "";
+
+  const waitHtml = `<section class="hsec">${sectionHead(
+    "Waiting for you",
+    waiting.length,
+    waiting.length > waitingShown.length ? `<button type="button" class="hs-more" data-room="reading">More</button>` : ""
+  )}${
+    waitingShown.length
+      ? `<div class="hlist">${waitingShown.map((item) => homeRow(item.page)).join("")}</div>`
+      : homeEmpty("Nothing is waiting", "Everything you kept has been opened, finished, or released.")
+  }</section>`;
+
+  const replyHtml = replies.length
+    ? `<section class="hsec">${sectionHead("Needs a reply", replies.length)}<div class="hlist">${replies.map(homeReplyRow).join("")}</div></section>`
+    : "";
+
+  return `
+    <div class="home">
+      <p class="hgreet">${greetingLine()}</p>
+      ${stats}
+      ${syncNoteHtml()}
+      ${contHtml}
+      ${waitHtml}
+      ${replyHtml}
+      ${roomTabs(bucket, null)}
+    </div>`;
+}
+
+function homeRoomHtml(room, bucket, pages) {
+  const rows = {
+    reading: bucket.readingList,
+    bookmarked: bucket.bookmarks,
+    saves: bucket.saves,
+    rss: bucket.rss,
+    review: bucket.review
+  }[room] || [];
+  const tags = filterBarTags(pages).slice(0, 8);
+  for (const tag of state.tagFilters) {
+    if (!tags.some((t) => t.tag === tag)) tags.push({ tag, count: 0 });
+  }
+  const tagHtml = tags.length
+    ? `<div class="htags">${tags.map((t) => `<button type="button" class="htag ${state.tagFilters.includes(t.tag) ? "is-on" : ""}" data-tag="${escapeHtml(t.tag)}">#${escapeHtml(t.tag)}</button>`).join("")}</div>`
+    : "";
+  const empties = {
+    reading: "Queue a page from the popup, ⌥⇧R, or the right-click menu.",
+    bookmarked: "Star a page and it lives here for as long as you like.",
+    saves: "Refresh from this Chrome to pull Watch Later, Reddit saved, and X bookmarks.",
+    rss: "Add a feed in Settings, or from a page that advertises one.",
+    review: "Threads where the last voice was yours will wait here."
+  };
+  const body = rows.length
+    ? `<div class="hlist">${room === "review" ? rows.map(homeReplyRow).join("") : rows.slice(0, 60).map((p) => homeRow(p)).join("")}</div>`
+    : homeEmpty(`Nothing in ${ROOMS[room].title} yet`, empties[room] || "");
+  return `
+    <div class="home">
+      ${roomTabs(bucket, room)}
+      ${tagHtml}
+      ${syncNoteHtml()}
+      <section class="hsec">${body}</section>
+      ${rows.length > 60 ? `<p class="hs-note">Showing the first 60. Search or sort to narrow it.</p>` : ""}
+    </div>`;
+}
+
+function bindHome() {
+  if (!isHome()) return;
+  els.view.querySelectorAll(".hrow").forEach((el) => {
+    el.onclick = (event) => {
+      if (event.target.closest("[data-star], [data-reading], [data-letgo], a")) return;
+      openDrawer(el.dataset.id, { focusHighlightId: el.dataset.highlight || undefined });
+    };
+  });
+  els.view.querySelectorAll("[data-letgo]").forEach((btn) => {
+    btn.onclick = (event) => {
+      event.stopPropagation();
+      letGo(btn.dataset.letgo, btn.closest(".hrow"));
+    };
+  });
+  els.view.querySelectorAll("[data-room]").forEach((btn) => {
+    btn.onclick = () => {
+      state.filter = btn.dataset.room;
+      state.feedPages = 1;
+      render();
+      window.scrollTo({ top: 0 });
+    };
+  });
+  els.view.querySelectorAll("[data-tag]").forEach((btn) => {
+    btn.onclick = () => {
+      const tag = btn.dataset.tag;
+      state.tagFilters = state.tagFilters.includes(tag)
+        ? state.tagFilters.filter((t) => t !== tag)
+        : [...state.tagFilters, tag];
+      render();
+    };
+  });
+  const sort = document.getElementById("home-sort");
+  if (sort) {
+    sort.value = state.sort;
+    sort.onchange = () => {
+      state.sort = sort.value;
+      els.sort.value = sort.value;
+      render();
+    };
+  }
+}
+
+function wireHomeChrome() {
+  const input = document.getElementById("home-search");
+  const mark = document.getElementById("home-mark");
+  const more = document.getElementById("home-more");
+  const menu = document.getElementById("home-menu");
+  if (!input || !mark || !more || !menu) return;
+  input.addEventListener("input", () => {
+    state.query = input.value;
+    els.search.value = input.value;
+    render();
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      input.value = "";
+      state.query = "";
+      els.search.value = "";
+      render();
+      input.blur();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (!isHome()) return;
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      input.focus();
+      input.select();
+    }
+  });
+  mark.onclick = () => {
+    state.filter = "home";
+    state.tagFilters = [];
+    state.query = "";
+    els.search.value = "";
+    input.value = "";
+    render();
+  };
+  const closeMenu = () => {
+    menu.hidden = true;
+    more.setAttribute("aria-expanded", "false");
+  };
+  more.onclick = (event) => {
+    event.stopPropagation();
+    if (!menu.hidden) return closeMenu();
+    const proxy = (id, label) => {
+      const src = document.getElementById(id);
+      if (!src || src.hidden) return "";
+      return `<button type="button" role="menuitem" data-proxy="${id}">${escapeHtml(label || src.textContent.trim())}</button>`;
+    };
+    menu.innerHTML = [
+      proxy("sync-saves", "Refresh from this Chrome"),
+      proxy("sync-rss", "Sync RSS"),
+      proxy("bind-vault"),
+      proxy("write-vault", "Write vault"),
+      proxy("export-waiting", "Dump waiting")
+    ].join("");
+    menu.querySelectorAll("[data-proxy]").forEach((btn) => {
+      btn.onclick = () => {
+        closeMenu();
+        document.getElementById(btn.dataset.proxy)?.click();
+      };
+    });
+    menu.hidden = false;
+    more.setAttribute("aria-expanded", "true");
+  };
+  document.addEventListener("click", (event) => {
+    if (!menu.hidden && !event.target.closest(".home-more")) closeMenu();
+  });
+}
+
+wireHomeChrome();
 
 async function openDrawer(id, { focusHighlightId } = {}) {
   const page = await call("GET_PAGE", { id });
   if (!page) return;
+  installPaneListeners();
+  const wasOpen = !els.drawer.hidden && state.activeId === id;
   state.activeId = id;
   els.drawer.hidden = false;
   document.body.classList.add("drawer-open");
+  els.drawer.classList.toggle("is-switch", wasOpen);
   els.view
-    .querySelectorAll(".row")
+    .querySelectorAll(".row, .hrow")
     .forEach((el) => el.classList.toggle("is-on", el.dataset.id === id));
-  const p = progressOf(page);
+
+  let markup = null;
+  try {
+    markup = await call("LATEST_MARKUP", { pageId: page.id });
+  } catch {
+    markup = null;
+  }
+
   const highlights = page.highlights || [];
   const threadsByHighlight = new Map();
   for (const thread of page.threads || []) {
@@ -1032,127 +1505,253 @@ async function openDrawer(id, { focusHighlightId } = {}) {
     list.push(thread);
     threadsByHighlight.set(thread.highlightId, list);
   }
+
+  // Marks you already kept are highlights now, and sit in the section below.
+  const keptQuotes = new Set(highlights.map((h) => (h.text || "").trim().toLowerCase()));
+  const marks = (markup?.marks || []).filter((m) => m?.quote && !keptQuotes.has(m.quote.trim().toLowerCase()));
+  const shownMarks = marks.slice(0, 8);
+
+  const prog = paneProgress(page);
+  const parkedOrGone = page.readState === "parked" || page.readState === "released";
+  // A live page's source label is its domain; say it once.
+  const meta = [...new Set([sourceLabel(page), page.domain])].concat(ageOf(page)).filter(Boolean);
+
+  const gistHtml = markup?.gist
+    ? `<section class="pane-gist">
+        <p class="pane-label">${PANE_ICONS.spark} The gist <span class="pane-label-note">· agent read, ${escapeHtml(formatRelative(markup.at))}</span></p>
+        <p class="pane-gist-text">${escapeHtml(markup.gist)}</p>
+      </section>`
+    : `<p class="pane-nogist">No agent read yet. Press <kbd>⌥A</kbd> on the article.</p>`;
+
+  const marksHtml = shownMarks.length
+    ? `<section class="pane-marks">
+        <p class="pane-label">Worth stopping at <span class="pane-count">${marks.length}</span></p>
+        <ul class="pane-mark-list">
+          ${shownMarks
+            .map(
+              (m) => `<li><a class="pane-mark" href="${liveUrlFor(page)}" target="_blank" rel="noreferrer" title="${escapeHtml(COLORS[m.color]?.name || "")}"><i class="pane-dot" style="--lp-mark:${COLORS[m.color]?.fill || "#F6E27A"}"></i><span>${escapeHtml(m.quote)}</span></a></li>`
+            )
+            .join("")}
+        </ul>
+        ${marks.length > shownMarks.length ? `<p class="pane-more">${marks.length - shownMarks.length} more on the page</p>` : ""}
+      </section>`
+    : "";
+
+  const chips = [
+    parkedOrGone
+      ? `<span class="pane-chip is-state">${page.readState === "parked" ? "Parked" : "Let go"}<button type="button" class="pane-chip-act" data-act="bring-back">${PANE_ICONS.back} Bring back</button></span>`
+      : "",
+    page.inReadingList ? `<span class="pane-chip">${icon("reading", { size: 12 })} Reading list</span>` : "",
+    page.bookmarked ? `<span class="pane-chip is-star">${icon("star", { size: 12 })} Starred</span>` : ""
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const tagsHtml = `
+    <section class="pane-tags">
+      ${displayTags(page).map((tag) => `<span class="pane-tag">#${escapeHtml(tag)}</span>`).join("")}
+      <input id="page-tags" class="pane-tag-input" placeholder="+ tag" aria-label="Add a tag" value="" />
+    </section>`;
+
   const highlightBlocks = highlights
     .map((highlight) => {
       const color = COLORS[highlight.color]?.fill || "#F6E27A";
       const threads = threadsByHighlight.get(highlight.id) || [];
       return `
-        <section class="hl-block" data-highlight="${highlight.id}">
-          <q style="border-left: 3px solid ${color}; padding-left: 8px">${escapeHtml(highlight.text || "")}</q>
-          <div class="hl-edit">
+        <section class="pane-hl" data-highlight="${highlight.id}" style="--lp-mark:${color}">
+          <div class="pane-hl-head">
+            <q class="pane-quote">${escapeHtml(highlight.text || "")}</q>
+            <div class="pane-hl-acts">
+              <a class="act" href="${liveUrlFor(page, `livepage-highlight=${encodeURIComponent(highlight.id)}`)}" target="_blank" rel="noreferrer" title="Open on the page">${icon("external", { size: 13 })}</a>
+              <button type="button" class="act" data-remove-hl="${highlight.id}" title="Delete highlight" aria-label="Delete highlight">${PANE_ICONS.trash}</button>
+            </div>
+          </div>
+          <div class="pane-swatches">
             ${COLOR_IDS.map(
-              (id) =>
-                `<button type="button" class="swatch ${highlight.color === id ? "is-on" : ""}" title="${COLORS[id].name} — ${COLORS[id].purpose}" style="--lp-mark:${COLORS[id].fill}" data-hl-color="${id}"></button>`
+              (cid) =>
+                `<button type="button" class="pane-swatch ${highlight.color === cid ? "is-on" : ""}" title="${escapeHtml(COLORS[cid].name)} — ${escapeHtml(COLORS[cid].purpose)}" style="--lp-mark:${COLORS[cid].fill}" data-hl-color="${cid}"></button>`
             ).join("")}
-            <button type="button" class="ghost" data-remove-hl="${highlight.id}">Delete highlight</button>
           </div>
           ${threads
             .map((thread) => {
-              const last = thread.messages?.[thread.messages.length - 1];
+              const msgs = thread.messages || [];
+              const last = msgs[msgs.length - 1];
               return `
-                <div class="thread">
-                  <p>${escapeHtml(thread.branchLabel || "main")}${thread.parentId ? " · forked" : ""}${last?.role === "user" ? " · needs review" : ""}</p>
-                  ${(thread.messages || [])
+                <div class="pane-thread" data-thread="${thread.id}">
+                  ${thread.parentId || (thread.branchLabel && thread.branchLabel !== "main") ? `<p class="pane-thread-label">${icon("branch", { size: 11 })} ${escapeHtml(thread.branchLabel || "fork")}</p>` : ""}
+                  ${msgs
                     .map(
-                      (m) =>
-                        `<div class="msg-body"><strong>${m.role === "agent" ? `Agent (${m.agent})` : "You"}:</strong> ${renderMessage(m.content)}</div>`
+                      (m) => `
+                    <div class="pane-msg ${m.role === "agent" ? "is-agent" : "is-you"}">
+                      ${paneAvatar(m)}
+                      <div class="pane-msg-main">
+                        <p class="pane-msg-meta"><b>${escapeHtml(paneAuthor(m))}</b><span title="${new Date(m.createdAt || m.at || 0).toLocaleString()}">${escapeHtml(formatRelative(m.createdAt || m.at))}</span></p>
+                        <div class="pane-msg-body">${renderMessage(m.content)}</div>
+                      </div>
+                    </div>`
                     )
                     .join("")}
+                  ${last?.role === "user" && thread.awaitingAgent ? `<p class="pane-thread-note">Waiting on ${escapeHtml(paneAuthor({ role: "agent", agent: thread.awaitingAgent.agent }))}…</p>` : ""}
+                  <form class="pane-reply" data-thread="${thread.id}">
+                    <input type="text" placeholder="Reply…" aria-label="Reply" />
+                    <button type="submit" class="pane-reply-send" aria-label="Send">↵</button>
+                  </form>
                 </div>`;
             })
             .join("")}
+          ${threads.length ? "" : `<a class="pane-thread-empty" href="${liveUrlFor(page, `livepage-highlight=${encodeURIComponent(highlight.id)}`)}" target="_blank" rel="noreferrer">No thread yet · start one on the page</a>`}
         </section>`;
     })
     .join("");
 
-  const source = page.importMeta
-    ? `<p class="why">${escapeHtml(page.importMeta.kind || "saved")} from ${escapeHtml(sourceLabel(page))}${page.importMeta.author ? ` · ${escapeHtml(page.importMeta.author)}` : ""}</p>`
-    : "";
-
   els.drawer.innerHTML = `
-    <header class="drawer-top">
-      <p class="domain">${escapeHtml(sourceLabel(page))} · ${escapeHtml(page.domain)}</p>
-      <button type="button" class="act" id="close-drawer" title="Close" aria-label="Close">${icon("close", { size: 15 })}</button>
+    <header class="pane-top">
+      <p class="pane-meta"><span class="pane-glyph" aria-hidden="true">${sourceIcon(sourceKey(page), { size: 13 })}</span>${meta.map((m) => `<span>${escapeHtml(m)}</span>`).join(`<i class="pane-sep">·</i>`)}</p>
+      <button type="button" class="act pane-close" id="close-drawer" title="Close (Esc)" aria-label="Close">${icon("close", { size: 15 })}</button>
     </header>
-    <h2>${escapeHtml(page.title)}</h2>
-    <p class="drawer-open-line"><a class="open-live" href="${liveUrlFor(page)}" target="_blank" rel="noreferrer">Open ${page.kind === "pdf" ? "in the PDF reader" : "live page"} ${icon("external", { size: 13 })}</a></p>
-    <div class="progress-hero">
-      <div class="bar-row">
-        <div class="bar" title="${p}%"><span style="width:${p}%"></span></div>
-        <span class="pct">${p}%</span>
+    <h2 class="pane-title">${escapeHtml(page.title || page.url)}</h2>
+    ${page.importMeta?.author ? `<p class="pane-by">${escapeHtml(page.importMeta.author)}</p>` : ""}
+    <div class="pane-actions">
+      <a class="pane-open" href="${liveUrlFor(page)}" target="_blank" rel="noreferrer">Open${page.kind === "pdf" ? " in the reader" : ""} ${icon("external", { size: 13 })}</a>
+      <div class="pane-iconrow">
+        <button type="button" class="act ${page.inReadingList ? "is-on" : ""}" data-act="reading" title="${page.inReadingList ? "Remove from reading list" : "Add to reading list"}" aria-label="Reading list">${icon("reading", { size: 15 })}</button>
+        <button type="button" class="act star ${page.bookmarked ? "is-on" : ""}" data-act="bookmark" title="${page.bookmarked ? "Unstar" : "Star"}" aria-label="Star">${icon("star", { size: 15 })}</button>
+        ${parkedOrGone ? "" : `<button type="button" class="pane-letgo" data-act="letgo" title="Let go: stop waiting on this page. It stays kept.">${PANE_ICONS.letgo}<span>Let go</span></button>`}
+        <div class="pane-more">
+          <button type="button" class="act" data-act="more" aria-haspopup="menu" aria-expanded="false" title="More" aria-label="More">${PANE_ICONS.more}</button>
+          <div class="pane-menu" role="menu" hidden>
+            ${page.readState === "parked" ? "" : `<button type="button" role="menuitem" data-state="parked" title="Keep, but stop counting it as waiting">Park</button>`}
+            <button type="button" role="menuitem" data-act="snooze">Not now · 2 days</button>
+            <button type="button" role="menuitem" data-act="obsidian">${state.vault.bound ? "Write to vault" : "Dump to Obsidian"}</button>
+            <hr />
+            <button type="button" role="menuitem" class="is-danger" data-act="delete">Remove from LivePage</button>
+          </div>
+        </div>
       </div>
-      <p>${progressLabel(page)} · furthest scroll ${p}% · last on page ${page.openedAt ? formatRelative(page.progress?.updatedAt || page.lastVisitedAt) : "never"}</p>
     </div>
-    ${source}
-    ${page.why ? `<p class="why">${escapeHtml(page.why)}</p>` : ""}
-    <label class="tag-edit">Tags <span class="hint">comma-separated — “machine learning” stays one tag</span>
-      <input id="page-tags" value="${escapeHtml((page.tags || []).join(", "))}" placeholder="machine learning, later" />
-    </label>
-    <p class="tags derived">${displayTags(page)
-      .map((tag) => `<span>#${escapeHtml(tag)}</span>`)
-      .join("")}</p>
-    <div class="actions">
-      <button class="ghost" data-act="reading">${page.inReadingList ? "Remove from reading list" : "Add to reading list"}</button>
-      <button class="ghost" data-act="bookmark">${page.bookmarked ? "Unbookmark" : "Bookmark"}</button>
-      <button class="ghost" data-state="parked">Park</button>
-      <button class="ghost" data-state="released">Release</button>
-      <button class="ghost" data-act="snooze">Not now</button>
-      <button class="solid" data-act="obsidian">${state.vault.bound ? "Write to vault" : "Dump to Obsidian"}</button>
-      <button class="ghost" data-act="delete">Remove</button>
+    <div class="pane-state">
+      <span class="pane-bar ${prog.done ? "is-done" : ""}"><i style="width:${prog.p}%"></i></span>
+      <p class="pane-state-line"><span>${escapeHtml(prog.label)}</span>${chips}</p>
     </div>
-    <h3>Highlights</h3>
-    ${highlightBlocks || "<p class='excerpt'>No highlights yet.</p>"}
+    ${page.why ? `<p class="pane-why">${escapeHtml(page.why)}</p>` : ""}
+    ${gistHtml}
+    ${marksHtml}
+    ${tagsHtml}
+    <section class="pane-hls">
+      <p class="pane-label">Your highlights ${highlights.length ? `<span class="pane-count">${highlights.length}</span>` : ""}</p>
+      ${highlightBlocks || `<p class="pane-empty">Nothing marked yet. Select a passage on the page to start.</p>`}
+    </section>
   `;
-  els.drawer.querySelector("#close-drawer").onclick = () => {
-    els.drawer.hidden = true;
-    state.activeId = null;
-    document.body.classList.remove("drawer-open");
-    render();
-  };
-  const tagInput = els.drawer.querySelector("#page-tags");
+
+  bindDrawer(page);
+
   if (focusHighlightId) {
-    const block = els.drawer.querySelector(`.hl-block[data-highlight="${cssEscape(focusHighlightId)}"]`);
+    const block = els.drawer.querySelector(`.pane-hl[data-highlight="${cssEscape(focusHighlightId)}"]`);
     if (block) {
       block.classList.add("is-focused");
       block.scrollIntoView({ block: "center" });
     }
+  } else if (!wasOpen) {
+    els.drawer.scrollTop = 0;
   }
+}
 
-  const saveTags = async () => {
-    await call("SET_TAGS", { id: page.id, tags: parseTagInput(tagInput.value) });
+function bindDrawer(page) {
+  const refresh = async () => {
     await reload();
     openDrawer(page.id);
   };
-  tagInput.addEventListener("change", saveTags);
-  tagInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      saveTags();
-    }
+  const closeAnd = async () => {
+    closeDrawer({ rerender: false });
+    await reload();
+  };
+
+  els.drawer.querySelector("#close-drawer").onclick = () => closeDrawer();
+
+  const moreBtn = els.drawer.querySelector("[data-act='more']");
+  const menu = els.drawer.querySelector(".pane-menu");
+  if (moreBtn && menu) {
+    moreBtn.onclick = (event) => {
+      event.stopPropagation();
+      menu.hidden = !menu.hidden;
+      moreBtn.setAttribute("aria-expanded", String(!menu.hidden));
+    };
+    els.drawer.addEventListener("pointerdown", (event) => {
+      if (menu.hidden) return;
+      if (event.target instanceof Element && event.target.closest(".pane-more")) return;
+      menu.hidden = true;
+      moreBtn.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  const tagInput = els.drawer.querySelector("#page-tags");
+  if (tagInput) {
+    const commit = async () => {
+      const added = parseTagInput(tagInput.value);
+      if (!added.length) return;
+      const tags = [...new Set([...(page.tags || []), ...added])];
+      await call("SET_TAGS", { id: page.id, tags });
+      await refresh();
+    };
+    tagInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commit();
+      }
+    });
+    tagInput.addEventListener("blur", () => {
+      if (tagInput.value.trim()) commit();
+    });
+  }
+  els.drawer.querySelectorAll(".pane-tag").forEach((chip) => {
+    chip.title = "Click to remove";
+    chip.onclick = async () => {
+      const tag = chip.textContent.replace(/^#/, "");
+      const tags = (page.tags || []).filter((t) => t !== tag);
+      if (tags.length === (page.tags || []).length) return;
+      await call("SET_TAGS", { id: page.id, tags });
+      await refresh();
+    };
   });
+
   els.drawer.querySelectorAll("[data-state]").forEach((btn) => {
     btn.onclick = async () => {
       await call("SET_READ_STATE", { id: page.id, readState: btn.dataset.state });
-      await reload();
-      openDrawer(page.id);
+      await refresh();
     };
   });
+  const bringBack = els.drawer.querySelector("[data-act='bring-back']");
+  if (bringBack) {
+    bringBack.onclick = async () => {
+      await call("SET_READ_STATE", { id: page.id, readState: deriveReadState(page.progress?.maxPercent || 0) });
+      await refresh();
+    };
+  }
+  const letgo = els.drawer.querySelector("[data-act='letgo']");
+  if (letgo) {
+    letgo.onclick = async () => {
+      const previous = page.readState || "unread";
+      await call("SET_READ_STATE", { id: page.id, readState: "released" });
+      await closeAnd();
+      homeToast(`Let go of ${clip(page.title || page.url, 48)}`, {
+        undo: async () => {
+          await call("SET_READ_STATE", { id: page.id, readState: previous });
+          await reload();
+        }
+      });
+    };
+  }
   els.drawer.querySelector("[data-act='bookmark']").onclick = async () => {
     await call("TOGGLE_BOOKMARK", { id: page.id });
-    await reload();
-    openDrawer(page.id);
+    await refresh();
   };
   els.drawer.querySelector("[data-act='reading']").onclick = async () => {
     await call("TOGGLE_READING_LIST", { id: page.id });
-    await reload();
-    openDrawer(page.id);
+    await refresh();
   };
   els.drawer.querySelector("[data-act='snooze']").onclick = async () => {
     await call("SNOOZE_PAGE", { id: page.id, hours: 48 });
-    els.drawer.hidden = true;
-    state.activeId = null;
-    document.body.classList.remove("drawer-open");
-    await reload();
+    await closeAnd();
   };
   els.drawer.querySelector("[data-act='obsidian']").onclick = async () => {
     if (state.vault.bound) {
@@ -1175,10 +1774,7 @@ async function openDrawer(id, { focusHighlightId } = {}) {
   };
   els.drawer.querySelector("[data-act='delete']").onclick = async () => {
     await call("DELETE_PAGE", { id: page.id });
-    els.drawer.hidden = true;
-    state.activeId = null;
-    document.body.classList.remove("drawer-open");
-    await reload();
+    await closeAnd();
   };
   els.drawer.querySelectorAll("[data-hl-color]").forEach((btn) => {
     btn.onclick = async (event) => {
@@ -1190,8 +1786,7 @@ async function openDrawer(id, { focusHighlightId } = {}) {
         highlightId: block.dataset.highlight,
         patch: { color: btn.dataset.hlColor }
       });
-      await reload();
-      openDrawer(page.id);
+      await refresh();
     };
   });
   els.drawer.querySelectorAll("[data-remove-hl]").forEach((btn) => {
@@ -1199,9 +1794,22 @@ async function openDrawer(id, { focusHighlightId } = {}) {
       event.preventDefault();
       event.stopPropagation();
       await call("REMOVE_HIGHLIGHT", { pageId: page.id, highlightId: btn.dataset.removeHl });
-      await reload();
-      openDrawer(page.id);
+      await refresh();
     };
+  });
+  els.drawer.querySelectorAll("form.pane-reply").forEach((form) => {
+    const input = form.querySelector("input");
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const content = input.value.trim();
+      if (!content) return;
+      input.disabled = true;
+      await call("ADD_MESSAGE", { pageId: page.id, threadId: form.dataset.thread, message: { role: "user", content } });
+      await refresh();
+    };
+    input.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") form.requestSubmit();
+    });
   });
 }
 

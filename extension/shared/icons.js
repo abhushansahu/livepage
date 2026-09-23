@@ -25,7 +25,10 @@ const STROKE = {
   branch: '<circle cx="7" cy="5" r="2"/><circle cx="17" cy="9" r="2"/><circle cx="7" cy="19" r="2"/><path d="M7 7v10M9 9h6"/>',
   at: '<circle cx="12" cy="12" r="8.5"/><path d="M15.5 15.5V9h-3a3 3 0 1 0 3 3c0 2.2 1 3.5 2.7 3.5 1.6 0 2.8-1.4 2.8-3.5"/>',
   close: '<path d="m5.5 5.5 13 13M18.5 5.5l-13 13"/>',
-  external: '<path d="M14 4.5h5.5V10"/><path d="M19.5 4.5 11 13"/><path d="M18 14.5v5H4.5V6h5"/>'
+  trash: '<path d="M4 7h16"/><path d="M9.5 7V4.5h5V7"/><path d="m6.5 7 .8 13h9.4l.8-13"/><path d="M10 11v6M14 11v6"/>',
+  external: '<path d="M14 4.5h5.5V10"/><path d="M19.5 4.5 11 13"/><path d="M18 14.5v5H4.5V6h5"/>',
+  // A page let go: it drifts off to the right, out of the list.
+  letgo: '<path d="M4 6.5h9"/><path d="M4 12h6"/><path d="M4 17.5h4"/><path d="M13.5 12h7"/><path d="m17.5 8.5 3.5 3.5-3.5 3.5"/>'
 };
 
 const SOURCE = {

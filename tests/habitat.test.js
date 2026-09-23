@@ -153,14 +153,14 @@ test("For you keeps out pages you merely browsed and finished", () => {
   assert.equal(trail.length, 4);
 });
 
-test("a fresh install lands on the portal board, not the narrow timeline", () => {
+test("a fresh install lands on the home column, not the narrow timeline", () => {
   const fresh = resolveFlags({});
-  assert.equal(fresh.experiment.variant, "C");
-  assert.equal(fresh.flags.dashboardLayout, "compact");
+  assert.equal(fresh.experiment.variant, "D");
+  assert.equal(fresh.flags.dashboardLayout, "home");
   assert.equal(fresh.flags.forYouFeed, true);
   assert.equal(fresh.flags.articleSymbols, false);
   const junk = resolveFlags({ flags: { dashboardLayout: "nonsense" } });
-  assert.equal(junk.flags.dashboardLayout, "compact");
+  assert.equal(junk.flags.dashboardLayout, "home");
 });
 
 test("article symbols pick up jargon and carry supporting text from the page", () => {
@@ -273,11 +273,31 @@ test("symbol explanation packet asks for contextual knowledge without repeating 
   assert.match(packet, /Agents use tools/);
 });
 
-test("experiment C is compact and still keeps For you", () => {
-  const c = resolveFlags({ experiment: { id: "dashboard-density", variant: "C" } });
+test("experiment C is compact when chosen, and still keeps For you", () => {
+  const c = resolveFlags({ experiment: { id: "dashboard-density", variant: "C", chosen: true } });
+  assert.equal(c.experiment.variant, "C");
   assert.equal(c.flags.forYouFeed, true);
   assert.equal(c.flags.dashboardLayout, "compact");
   assert.equal(c.flags.localTweets, false);
+});
+
+test("a stored C nobody chose is the old install default and moves to home", () => {
+  const stale = resolveFlags({ experiment: { id: "dashboard-density", variant: "C" } });
+  assert.equal(stale.experiment.variant, "D");
+  assert.equal(stale.flags.dashboardLayout, "home");
+  // Settings once saved the default layout alongside it; that goes too.
+  const saved = resolveFlags({
+    experiment: { id: "dashboard-density", variant: "C" },
+    flags: { dashboardLayout: "compact", rss: false }
+  });
+  assert.equal(saved.flags.dashboardLayout, "home");
+  assert.equal(saved.flags.rss, false);
+  // A layout picked on its own is a choice and stays.
+  const picked = resolveFlags({
+    experiment: { id: "dashboard-density", variant: "C" },
+    flags: { dashboardLayout: "lists" }
+  });
+  assert.equal(picked.flags.dashboardLayout, "lists");
 });
 
 test("experiment B hides For you until the flag is overridden", () => {

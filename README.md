@@ -2,7 +2,7 @@
 
 A Chrome extension that turns any live webpage into a writable thinking surface: colored highlights, margin conversations, forked threads with Cursor Agent or Claude Code, a dashboard of waiting pages, and an Obsidian vault dump.
 
-Site: [abhushansahu.github.io/livepage](https://abhushansahu.github.io/livepage/). The philosophy lives in [`docs/intention.md`](docs/intention.md). This is **0.2.0**: a working Chrome extension you load unpacked, not a sketch.
+Site: [abhushansahu.github.io/livepage](https://abhushansahu.github.io/livepage/). The philosophy lives in [`docs/intention.md`](docs/intention.md). This is **0.4.0**: a working Chrome extension you load unpacked, not a sketch.
 
 ## Install
 
@@ -74,6 +74,8 @@ The HTTP dashboard seeds a trail. The real extension uses its own IndexedDB insi
 
 Keep `npm run agent-host` running in this repo. The host binds **loopback only**, requires a pairing token (the extension fetches it from `127.0.0.1`, not from web pages), and will not take binary paths or workspace folders from the browser. It shells out to the Cursor Agent CLI (`agent`) or Claude Code CLI (`claude`) already on this machine — no API keys — and writes the reply into the thread. If the host is down, the packet is still there to copy, and you can paste a reply back by hand.
 
+**The host also keeps a copy of everything.** Every write the extension makes — a page kept, a highlight, a thread message, an agent read — is queued inside the browser and carried to a SQLite file the host keeps at `~/.livepage/livepage.db` (`LIVEPAGE_DB_PATH` moves it). The browser is still the copy LivePage reads; the host's copy is the first step toward making it the other way round, and a host that is down only means a longer queue, never a lost write. Settings → Data shows what is waiting and when the host last took a batch.
+
 **Infinite-scroll pages snapshot themselves.** Feeds (or pages that keep growing) cannot keep stable anchors against a moving DOM, so LivePage snapshots the current view the moment you make a highlight there. There is no prompt and no banner — you highlight, and the snapshot happens underneath. Known hosts include X, Reddit, LinkedIn, Instagram, TikTok, YouTube, Facebook, and HN.
 
 **Nothing is stored just because you opened it.** LivePage writes a record the first time you *keep* a page — highlight, comment, star, add to the reading list, tag, or import it. Reading a page and closing it leaves no trace. This is deliberate: you open hundreds of pages a day, and counting them would bury the feed and make every derived number meaningless, since "never opened" and "% read through" are only worth reading against pages you meant to come back to. Scroll depth on an unkept page is held in memory, so a highlight made at 60% still records 60%. Settings has a **Forget browsed-only pages** button for records left by earlier builds.
@@ -140,6 +142,31 @@ hash the article's own cache is keyed on.
 
 jsdom is a **dev dependency only**. Loading the extension unpacked still needs
 no install step.
+
+## When a pass comes back with nothing
+
+A markup pass that produces no gist and no marks looks, from the page, exactly
+like a feature that was never built: nothing is drawn, and nothing says why.
+There are four places it can go wrong — the article was not parsed the way you
+think, the model did not write a gist, the reply came in a shape the parser
+does not read, or the card had nowhere to mount — and a browser console cannot
+tell you which. So the same pass runs from the command line:
+
+```bash
+npm run agent-host                                   # in another shell
+npm run markup:dry-run -- https://example.com/essay  # or a local .html file
+npm run markup:dry-run -- --reply saved-reply.txt    # parse a reply, no agent call
+npm run markup:dry-run -- demo/article.html --raw    # print what the model sent
+```
+
+It prints what the parser saw (words, blocks, whether the article clears the
+320-word floor at all), where the card would mount in that document, what the
+agent replied, which headings the reply carried, the gist that survived
+parsing, and how many marks survived the quote check. The verdict line at the
+end says whether the fault is in the pass or in the page.
+
+Worth knowing while debugging: `demo/article.html` is **201 words**, under the
+floor, so it is never marked and never explained. Test on something real.
 
 ## Limits (honest)
 
