@@ -8,8 +8,32 @@ import { blocksAround } from "../shared/anchors.js";
 import { documentView } from "./view.js";
 import { renderMessage } from "../shared/markdown.js";
 
-const GUTTER = 328;
 const CARD_GAP = 10;
+/** Inset of a card from the gutter's edges when the page has been pushed over. */
+const CARD_INSET = 10;
+/** How far a card sits from the text column when it can sit beside it. */
+const CARD_REACH = 24;
+/** Below this the margin is a rail of pills; a full card would eat the page. */
+const RAIL_BREAK = 900;
+/** From here up the margin is its full width. */
+const WIDE_BREAK = 1280;
+const RAIL_PAD = 56;
+const GUTTER_MAX = 328;
+const GUTTER_MIN = 280;
+
+/**
+ * How much margin a window of this width can afford.
+ *
+ * Wide windows get the full gutter; between the breaks it narrows in step so
+ * a card is never under 260px; below the rail break the page keeps almost
+ * everything and the margin collapses to pills that open over the page.
+ */
+export function gutterPlan(vw) {
+  if (vw < RAIL_BREAK) return { mode: "rail", gutter: RAIL_PAD, card: 0 };
+  const t = Math.min(1, Math.max(0, (vw - RAIL_BREAK) / (WIDE_BREAK - RAIL_BREAK)));
+  const gutter = Math.round(GUTTER_MIN + (GUTTER_MAX - GUTTER_MIN) * t);
+  return { mode: "wide", gutter, card: gutter - CARD_INSET * 2 };
+}
 
 const FALLBACK_CSS = `
 :host { all: initial; display: block; pointer-events: none; z-index: 2147483000; }
@@ -43,7 +67,7 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
    orphan stacked on one point. */
 .orphan-dock {
   position: fixed; right: 16px; bottom: 16px;
-  width: min(300px, calc(var(--lp-gutter, 328px) - 28px));
+  width: min(300px, calc(100vw - 32px));
   max-height: 60vh; overflow: auto; z-index: 2147483644;
   background: #fffcf7; border: 1px solid rgba(28,23,18,0.12);
   border-radius: 14px; padding: 8px 10px; box-shadow: 0 10px 40px rgba(28,23,18,0.12);
@@ -189,6 +213,7 @@ export class Overlay {
       </div>
     `;
     this.els.gutter = this.shadow.querySelector(".gutter");
+    this.els.root = this.shadow.querySelector(".lp-root");
     if (css && this.floatShadow.querySelector("style")) {
       this.floatShadow.querySelector("style").textContent = `${FALLBACK_CSS}\n${css}`;
     }
@@ -199,7 +224,20 @@ export class Overlay {
   }
 
   bind() {
-    this.view.onRelayout(() => this.layoutCards());
+    this.view.onRelayout(() => this.onResize());
+    // Hovering a passage lifts its card, the way hovering a card brightens
+    // its passage — the two halves of one thought should answer each other.
+    document.addEventListener("mouseover", (event) => {
+      const mark = event.target?.closest?.("mark.lp-hl");
+      if (!mark?.dataset.lpId) return;
+      this.setHot(mark.dataset.lpId, true);
+    });
+    document.addEventListener("mouseout", (event) => {
+      const mark = event.target?.closest?.("mark.lp-hl");
+      if (!mark?.dataset.lpId) return;
+      if (event.relatedTarget?.closest?.("mark.lp-hl")?.dataset.lpId === mark.dataset.lpId) return;
+      this.setHot(mark.dataset.lpId, false);
+    });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       const menu = this.els?.gutter?.querySelector(".send-menu:not([hidden])");
@@ -310,7 +348,55 @@ export class Overlay {
   applyRail() {
     const show = (this.page?.highlights || []).length > 0;
     this.host.hidden = !show;
-    this.view.setGutter(show, GUTTER);
+    if (!show) {
+      this.setGutter(false);
+      return;
+    }
+    // The width the margin needs depends on where the page's text ends, so
+    // the real decision is made in layoutCards, where the geometry is read.
+    if (!this.geometry) this.layoutCards({ probe: true });
+  }
+
+  /** Pushes the page over only when the margin's needs have changed. */
+  setGutter(on, gutter = null) {
+    const key = on ? `${gutter.pad}:${gutter.width}:${gutter.mode}` : "off";
+    if (this._gutterKey === key) return;
+    this._gutterKey = key;
+    if (!on) this.geometry = null;
+    this.view.setGutter(on, gutter || undefined);
+  }
+
+  /** Marks a passage and its card as one hovered thing. */
+  setHot(highlightId, on) {
+    document.querySelectorAll("mark.lp-hl").forEach((mark) => {
+      if (mark.dataset.lpId === highlightId) mark.classList.toggle("is-hot", on);
+    });
+    this.els?.gutter?.querySelectorAll(".card").forEach((card) => {
+      if (card.dataset.highlight === highlightId) card.classList.toggle("is-hot", on);
+    });
+  }
+
+  /**
+   * A window drag fires resize on every pixel. One layout per frame is
+   * plenty, and while it lasts the cards must not glide — a card easing
+   * toward a target that moves every frame is what reads as shaking.
+   */
+  onResize() {
+    this.els?.root?.classList.add("is-resizing");
+    clearTimeout(this._resizeSettle);
+    this._resizeSettle = setTimeout(() => this.els?.root?.classList.remove("is-resizing"), 200);
+    this.scheduleLayout({ probe: true });
+  }
+
+  scheduleLayout(opts = {}) {
+    this._layoutOpts = { probe: Boolean(this._layoutOpts?.probe || opts.probe) };
+    if (this._layoutFrame) return;
+    this._layoutFrame = requestAnimationFrame(() => {
+      this._layoutFrame = null;
+      const pending = this._layoutOpts;
+      this._layoutOpts = null;
+      this.layoutCards(pending || {});
+    });
   }
 
   /**
@@ -514,17 +600,33 @@ export class Overlay {
       placed.map((highlight) => this.cardHtml(highlight)).join("") + this.dockHtml(orphans);
     this.els.gutter.querySelectorAll(".card").forEach((card) => this.bindCard(card));
     this.bindDock();
+    this.watchCardSizes();
     this.layoutCards();
     this.markActiveHighlights();
     this.applyRail();
     const open = this.els.gutter.querySelector(".card.is-open .messages");
     const composer = this.els.gutter.querySelector(".card.is-open .composer textarea:not(.packet-md)");
-    if (composer && draft) composer.value = draft;
+    if (composer && draft) {
+      composer.value = draft;
+      composer.dispatchEvent(new Event("input"));
+    }
     if (open && scrollState) {
       open.scrollTop = scrollState.atBottom
         ? open.scrollHeight
         : scrollState.top;
     }
+  }
+
+  /**
+   * A card's height is not fixed: a textarea grows as you type, an image in a
+   * reply arrives late, a details block opens. The stack has to follow, or
+   * two cards end up on top of each other until the next render.
+   */
+  watchCardSizes() {
+    if (typeof ResizeObserver === "undefined") return;
+    this._cardSizes?.disconnect();
+    this._cardSizes = new ResizeObserver(() => this.scheduleLayout());
+    this.els.gutter.querySelectorAll(".gutter > .card").forEach((card) => this._cardSizes.observe(card));
   }
 
   /**
@@ -646,22 +748,32 @@ export class Overlay {
     }
     if (!open) {
       const unsure = this.anchorOf(highlight.id)?.state === "moved";
+      const first = thread?.messages?.[0];
+      const replies = Math.max(0, count - 1);
       return `
         <article class="card${unsure ? " is-unsure" : ""}" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
-          <p class="meta-line">
-            <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml(threadLabel(thread))}</span>
-            <span>${count ? `${count} ${count === 1 ? "message" : "messages"}` : ""}</span>
-            <button type="button" class="hl-delete" data-act="delete-hl" title="Delete highlight">×</button>
-          </p>
-          <p class="quote">${escapeHtml(clip(highlight.text, 90))}</p>
-          ${unsure ? this.confirmRowHtml() : `<p class="preview">${escapeHtml(clip(preview, 110))}</p>`}
+          <span class="pill"><i class="dot"></i><span class="pill-text">${escapeHtml(clip(first?.content || highlight.text, 40))}</span></span>
+          <div class="card-body">
+            <p class="quote">${escapeHtml(clip(highlight.text, 90))}</p>
+            ${
+              unsure
+                ? this.confirmRowHtml()
+                : first
+                  ? `<div class="reply-line">${avatarHtml(first)}<span class="who">${escapeHtml(labelOf(first))}</span><time title="${escapeHtml(new Date(first.createdAt).toLocaleString())}">${formatRelative(first.createdAt)}</time></div>
+                     <p class="preview">${escapeHtml(clip(preview, 140))}</p>
+                     ${replies ? `<p class="count">${replies} ${replies === 1 ? "reply" : "replies"}</p>` : ""}`
+                  : `<p class="preview is-empty">Add a comment</p>`
+            }
+          </div>
+          <div class="card-acts">
+            <button type="button" class="icon-btn hl-delete" data-act="delete-hl" title="Delete highlight" aria-label="Delete highlight">${icon("close", { size: 12 })}</button>
+          </div>
         </article>`;
     }
     const branches = this.page.threads.filter((t) => t.highlightId === highlight.id);
     const mode = this.effectiveSendMode(thread);
     return `
       <article class="card is-open" data-highlight="${highlight.id}" data-thread="${thread.id}" style="--lp-mark:${color}">
-        <button class="close" title="Collapse">×</button>
         <div class="hl-toolbar">
           <div class="swatches">
             ${COLOR_IDS.map(
@@ -672,8 +784,11 @@ export class Overlay {
             ).join("")}
           </div>
           <span class="color-meaning">${escapeHtml(COLORS[highlight.color]?.name || "Highlight")}</span>
-          <button type="button" class="ghost" data-act="move-hl">Replace span</button>
-          <button type="button" class="hl-delete" data-act="delete-hl">Delete</button>
+          <div class="head-acts">
+            <button type="button" class="icon-btn" data-act="move-hl" title="Re-attach to another passage" aria-label="Re-attach to another passage">${icon("refresh", { size: 13 })}</button>
+            <button type="button" class="icon-btn hl-delete" data-act="delete-hl" title="Delete highlight" aria-label="Delete highlight">${icon("trash", { size: 13 })}</button>
+            <button type="button" class="icon-btn close" title="Collapse" aria-label="Collapse">${icon("close", { size: 13 })}</button>
+          </div>
         </div>
         <p class="quote">${escapeHtml(clip(highlight.text, 180))}</p>
         ${
@@ -689,9 +804,11 @@ export class Overlay {
                 .join("")}</div>`
             : ""
         }
-        <div class="messages">
-          ${this.messagesHtml(highlight, thread)}
-        </div>
+        ${
+          thread.messages?.length
+            ? `<div class="messages">${this.messagesHtml(highlight, thread)}</div>`
+            : ""
+        }
         <div class="composer">
           ${
             thread.awaitingAgent
@@ -710,11 +827,12 @@ export class Overlay {
                 </div>`
               : ""
           }
-          <textarea placeholder="${escapeHtml(this.composerPlaceholder(thread))}"></textarea>
+          <textarea rows="1" placeholder="${escapeHtml(this.composerPlaceholder(thread))}"></textarea>
           <div class="mention-menu" hidden></div>
-          <div class="send">
-            <button type="button" class="solid send-main" data-act="send">${escapeHtml(this.sendLabel(thread))}</button>
-            <button type="button" class="solid send-caret" data-act="menu" aria-label="Send options">▾</button>
+          <div class="send is-empty">
+            <span class="send-hint">⌘↵</span>
+            <button type="button" class="solid send-main" data-act="send" data-mode="${this.sendModeKey(thread)}">${this.sendInner(thread)}</button>
+            <button type="button" class="send-caret" data-act="menu" aria-label="Send options" title="Send to Cursor or Claude Code"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             <div class="send-menu" hidden>
               <button type="button" data-mode="comment" class="${mode === "comment" && !thread.awaitingAgent ? "is-on" : ""}">Comment</button>
               <button type="button" data-mode="cursor" class="${mode === "cursor" || thread.awaitingAgent?.agent === "cursor" ? "is-on" : ""}">Ask Cursor</button>
@@ -732,18 +850,21 @@ export class Overlay {
       .map((m) => {
         const forks = siblings.filter((b) => b.id !== thread.id && b.forkedFromMessageId === m.id);
         return `
-          <article class="msg ${m.role === "agent" ? "is-agent" : "is-you"}" data-msg="${m.id}">
-            <div class="meta"><span>${escapeHtml(labelOf(m))}</span><span>${formatRelative(m.createdAt)}</span></div>
-            <div class="body">${messageHtml(m.content)}</div>
-            <div class="msg-actions">
-              <button type="button" class="fork" data-fork="${m.id}">${icon("branch", { size: 12 })} Explore another angle</button>
-              <button type="button" class="delete" data-delete="${m.id}">Delete</button>
+          <article class="msg ${m.role === "agent" ? "is-agent" : "is-you"}${m.optimistic ? " is-pending" : ""}" data-msg="${m.id}">
+            ${avatarHtml(m)}
+            <div class="msg-main">
+              <div class="meta"><span class="who">${escapeHtml(labelOf(m))}</span><time title="${escapeHtml(new Date(m.createdAt).toLocaleString())}">${formatRelative(m.createdAt)}</time></div>
+              <div class="body">${messageHtml(m.content)}</div>
+              <form class="fork-form" hidden data-fork-form="${m.id}">
+                <input type="text" name="label" value="${escapeHtml(suggested)}" placeholder="Name this angle" maxlength="48" />
+                <button type="submit">Start angle</button>
+                <button type="button" data-act="cancel-fork">Cancel</button>
+              </form>
             </div>
-            <form class="fork-form" hidden data-fork-form="${m.id}">
-              <input type="text" name="label" value="${escapeHtml(suggested)}" placeholder="Name this angle" maxlength="48" />
-              <button type="submit">Start angle</button>
-              <button type="button" data-act="cancel-fork">Cancel</button>
-            </form>
+            <div class="msg-actions">
+              <button type="button" class="icon-btn fork" data-fork="${m.id}" title="Explore another angle" aria-label="Explore another angle">${icon("branch", { size: 12 })}</button>
+              <button type="button" class="icon-btn delete" data-delete="${m.id}" title="Delete message" aria-label="Delete message">${icon("trash", { size: 12 })}</button>
+            </div>
           </article>
           ${
             forks.length
@@ -789,6 +910,8 @@ export class Overlay {
       event.stopPropagation();
       this.closePanel();
     };
+    card.addEventListener("mouseenter", () => this.setHot(highlightId, true));
+    card.addEventListener("mouseleave", () => this.setHot(highlightId, false));
     card.querySelectorAll("[data-color]").forEach((btn) => {
       btn.onclick = (event) => {
         event.stopPropagation();
@@ -894,7 +1017,7 @@ export class Overlay {
         this.sendMode = btn.dataset.mode;
         if (threadId) this.threadModes[threadId] = this.sendMode;
         if (menu) menu.hidden = true;
-        if (sendBtn) sendBtn.textContent = this.sendLabel(thread);
+        if (sendBtn) this.paintSend(sendBtn, thread);
         if (textarea) textarea.placeholder = this.composerPlaceholder(thread);
       };
     });
@@ -902,6 +1025,13 @@ export class Overlay {
       if (menu) menu.hidden = true;
       const content = textarea?.value.trim();
       if (!content) return;
+      // The icon takes off before the message does: the reply is optimistic,
+      // and the button should look like it let go of something.
+      if (sendBtn) {
+        sendBtn.classList.remove("is-sending");
+        void sendBtn.offsetWidth;
+        sendBtn.classList.add("is-sending");
+      }
       this.dispatchSend(threadId, content);
       textarea.value = "";
     };
@@ -912,6 +1042,14 @@ export class Overlay {
       };
     }
     if (textarea) {
+      const sendRow = card.querySelector(".send");
+      const grow = () => {
+        textarea.style.height = "auto";
+        textarea.style.height = `${Math.min(220, textarea.scrollHeight)}px`;
+        sendRow?.classList.toggle("is-empty", !textarea.value.trim());
+      };
+      grow();
+      textarea.addEventListener("input", grow);
       textarea.addEventListener("input", () => this.updateMentions(card, textarea));
       textarea.addEventListener("blur", () => this.closeMentions());
       textarea.addEventListener("keydown", (event) => {
@@ -932,9 +1070,10 @@ export class Overlay {
             return;
           }
         }
-        if (event.key === "Enter" && !event.shiftKey) {
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey || !event.shiftKey)) {
           event.preventDefault();
           send();
+          grow();
         }
       });
     }
@@ -945,6 +1084,29 @@ export class Overlay {
     const agent = lastConversationAgent(thread);
     if (agent) return agent;
     return this.sendMode || "comment";
+  }
+
+  /** Which face the send button wears: pen for a comment, spark for an ask. */
+  sendModeKey(thread) {
+    if (thread?.awaitingAgent?.status === "pending") return "waiting";
+    if (thread?.awaitingAgent?.status === "error") return "comment";
+    return this.effectiveSendMode(thread) === "comment" ? "comment" : "ask";
+  }
+
+  sendInner(thread) {
+    const key = this.sendModeKey(thread);
+    const icon =
+      key === "ask"
+        ? `<svg viewBox="0 0 16 16" aria-hidden="true"><path class="spark-big" d="M8 1.5 9.6 6.4 14.5 8 9.6 9.6 8 14.5 6.4 9.6 1.5 8 6.4 6.4Z"/><path class="spark-small" d="M13 1.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6Z"/></svg>`
+        : key === "waiting"
+          ? `<svg viewBox="0 0 16 16" aria-hidden="true"><circle class="wait-ring" cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="26 9" stroke-linecap="round"/></svg>`
+          : `<svg viewBox="0 0 16 16" aria-hidden="true"><path class="pen" d="M2.5 13.5c.4-2.4 1.1-4 2.6-5.5L11 2.1a1.6 1.6 0 0 1 2.3 0l.6.6a1.6 1.6 0 0 1 0 2.3L8 10.9c-1.5 1.5-3.1 2.2-5.5 2.6Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path class="pen-dot" d="M2.5 13.5 4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    return `<span class="send-ico">${icon}</span><span class="send-text">${escapeHtml(this.sendLabel(thread))}</span>`;
+  }
+
+  paintSend(sendBtn, thread) {
+    sendBtn.dataset.mode = this.sendModeKey(thread);
+    sendBtn.innerHTML = this.sendInner(thread);
   }
 
   sendLabel(thread) {
@@ -968,7 +1130,7 @@ export class Overlay {
     const mode = this.effectiveSendMode(thread);
     if (mode === "cursor") return "Reply to Cursor…";
     if (mode === "claude-code") return "Reply to Claude Code…";
-    return "Write a comment…";
+    return "Reply, or ask…";
   }
 
   dispatchSend(threadId, content) {
@@ -1100,16 +1262,34 @@ export class Overlay {
     return Boolean(this.mention && this.mention.textarea === textarea && !this.mention.menu.hidden);
   }
 
-  layoutCards() {
+  /**
+   * Places every card beside its passage.
+   *
+   * All reads happen before any write: a geometry read after a style write
+   * forces the browser to lay the page out again on the spot, and doing that
+   * once per card is what made a resize feel like it was fighting itself.
+   */
+  layoutCards(opts = {}) {
     if (!this.els?.gutter) return;
-    const docHeight = this.view.contentHeight();
-    document.documentElement.style.setProperty("--lp-doc-height", `${docHeight}px`);
-    this.host.style.height = `${docHeight}px`;
-    // Only cards that sit directly in the gutter are positioned; the orphan
-    // dock keeps its own, and a highlight with no marks has nothing to align
-    // to, so it must stay out of the stack rather than piling up at the top of
-    // the document ahead of every real card.
+    const show = (this.page?.highlights || []).length > 0;
+    if (!show) {
+      this.setGutter(false);
+      return;
+    }
     const cards = [...this.els.gutter.querySelectorAll(".gutter > .card")];
+    const vw = this.view.viewportWidth();
+    const plan = gutterPlan(vw);
+    const key = `${vw}:${plan.mode}:${cards.length}`;
+    if (!this.geometry || this.geometry.key !== key || opts.probe) {
+      this.geometry = this.probeGeometry(plan, cards, key);
+    }
+    const geo = this.geometry;
+    this.setGutter(true, geo.gutter);
+    const root = this.els.root;
+    if (root && root.dataset.mode !== geo.mode) root.dataset.mode = geo.mode;
+
+    // Reads.
+    const docHeight = this.view.contentHeight();
     const items = cards.map((el) => {
       const rect = highlightRect(el.dataset.highlight);
       return {
@@ -1118,12 +1298,71 @@ export class Overlay {
         height: el.offsetHeight || 72
       };
     });
+
+    // Writes.
+    document.documentElement.style.setProperty("--lp-doc-height", `${docHeight}px`);
+    this.host.style.height = `${docHeight}px`;
+    if (root) {
+      root.style.setProperty("--lp-card-left", `${geo.cardLeft}px`);
+      root.style.setProperty("--lp-card-width", `${geo.cardWidth}px`);
+    }
+    // Only cards that sit directly in the gutter are positioned; the orphan
+    // dock keeps its own, and a highlight with no marks has nothing to align
+    // to, so it must stay out of the stack rather than piling up at the top of
+    // the document ahead of every real card.
     for (const item of items) {
       if (item.preferred === null) item.el.style.removeProperty("top");
     }
-    for (const placed of stackCards(items, CARD_GAP)) {
-      placed.el.style.top = `${placed.top}px`;
+    for (const placed of stackCards(items, geo.mode === "rail" ? 6 : CARD_GAP)) {
+      const top = `${placed.top}px`;
+      if (placed.el.style.top !== top) placed.el.style.top = top;
     }
+  }
+
+  /**
+   * Decides where the margin goes for this window.
+   *
+   * A page with a text column narrower than the window already has room
+   * beside it; pushing it over would move the text away from the card, which
+   * is the opposite of what a margin is for. So the page is measured with no
+   * push at all, and only pushed when the card would not otherwise fit.
+   * That is one extra layout per resize frame, not one per card.
+   */
+  probeGeometry(plan, cards, key) {
+    const minimap = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--lp-minimap")
+    ) || 0;
+    if (plan.mode === "rail") {
+      return {
+        key,
+        mode: "rail",
+        gutter: { pad: RAIL_PAD, width: RAIL_PAD, mode: "rail" },
+        cardLeft: 0,
+        cardWidth: RAIL_PAD - 8
+      };
+    }
+    const pushed = {
+      key,
+      mode: "wide",
+      gutter: { pad: plan.gutter, width: plan.gutter, mode: "wide" },
+      cardLeft: CARD_INSET,
+      cardWidth: plan.card - minimap
+    };
+    if (!cards.length) return pushed;
+    // Measure the page as it is without us.
+    this.setGutter(true, { pad: 0, width: 0, mode: "wide" });
+    const columnRight = textColumnRight(cards.map((card) => card.dataset.highlight));
+    if (columnRight === null) return pushed;
+    const free = this.view.viewportWidth() - columnRight;
+    const need = plan.card + CARD_REACH + CARD_INSET + minimap;
+    if (free < need) return pushed;
+    return {
+      key,
+      mode: "overlay",
+      gutter: { pad: 0, width: Math.round(free), mode: "wide" },
+      cardLeft: CARD_REACH,
+      cardWidth: plan.card
+    };
   }
 
   openThread(threadId) {
@@ -1201,6 +1440,40 @@ export function stackCards(items, gap) {
     cursor = top + (item.height || 72) + gap;
     return { ...item, top };
   });
+}
+
+/**
+ * Where the page's text column ends, measured from the blocks that hold the
+ * marked passages: the median of their right edges, so one full-width figure
+ * caption or pull quote cannot drag the whole margin across the window.
+ */
+export function textColumnRight(highlightIds, root = document) {
+  const rights = [];
+  for (const id of highlightIds) {
+    const mark = root.querySelector(`mark.lp-hl[data-lp-id="${cssEscape(id)}"]`);
+    const block = mark?.parentElement?.closest(
+      "p, li, blockquote, h1, h2, h3, h4, h5, h6, pre, td, th, dd, dt, figcaption, div, section, article"
+    );
+    const rect = (block || mark)?.getBoundingClientRect();
+    if (rect && rect.width > 0) rights.push(rect.right);
+  }
+  if (!rights.length) return null;
+  rights.sort((a, b) => a - b);
+  return rights[Math.floor(rights.length / 2)];
+}
+
+function avatarHtml(message) {
+  if (message.role === "agent") {
+    return `<span class="avatar is-agent" aria-hidden="true">${icon("spark", { size: 12 })}</span>`;
+  }
+  const name = labelOf(message);
+  return `<span class="avatar" aria-hidden="true" style="--lp-hue:${hueOf(name)}">${escapeHtml(name.slice(0, 1))}</span>`;
+}
+
+function hueOf(name) {
+  let h = 0;
+  for (const ch of String(name || "")) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return h;
 }
 
 function clip(text, n) {

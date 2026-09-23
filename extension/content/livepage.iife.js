@@ -1359,7 +1359,10 @@
     branch: '<circle cx="7" cy="5" r="2"/><circle cx="17" cy="9" r="2"/><circle cx="7" cy="19" r="2"/><path d="M7 7v10M9 9h6"/>',
     at: '<circle cx="12" cy="12" r="8.5"/><path d="M15.5 15.5V9h-3a3 3 0 1 0 3 3c0 2.2 1 3.5 2.7 3.5 1.6 0 2.8-1.4 2.8-3.5"/>',
     close: '<path d="m5.5 5.5 13 13M18.5 5.5l-13 13"/>',
-    external: '<path d="M14 4.5h5.5V10"/><path d="M19.5 4.5 11 13"/><path d="M18 14.5v5H4.5V6h5"/>'
+    trash: '<path d="M4 7h16"/><path d="M9.5 7V4.5h5V7"/><path d="m6.5 7 .8 13h9.4l.8-13"/><path d="M10 11v6M14 11v6"/>',
+    external: '<path d="M14 4.5h5.5V10"/><path d="M19.5 4.5 11 13"/><path d="M18 14.5v5H4.5V6h5"/>',
+    // A page let go: it drifts off to the right, out of the list.
+    letgo: '<path d="M4 6.5h9"/><path d="M4 12h6"/><path d="M4 17.5h4"/><path d="M13.5 12h7"/><path d="m17.5 8.5 3.5 3.5-3.5 3.5"/>'
   };
   var SOURCE = {
     twitter: '<path d="m4.5 4.5 15 15M19.5 4.5l-15 15"/>',
@@ -1399,14 +1402,22 @@
       window.innerHeight
     ),
     scrollToTop: (top) => window.scrollTo({ top: Math.max(0, top), behavior: "smooth" }),
+    /** How wide the scroller is, in CSS pixels, scrollbar excluded. */
+    viewportWidth: () => document.documentElement.clientWidth || window.innerWidth,
     /**
      * Makes room for the margin, or gives it back.
+     *
+     * `pad` is what the page is pushed over by; `width` is how wide the margin's
+     * host is. They differ when the page already leaves room beside its text
+     * column: then the page is not pushed at all, and the host simply covers the
+     * free space. `mode` is a hook for the stylesheet — "rail" when the window
+     * is too narrow for a full card.
      *
      * The rule lives in a style element rather than inline on <html> so a page's
      * own stylesheet cannot outrank it, and so removing the class is enough to
      * undo it.
      */
-    setGutter(on, width) {
+    setGutter(on, { pad = 328, width = pad, mode = "wide" } = {}) {
       const root = document.documentElement;
       if (!document.getElementById("lp-gutter-style")) {
         const rail = document.createElement("style");
@@ -1422,8 +1433,14 @@
         root.appendChild(rail);
       }
       root.classList.toggle("lp-rail-on", on);
-      if (on) root.style.setProperty("--lp-gutter", `${width}px`);
-      else root.style.removeProperty("--lp-gutter");
+      root.classList.toggle("lp-rail-compact", on && mode === "rail");
+      if (on) {
+        root.style.setProperty("--lp-gutter", `${pad}px`);
+        root.style.setProperty("--lp-rail-width", `${width}px`);
+      } else {
+        root.style.removeProperty("--lp-gutter");
+        root.style.removeProperty("--lp-rail-width");
+      }
     },
     /** Re-layout triggers other than our own. */
     onRelayout(handler) {
@@ -1815,8 +1832,20 @@
 
   // extension/content/overlay.js
   var import_meta = {};
-  var GUTTER = 328;
   var CARD_GAP = 10;
+  var CARD_INSET = 10;
+  var CARD_REACH = 24;
+  var RAIL_BREAK = 900;
+  var WIDE_BREAK = 1280;
+  var RAIL_PAD = 56;
+  var GUTTER_MAX = 328;
+  var GUTTER_MIN = 280;
+  function gutterPlan(vw) {
+    if (vw < RAIL_BREAK) return { mode: "rail", gutter: RAIL_PAD, card: 0 };
+    const t = Math.min(1, Math.max(0, (vw - RAIL_BREAK) / (WIDE_BREAK - RAIL_BREAK)));
+    const gutter = Math.round(GUTTER_MIN + (GUTTER_MAX - GUTTER_MIN) * t);
+    return { mode: "wide", gutter, card: gutter - CARD_INSET * 2 };
+  }
   var FALLBACK_CSS = `
 :host { all: initial; display: block; pointer-events: none; z-index: 2147483000; }
 :host([data-lp="root"]) {
@@ -1849,7 +1878,7 @@ button.solid { appearance: none; border: 0; background: #3f6b52; color: #f6f1e8;
    orphan stacked on one point. */
 .orphan-dock {
   position: fixed; right: 16px; bottom: 16px;
-  width: min(300px, calc(var(--lp-gutter, 328px) - 28px));
+  width: min(300px, calc(100vw - 32px));
   max-height: 60vh; overflow: auto; z-index: 2147483644;
   background: #fffcf7; border: 1px solid rgba(28,23,18,0.12);
   border-radius: 14px; padding: 8px 10px; box-shadow: 0 10px 40px rgba(28,23,18,0.12);
@@ -1984,6 +2013,7 @@ ${css}</style>`;
       </div>
     `;
       this.els.gutter = this.shadow.querySelector(".gutter");
+      this.els.root = this.shadow.querySelector(".lp-root");
       if (css && this.floatShadow.querySelector("style")) {
         this.floatShadow.querySelector("style").textContent = `${FALLBACK_CSS}
 ${css}`;
@@ -1994,7 +2024,18 @@ ${css}`;
       this.applyRail();
     }
     bind() {
-      this.view.onRelayout(() => this.layoutCards());
+      this.view.onRelayout(() => this.onResize());
+      document.addEventListener("mouseover", (event) => {
+        const mark = event.target?.closest?.("mark.lp-hl");
+        if (!mark?.dataset.lpId) return;
+        this.setHot(mark.dataset.lpId, true);
+      });
+      document.addEventListener("mouseout", (event) => {
+        const mark = event.target?.closest?.("mark.lp-hl");
+        if (!mark?.dataset.lpId) return;
+        if (event.relatedTarget?.closest?.("mark.lp-hl")?.dataset.lpId === mark.dataset.lpId) return;
+        this.setHot(mark.dataset.lpId, false);
+      });
       document.addEventListener("keydown", (event) => {
         if (event.key !== "Escape") return;
         const menu = this.els?.gutter?.querySelector(".send-menu:not([hidden])");
@@ -2093,7 +2134,49 @@ ${css}`;
     applyRail() {
       const show = (this.page?.highlights || []).length > 0;
       this.host.hidden = !show;
-      this.view.setGutter(show, GUTTER);
+      if (!show) {
+        this.setGutter(false);
+        return;
+      }
+      if (!this.geometry) this.layoutCards({ probe: true });
+    }
+    /** Pushes the page over only when the margin's needs have changed. */
+    setGutter(on, gutter = null) {
+      const key = on ? `${gutter.pad}:${gutter.width}:${gutter.mode}` : "off";
+      if (this._gutterKey === key) return;
+      this._gutterKey = key;
+      if (!on) this.geometry = null;
+      this.view.setGutter(on, gutter || void 0);
+    }
+    /** Marks a passage and its card as one hovered thing. */
+    setHot(highlightId, on) {
+      document.querySelectorAll("mark.lp-hl").forEach((mark) => {
+        if (mark.dataset.lpId === highlightId) mark.classList.toggle("is-hot", on);
+      });
+      this.els?.gutter?.querySelectorAll(".card").forEach((card) => {
+        if (card.dataset.highlight === highlightId) card.classList.toggle("is-hot", on);
+      });
+    }
+    /**
+     * A window drag fires resize on every pixel. One layout per frame is
+     * plenty, and while it lasts the cards must not glide — a card easing
+     * toward a target that moves every frame is what reads as shaking.
+     */
+    onResize() {
+      this.els?.root?.classList.add("is-resizing");
+      clearTimeout(this._resizeSettle);
+      this._resizeSettle = setTimeout(() => this.els?.root?.classList.remove("is-resizing"), 200);
+      this.scheduleLayout({ probe: true });
+    }
+    scheduleLayout(opts = {}) {
+      this._layoutOpts = { probe: Boolean(this._layoutOpts?.probe || opts.probe) };
+      if (this._layoutFrame) return;
+      this._layoutFrame = requestAnimationFrame(() => {
+        this._layoutFrame = null;
+        const pending = this._layoutOpts;
+        this._layoutOpts = null;
+        this.layoutCards(pending || {});
+      });
     }
     /**
      * Chrome has handed this tab to its own PDF viewer, where none of LivePage
@@ -2267,15 +2350,30 @@ ${css}`;
       this.els.gutter.innerHTML = placed.map((highlight) => this.cardHtml(highlight)).join("") + this.dockHtml(orphans);
       this.els.gutter.querySelectorAll(".card").forEach((card) => this.bindCard(card));
       this.bindDock();
+      this.watchCardSizes();
       this.layoutCards();
       this.markActiveHighlights();
       this.applyRail();
       const open = this.els.gutter.querySelector(".card.is-open .messages");
       const composer = this.els.gutter.querySelector(".card.is-open .composer textarea:not(.packet-md)");
-      if (composer && draft) composer.value = draft;
+      if (composer && draft) {
+        composer.value = draft;
+        composer.dispatchEvent(new Event("input"));
+      }
       if (open && scrollState) {
         open.scrollTop = scrollState.atBottom ? open.scrollHeight : scrollState.top;
       }
+    }
+    /**
+     * A card's height is not fixed: a textarea grows as you type, an image in a
+     * reply arrives late, a details block opens. The stack has to follow, or
+     * two cards end up on top of each other until the next render.
+     */
+    watchCardSizes() {
+      if (typeof ResizeObserver === "undefined") return;
+      this._cardSizes?.disconnect();
+      this._cardSizes = new ResizeObserver(() => this.scheduleLayout());
+      this.els.gutter.querySelectorAll(".gutter > .card").forEach((card) => this._cardSizes.observe(card));
     }
     /**
      * The passages this page no longer has a place for.
@@ -2389,22 +2487,26 @@ ${css}`;
       }
       if (!open) {
         const unsure = this.anchorOf(highlight.id)?.state === "moved";
+        const first = thread?.messages?.[0];
+        const replies = Math.max(0, count - 1);
         return `
         <article class="card${unsure ? " is-unsure" : ""}" data-highlight="${highlight.id}" data-thread="${thread?.id || ""}" style="--lp-mark:${color}">
-          <p class="meta-line">
-            <span class="thread-label">${icon(thread?.parentId ? "branch" : "comment", { size: 12 })}${escapeHtml2(threadLabel(thread))}</span>
-            <span>${count ? `${count} ${count === 1 ? "message" : "messages"}` : ""}</span>
-            <button type="button" class="hl-delete" data-act="delete-hl" title="Delete highlight">\xD7</button>
-          </p>
-          <p class="quote">${escapeHtml2(clip(highlight.text, 90))}</p>
-          ${unsure ? this.confirmRowHtml() : `<p class="preview">${escapeHtml2(clip(preview, 110))}</p>`}
+          <span class="pill"><i class="dot"></i><span class="pill-text">${escapeHtml2(clip(first?.content || highlight.text, 40))}</span></span>
+          <div class="card-body">
+            <p class="quote">${escapeHtml2(clip(highlight.text, 90))}</p>
+            ${unsure ? this.confirmRowHtml() : first ? `<div class="reply-line">${avatarHtml(first)}<span class="who">${escapeHtml2(labelOf(first))}</span><time title="${escapeHtml2(new Date(first.createdAt).toLocaleString())}">${formatRelative(first.createdAt)}</time></div>
+                     <p class="preview">${escapeHtml2(clip(preview, 140))}</p>
+                     ${replies ? `<p class="count">${replies} ${replies === 1 ? "reply" : "replies"}</p>` : ""}` : `<p class="preview is-empty">Add a comment</p>`}
+          </div>
+          <div class="card-acts">
+            <button type="button" class="icon-btn hl-delete" data-act="delete-hl" title="Delete highlight" aria-label="Delete highlight">${icon("close", { size: 12 })}</button>
+          </div>
         </article>`;
       }
       const branches = this.page.threads.filter((t) => t.highlightId === highlight.id);
       const mode = this.effectiveSendMode(thread);
       return `
       <article class="card is-open" data-highlight="${highlight.id}" data-thread="${thread.id}" style="--lp-mark:${color}">
-        <button class="close" title="Collapse">\xD7</button>
         <div class="hl-toolbar">
           <div class="swatches">
             ${COLOR_IDS.map(
@@ -2415,8 +2517,11 @@ ${css}`;
       ).join("")}
           </div>
           <span class="color-meaning">${escapeHtml2(COLORS[highlight.color]?.name || "Highlight")}</span>
-          <button type="button" class="ghost" data-act="move-hl">Replace span</button>
-          <button type="button" class="hl-delete" data-act="delete-hl">Delete</button>
+          <div class="head-acts">
+            <button type="button" class="icon-btn" data-act="move-hl" title="Re-attach to another passage" aria-label="Re-attach to another passage">${icon("refresh", { size: 13 })}</button>
+            <button type="button" class="icon-btn hl-delete" data-act="delete-hl" title="Delete highlight" aria-label="Delete highlight">${icon("trash", { size: 13 })}</button>
+            <button type="button" class="icon-btn close" title="Collapse" aria-label="Collapse">${icon("close", { size: 13 })}</button>
+          </div>
         </div>
         <p class="quote">${escapeHtml2(clip(highlight.text, 180))}</p>
         ${branches.length > 1 ? `<div class="branch-list">${branches.map(
@@ -2425,9 +2530,7 @@ ${css}`;
           { size: 12 }
         )}${escapeHtml2(threadLabel(b))}</button>`
       ).join("")}</div>` : ""}
-        <div class="messages">
-          ${this.messagesHtml(highlight, thread)}
-        </div>
+        ${thread.messages?.length ? `<div class="messages">${this.messagesHtml(highlight, thread)}</div>` : ""}
         <div class="composer">
           ${thread.awaitingAgent ? `<div class="packet ${thread.awaitingAgent.status === "pending" ? "is-working" : ""}" role="status" aria-live="polite">
                   <p class="kicker">${escapeHtml2(awaitingCopy(thread.awaitingAgent))}</p>
@@ -2438,11 +2541,12 @@ ${css}`;
                     <button type="button" class="ghost" data-act="copy-packet">Copy request details</button>
                   </details>` : `<p class="hint"><span class="working-dots"><i></i><i></i><i></i></span>${escapeHtml2(agentName(thread.awaitingAgent.agent))} is reading this passage and writing a reply. You can keep reading.</p>`}
                 </div>` : ""}
-          <textarea placeholder="${escapeHtml2(this.composerPlaceholder(thread))}"></textarea>
+          <textarea rows="1" placeholder="${escapeHtml2(this.composerPlaceholder(thread))}"></textarea>
           <div class="mention-menu" hidden></div>
-          <div class="send">
-            <button type="button" class="solid send-main" data-act="send">${escapeHtml2(this.sendLabel(thread))}</button>
-            <button type="button" class="solid send-caret" data-act="menu" aria-label="Send options">\u25BE</button>
+          <div class="send is-empty">
+            <span class="send-hint">\u2318\u21B5</span>
+            <button type="button" class="solid send-main" data-act="send" data-mode="${this.sendModeKey(thread)}">${this.sendInner(thread)}</button>
+            <button type="button" class="send-caret" data-act="menu" aria-label="Send options" title="Send to Cursor or Claude Code"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             <div class="send-menu" hidden>
               <button type="button" data-mode="comment" class="${mode === "comment" && !thread.awaitingAgent ? "is-on" : ""}">Comment</button>
               <button type="button" data-mode="cursor" class="${mode === "cursor" || thread.awaitingAgent?.agent === "cursor" ? "is-on" : ""}">Ask Cursor</button>
@@ -2458,18 +2562,21 @@ ${css}`;
       return (thread.messages || []).map((m) => {
         const forks = siblings.filter((b) => b.id !== thread.id && b.forkedFromMessageId === m.id);
         return `
-          <article class="msg ${m.role === "agent" ? "is-agent" : "is-you"}" data-msg="${m.id}">
-            <div class="meta"><span>${escapeHtml2(labelOf(m))}</span><span>${formatRelative(m.createdAt)}</span></div>
-            <div class="body">${messageHtml(m.content)}</div>
-            <div class="msg-actions">
-              <button type="button" class="fork" data-fork="${m.id}">${icon("branch", { size: 12 })} Explore another angle</button>
-              <button type="button" class="delete" data-delete="${m.id}">Delete</button>
+          <article class="msg ${m.role === "agent" ? "is-agent" : "is-you"}${m.optimistic ? " is-pending" : ""}" data-msg="${m.id}">
+            ${avatarHtml(m)}
+            <div class="msg-main">
+              <div class="meta"><span class="who">${escapeHtml2(labelOf(m))}</span><time title="${escapeHtml2(new Date(m.createdAt).toLocaleString())}">${formatRelative(m.createdAt)}</time></div>
+              <div class="body">${messageHtml(m.content)}</div>
+              <form class="fork-form" hidden data-fork-form="${m.id}">
+                <input type="text" name="label" value="${escapeHtml2(suggested)}" placeholder="Name this angle" maxlength="48" />
+                <button type="submit">Start angle</button>
+                <button type="button" data-act="cancel-fork">Cancel</button>
+              </form>
             </div>
-            <form class="fork-form" hidden data-fork-form="${m.id}">
-              <input type="text" name="label" value="${escapeHtml2(suggested)}" placeholder="Name this angle" maxlength="48" />
-              <button type="submit">Start angle</button>
-              <button type="button" data-act="cancel-fork">Cancel</button>
-            </form>
+            <div class="msg-actions">
+              <button type="button" class="icon-btn fork" data-fork="${m.id}" title="Explore another angle" aria-label="Explore another angle">${icon("branch", { size: 12 })}</button>
+              <button type="button" class="icon-btn delete" data-delete="${m.id}" title="Delete message" aria-label="Delete message">${icon("trash", { size: 12 })}</button>
+            </div>
           </article>
           ${forks.length ? `<div class="fork-off">
                   <span class="fork-kicker">${icon("branch", { size: 11 })} Other angles</span>
@@ -2499,6 +2606,8 @@ ${css}`;
         event.stopPropagation();
         this.closePanel();
       };
+      card.addEventListener("mouseenter", () => this.setHot(highlightId, true));
+      card.addEventListener("mouseleave", () => this.setHot(highlightId, false));
       card.querySelectorAll("[data-color]").forEach((btn) => {
         btn.onclick = (event) => {
           event.stopPropagation();
@@ -2604,7 +2713,7 @@ ${css}`;
           this.sendMode = btn.dataset.mode;
           if (threadId) this.threadModes[threadId] = this.sendMode;
           if (menu) menu.hidden = true;
-          if (sendBtn) sendBtn.textContent = this.sendLabel(thread);
+          if (sendBtn) this.paintSend(sendBtn, thread);
           if (textarea) textarea.placeholder = this.composerPlaceholder(thread);
         };
       });
@@ -2612,6 +2721,11 @@ ${css}`;
         if (menu) menu.hidden = true;
         const content = textarea?.value.trim();
         if (!content) return;
+        if (sendBtn) {
+          sendBtn.classList.remove("is-sending");
+          void sendBtn.offsetWidth;
+          sendBtn.classList.add("is-sending");
+        }
         this.dispatchSend(threadId, content);
         textarea.value = "";
       };
@@ -2622,6 +2736,14 @@ ${css}`;
         };
       }
       if (textarea) {
+        const sendRow = card.querySelector(".send");
+        const grow = () => {
+          textarea.style.height = "auto";
+          textarea.style.height = `${Math.min(220, textarea.scrollHeight)}px`;
+          sendRow?.classList.toggle("is-empty", !textarea.value.trim());
+        };
+        grow();
+        textarea.addEventListener("input", grow);
         textarea.addEventListener("input", () => this.updateMentions(card, textarea));
         textarea.addEventListener("blur", () => this.closeMentions());
         textarea.addEventListener("keydown", (event) => {
@@ -2642,9 +2764,10 @@ ${css}`;
               return;
             }
           }
-          if (event.key === "Enter" && !event.shiftKey) {
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey || !event.shiftKey)) {
             event.preventDefault();
             send();
+            grow();
           }
         });
       }
@@ -2654,6 +2777,21 @@ ${css}`;
       const agent = lastConversationAgent(thread);
       if (agent) return agent;
       return this.sendMode || "comment";
+    }
+    /** Which face the send button wears: pen for a comment, spark for an ask. */
+    sendModeKey(thread) {
+      if (thread?.awaitingAgent?.status === "pending") return "waiting";
+      if (thread?.awaitingAgent?.status === "error") return "comment";
+      return this.effectiveSendMode(thread) === "comment" ? "comment" : "ask";
+    }
+    sendInner(thread) {
+      const key = this.sendModeKey(thread);
+      const icon2 = key === "ask" ? `<svg viewBox="0 0 16 16" aria-hidden="true"><path class="spark-big" d="M8 1.5 9.6 6.4 14.5 8 9.6 9.6 8 14.5 6.4 9.6 1.5 8 6.4 6.4Z"/><path class="spark-small" d="M13 1.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6Z"/></svg>` : key === "waiting" ? `<svg viewBox="0 0 16 16" aria-hidden="true"><circle class="wait-ring" cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="26 9" stroke-linecap="round"/></svg>` : `<svg viewBox="0 0 16 16" aria-hidden="true"><path class="pen" d="M2.5 13.5c.4-2.4 1.1-4 2.6-5.5L11 2.1a1.6 1.6 0 0 1 2.3 0l.6.6a1.6 1.6 0 0 1 0 2.3L8 10.9c-1.5 1.5-3.1 2.2-5.5 2.6Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path class="pen-dot" d="M2.5 13.5 4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+      return `<span class="send-ico">${icon2}</span><span class="send-text">${escapeHtml2(this.sendLabel(thread))}</span>`;
+    }
+    paintSend(sendBtn, thread) {
+      sendBtn.dataset.mode = this.sendModeKey(thread);
+      sendBtn.innerHTML = this.sendInner(thread);
     }
     sendLabel(thread) {
       if (thread?.awaitingAgent?.status === "pending") return "Waiting\u2026";
@@ -2675,7 +2813,7 @@ ${css}`;
       const mode = this.effectiveSendMode(thread);
       if (mode === "cursor") return "Reply to Cursor\u2026";
       if (mode === "claude-code") return "Reply to Claude Code\u2026";
-      return "Write a comment\u2026";
+      return "Reply, or ask\u2026";
     }
     dispatchSend(threadId, content) {
       const thread = this.page?.threads.find((t) => t.id === threadId);
@@ -2793,12 +2931,32 @@ ${css}`;
     mentionsOpen(textarea) {
       return Boolean(this.mention && this.mention.textarea === textarea && !this.mention.menu.hidden);
     }
-    layoutCards() {
+    /**
+     * Places every card beside its passage.
+     *
+     * All reads happen before any write: a geometry read after a style write
+     * forces the browser to lay the page out again on the spot, and doing that
+     * once per card is what made a resize feel like it was fighting itself.
+     */
+    layoutCards(opts = {}) {
       if (!this.els?.gutter) return;
-      const docHeight = this.view.contentHeight();
-      document.documentElement.style.setProperty("--lp-doc-height", `${docHeight}px`);
-      this.host.style.height = `${docHeight}px`;
+      const show = (this.page?.highlights || []).length > 0;
+      if (!show) {
+        this.setGutter(false);
+        return;
+      }
       const cards = [...this.els.gutter.querySelectorAll(".gutter > .card")];
+      const vw = this.view.viewportWidth();
+      const plan = gutterPlan(vw);
+      const key = `${vw}:${plan.mode}:${cards.length}`;
+      if (!this.geometry || this.geometry.key !== key || opts.probe) {
+        this.geometry = this.probeGeometry(plan, cards, key);
+      }
+      const geo = this.geometry;
+      this.setGutter(true, geo.gutter);
+      const root = this.els.root;
+      if (root && root.dataset.mode !== geo.mode) root.dataset.mode = geo.mode;
+      const docHeight = this.view.contentHeight();
       const items = cards.map((el) => {
         const rect = highlightRect(el.dataset.highlight);
         return {
@@ -2807,12 +2965,63 @@ ${css}`;
           height: el.offsetHeight || 72
         };
       });
+      document.documentElement.style.setProperty("--lp-doc-height", `${docHeight}px`);
+      this.host.style.height = `${docHeight}px`;
+      if (root) {
+        root.style.setProperty("--lp-card-left", `${geo.cardLeft}px`);
+        root.style.setProperty("--lp-card-width", `${geo.cardWidth}px`);
+      }
       for (const item of items) {
         if (item.preferred === null) item.el.style.removeProperty("top");
       }
-      for (const placed of stackCards(items, CARD_GAP)) {
-        placed.el.style.top = `${placed.top}px`;
+      for (const placed of stackCards(items, geo.mode === "rail" ? 6 : CARD_GAP)) {
+        const top = `${placed.top}px`;
+        if (placed.el.style.top !== top) placed.el.style.top = top;
       }
+    }
+    /**
+     * Decides where the margin goes for this window.
+     *
+     * A page with a text column narrower than the window already has room
+     * beside it; pushing it over would move the text away from the card, which
+     * is the opposite of what a margin is for. So the page is measured with no
+     * push at all, and only pushed when the card would not otherwise fit.
+     * That is one extra layout per resize frame, not one per card.
+     */
+    probeGeometry(plan, cards, key) {
+      const minimap2 = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue("--lp-minimap")
+      ) || 0;
+      if (plan.mode === "rail") {
+        return {
+          key,
+          mode: "rail",
+          gutter: { pad: RAIL_PAD, width: RAIL_PAD, mode: "rail" },
+          cardLeft: 0,
+          cardWidth: RAIL_PAD - 8
+        };
+      }
+      const pushed = {
+        key,
+        mode: "wide",
+        gutter: { pad: plan.gutter, width: plan.gutter, mode: "wide" },
+        cardLeft: CARD_INSET,
+        cardWidth: plan.card - minimap2
+      };
+      if (!cards.length) return pushed;
+      this.setGutter(true, { pad: 0, width: 0, mode: "wide" });
+      const columnRight = textColumnRight(cards.map((card) => card.dataset.highlight));
+      if (columnRight === null) return pushed;
+      const free = this.view.viewportWidth() - columnRight;
+      const need = plan.card + CARD_REACH + CARD_INSET + minimap2;
+      if (free < need) return pushed;
+      return {
+        key,
+        mode: "overlay",
+        gutter: { pad: 0, width: Math.round(free), mode: "wide" },
+        cardLeft: CARD_REACH,
+        cardWidth: plan.card
+      };
     }
     openThread(threadId) {
       const thread = this.page?.threads.find((t) => t.id === threadId);
@@ -2873,6 +3082,32 @@ ${css}`;
       cursor = top + (item.height || 72) + gap;
       return { ...item, top };
     });
+  }
+  function textColumnRight(highlightIds, root = document) {
+    const rights = [];
+    for (const id of highlightIds) {
+      const mark = root.querySelector(`mark.lp-hl[data-lp-id="${cssEscape(id)}"]`);
+      const block = mark?.parentElement?.closest(
+        "p, li, blockquote, h1, h2, h3, h4, h5, h6, pre, td, th, dd, dt, figcaption, div, section, article"
+      );
+      const rect = (block || mark)?.getBoundingClientRect();
+      if (rect && rect.width > 0) rights.push(rect.right);
+    }
+    if (!rights.length) return null;
+    rights.sort((a, b) => a - b);
+    return rights[Math.floor(rights.length / 2)];
+  }
+  function avatarHtml(message) {
+    if (message.role === "agent") {
+      return `<span class="avatar is-agent" aria-hidden="true">${icon("spark", { size: 12 })}</span>`;
+    }
+    const name = labelOf(message);
+    return `<span class="avatar" aria-hidden="true" style="--lp-hue:${hueOf(name)}">${escapeHtml2(name.slice(0, 1))}</span>`;
+  }
+  function hueOf(name) {
+    let h = 0;
+    for (const ch of String(name || "")) h = (h * 31 + ch.charCodeAt(0)) % 360;
+    return h;
   }
   function clip(text, n) {
     const s = String(text || "").replace(/\s+/g, " ");
@@ -3064,6 +3299,7 @@ ${css}`;
   }
 
   // extension/shared/flags.js
+  var DASHBOARD_LAYOUTS = ["feed", "lists", "compact", "home"];
   var FLAG_DEFAULTS = {
     forYouFeed: true,
     readingList: true,
@@ -3077,7 +3313,7 @@ ${css}`;
     orphanRecovery: true,
     markup: true,
     minimap: true,
-    dashboardLayout: "compact"
+    dashboardLayout: "home"
   };
   var EXPERIMENTS = {
     "dashboard-density": {
@@ -3111,16 +3347,26 @@ ${css}`;
             dashboardLayout: "compact",
             localTweets: false
           }
+        },
+        D: {
+          label: "D \xB7 home",
+          hint: "One calm column: what you were mid-way through, what is waiting, and the rooms as tabs.",
+          flags: {
+            forYouFeed: true,
+            dashboardLayout: "home",
+            localTweets: false
+          }
         }
       }
     }
   };
   var DEFAULT_EXPERIMENT = {
     id: "dashboard-density",
-    variant: "C"
+    variant: "D"
   };
   function resolveFlags(settings2 = {}) {
-    const experiment = normalizeExperiment(settings2.experiment);
+    const migrated = migrateExperiment(settings2);
+    const experiment = normalizeExperiment(migrated.experiment);
     const variantFlags = EXPERIMENTS[experiment.id]?.variants?.[experiment.variant]?.flags || {};
     const legacy = {};
     if (typeof settings2.localTweetsEnabled === "boolean") {
@@ -3133,12 +3379,19 @@ ${css}`;
       ...FLAG_DEFAULTS,
       ...variantFlags,
       ...legacy,
-      ...settings2.flags || {}
+      ...migrated.flags || {}
     };
-    if (!["feed", "lists", "compact"].includes(flags.dashboardLayout)) {
+    if (!DASHBOARD_LAYOUTS.includes(flags.dashboardLayout)) {
       flags.dashboardLayout = FLAG_DEFAULTS.dashboardLayout;
     }
     return { flags, experiment };
+  }
+  function migrateExperiment(settings2) {
+    const experiment = settings2.experiment;
+    if (!experiment || experiment.variant !== "C" || experiment.chosen) return settings2;
+    const flags = { ...settings2.flags || {} };
+    if (flags.dashboardLayout === "compact") delete flags.dashboardLayout;
+    return { ...settings2, experiment: { ...experiment, variant: "D" }, flags };
   }
   function normalizeExperiment(value) {
     const id = value?.id && EXPERIMENTS[value.id] ? value.id : DEFAULT_EXPERIMENT.id;

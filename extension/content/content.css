@@ -153,3 +153,12 @@ mark.lp-hl.lp-mark-ai.is-fresh {
     animation: none;
   }
 }
+
+/* The card for this passage is under the pointer: brighten the passage. */
+mark.lp-hl.is-hot {
+  background: color-mix(in srgb, var(--lp-mark, #E8CF62) calc(var(--lp-highlight-strength, 48%) + 22%), transparent);
+}
+
+html.lp-theme-dark mark.lp-hl.is-hot {
+  background: color-mix(in srgb, var(--lp-mark) 52%, transparent);
+}

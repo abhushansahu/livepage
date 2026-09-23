@@ -34,14 +34,23 @@ export const documentView = {
 
   scrollToTop: (top) => window.scrollTo({ top: Math.max(0, top), behavior: "smooth" }),
 
+  /** How wide the scroller is, in CSS pixels, scrollbar excluded. */
+  viewportWidth: () => document.documentElement.clientWidth || window.innerWidth,
+
   /**
    * Makes room for the margin, or gives it back.
+   *
+   * `pad` is what the page is pushed over by; `width` is how wide the margin's
+   * host is. They differ when the page already leaves room beside its text
+   * column: then the page is not pushed at all, and the host simply covers the
+   * free space. `mode` is a hook for the stylesheet — "rail" when the window
+   * is too narrow for a full card.
    *
    * The rule lives in a style element rather than inline on <html> so a page's
    * own stylesheet cannot outrank it, and so removing the class is enough to
    * undo it.
    */
-  setGutter(on, width) {
+  setGutter(on, { pad = 328, width = pad, mode = "wide" } = {}) {
     const root = document.documentElement;
     if (!document.getElementById("lp-gutter-style")) {
       const rail = document.createElement("style");
@@ -57,8 +66,14 @@ export const documentView = {
       root.appendChild(rail);
     }
     root.classList.toggle("lp-rail-on", on);
-    if (on) root.style.setProperty("--lp-gutter", `${width}px`);
-    else root.style.removeProperty("--lp-gutter");
+    root.classList.toggle("lp-rail-compact", on && mode === "rail");
+    if (on) {
+      root.style.setProperty("--lp-gutter", `${pad}px`);
+      root.style.setProperty("--lp-rail-width", `${width}px`);
+    } else {
+      root.style.removeProperty("--lp-gutter");
+      root.style.removeProperty("--lp-rail-width");
+    }
   },
 
   /** Re-layout triggers other than our own. */
@@ -85,13 +100,20 @@ export function containerView(container) {
     viewportHeight: () => container.clientHeight,
     contentHeight: () => Math.max(container.scrollHeight, container.clientHeight),
     scrollToTop: (top) => container.scrollTo({ top: Math.max(0, top), behavior: "smooth" }),
-    setGutter(on, width) {
+    viewportWidth: () => container.clientWidth,
+    setGutter(on, { pad = 328, width = pad, mode = "wide" } = {}) {
       // The padding is on the scroller, so the page stack re-centres in what
       // is left and the gutter sits in the space that opens up — the same
       // move `html.lp-rail-on` makes on an article.
       container.classList.toggle("lp-rail-on", on);
-      if (on) container.style.setProperty("--lp-gutter", `${width}px`);
-      else container.style.removeProperty("--lp-gutter");
+      container.classList.toggle("lp-rail-compact", on && mode === "rail");
+      if (on) {
+        container.style.setProperty("--lp-gutter", `${pad}px`);
+        container.style.setProperty("--lp-rail-width", `${width}px`);
+      } else {
+        container.style.removeProperty("--lp-gutter");
+        container.style.removeProperty("--lp-rail-width");
+      }
     },
     onRelayout(handler) {
       window.addEventListener("resize", handler, { passive: true });
