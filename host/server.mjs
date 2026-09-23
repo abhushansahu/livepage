@@ -2,6 +2,8 @@ import http from "node:http";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAsk, listModels, probeClis } from "./ask.mjs";
+import { journal, logPath, looksLikeMarkupPacket, shapeOfMarkupReply } from "./journal.mjs";
+import { defaultDbPath, openMirror } from "./db.mjs";
 import {
   DEFAULT_PORT,
   bearerToken,
@@ -12,10 +14,11 @@ import {
   tokenMatches
 } from "./guard.mjs";
 
-export async function createAgentServer({ token, ask = handleAsk } = {}) {
+export async function createAgentServer({ token, ask = handleAsk, dbPath = defaultDbPath() } = {}) {
   const port = Number(process.env.LIVEPAGE_AGENT_PORT || DEFAULT_PORT);
   const host = listenAddress();
   const secret = token || (await loadOrCreateToken());
+  const mirror = openMirror(dbPath);
 
   const server = http.createServer(async (req, res) => {
     applyCors(req, res);
@@ -48,6 +51,29 @@ export async function createAgentServer({ token, ask = handleAsk } = {}) {
         json(res, 401, { ok: false, error: "Unauthorized" });
         return;
       }
+      // The mirror: every browser write, in order, in one transaction per
+      // batch. A refused batch is refused whole so the browser keeps it.
+      if (req.method === "POST" && url.pathname === "/db/batch") {
+        const body = await readJson(req);
+        try {
+          json(res, 200, { ok: true, ...mirror.applyBatch(body.ops) });
+        } catch (error) {
+          json(res, 400, { ok: false, error: error.message || String(error) });
+        }
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/db/status") {
+        json(res, 200, { ok: true, ...mirror.status() });
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/db/dump") {
+        try {
+          json(res, 200, { ok: true, rows: mirror.dump(url.searchParams.get("store") || "") });
+        } catch (error) {
+          json(res, 400, { ok: false, error: error.message || String(error) });
+        }
+        return;
+      }
       if (req.method === "GET" && url.pathname === "/models") {
         const models = await listModels(url.searchParams.get("agent") || "cursor");
         json(res, 200, { ok: true, models });
@@ -58,8 +84,25 @@ export async function createAgentServer({ token, ask = handleAsk } = {}) {
         delete body.cwd;
         delete body.cursorPath;
         delete body.claudePath;
-        const result = await ask(body);
+        const markup = looksLikeMarkupPacket(body.packet);
+        const kind = markup ? "markup" : "ask";
+        const started = Date.now();
+        await journal(
+          `${kind} -> agent=${body.agent || "cursor"} model=${body.model || "(default)"} packet=${String(body.packet || "").length}`
+        );
+        let result;
+        try {
+          result = await ask(body);
+        } catch (error) {
+          await journal(`${kind} <- FAILED after ${seconds(started)}s: ${error.message || error}`);
+          throw error;
+        }
         const text = typeof result === "string" ? result : result.text;
+        // A markup reply is the one whose shape decides whether anything is
+        // drawn, so the log says what shape it was rather than only how big.
+        await journal(
+          `${kind} <- ${seconds(started)}s ${markup ? shapeOfMarkupReply(text) : `chars=${String(text || "").length}`}`
+        );
         json(res, 200, {
           ok: true,
           text,
@@ -74,7 +117,8 @@ export async function createAgentServer({ token, ask = handleAsk } = {}) {
     }
   });
 
-  return { server, host, port, token: secret };
+  server.on("close", () => mirror.close());
+  return { server, host, port, token: secret, mirror };
 }
 
 function applyCors(req, res) {
@@ -84,6 +128,10 @@ function applyCors(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "content-type, authorization");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Vary", "Origin");
+}
+
+function seconds(since) {
+  return Math.round((Date.now() - since) / 100) / 10;
 }
 
 function json(res, status, body) {
@@ -115,5 +163,7 @@ if (isMain) {
     console.log(`LivePage agent host on http://${host}:${port}`);
     console.log("Loopback only. Pairing is automatic from the LivePage extension on this machine.");
     console.log(`Token length ${token.length}. Override with LIVEPAGE_AGENT_TOKEN if you need to.`);
+    console.log(`Every ask is logged to ${logPath()}. LIVEPAGE_AGENT_LOG=off turns it off.`);
+    console.log(`The browser's records are mirrored into ${defaultDbPath()}. LIVEPAGE_DB_PATH moves it.`);
   });
 }

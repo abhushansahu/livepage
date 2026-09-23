@@ -6,7 +6,7 @@ import { highlightMatches, pageMatchesQuery } from "../shared/search.js";
 import { DEFAULT_EXPERIMENT } from "../shared/flags.js";
 
 const DB_NAME = "livepage";
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 export const DEFAULT_SETTINGS = {
   defaultColor: "lemon",
@@ -72,6 +72,10 @@ function openDb() {
         markup.createIndex("pageId", "pageId");
         markup.createIndex("at", "at");
       }
+      if (!db.objectStoreNames.contains("mirror")) {
+        // Writes waiting to reach the host's database. See mirror.js.
+        db.createObjectStore("mirror", { keyPath: "id", autoIncrement: true });
+      }
       if (!db.objectStoreNames.contains("glossary")) {
         const glossary = db.createObjectStore("glossary", { keyPath: "key" });
         glossary.createIndex("pageId", "pageId");
@@ -93,13 +97,110 @@ function txDone(tx) {
   });
 }
 
+/**
+ * Every write in this file goes through here, which is what makes the mirror
+ * possible without touching each writer: a readwrite store is handed out
+ * wrapped, the wrapper notes each put and delete, and once the transaction
+ * has committed the notes join the mirror queue. The queue itself is a store
+ * here too, and is the one store that is never mirrored.
+ */
 async function withStore(storeName, mode, fn) {
   const db = await openDb();
   const tx = db.transaction(storeName, mode);
   const store = tx.objectStore(storeName);
-  const result = fn(store);
+  const mirrored = mode === "readwrite" && storeName !== "mirror";
+  const ops = [];
+  const result = fn(mirrored ? recordingStore(store, storeName, ops) : store);
   await txDone(tx);
+  if (ops.length) {
+    await enqueueMirror(ops);
+    mirrorTrigger();
+  }
   return result;
+}
+
+function recordingStore(store, storeName, ops) {
+  const keyOf = (value, explicit) => {
+    if (explicit !== undefined) return explicit;
+    const path = store.keyPath;
+    return typeof path === "string" ? value?.[path] : undefined;
+  };
+  return new Proxy(store, {
+    get(target, prop) {
+      const value = target[prop];
+      if (prop === "put" || prop === "add") {
+        return (doc, key) => {
+          const req = target[prop](doc, key);
+          ops.push({ op: "put", store: storeName, key: keyOf(doc, key), doc, at: Date.now() });
+          return req;
+        };
+      }
+      if (prop === "delete") {
+        return (key) => {
+          const req = target.delete(key);
+          ops.push({ op: "delete", store: storeName, key, at: Date.now() });
+          return req;
+        };
+      }
+      if (prop === "clear") {
+        return () => {
+          const req = target.clear();
+          ops.push({ op: "clear", store: storeName, at: Date.now() });
+          return req;
+        };
+      }
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  });
+}
+
+let mirrorTrigger = () => {};
+
+/** Whoever owns the process (the service worker, or a demo page) says how a queued write becomes a drain. */
+export function onMirrorEnqueued(fn) {
+  mirrorTrigger = typeof fn === "function" ? fn : () => {};
+}
+
+async function enqueueMirror(ops) {
+  try {
+    await withStore("mirror", "readwrite", (store) => {
+      for (const entry of ops) {
+        if (entry.key === undefined && entry.op !== "clear") continue;
+        store.add({ entry, at: entry.at });
+      }
+    });
+  } catch {
+    // A queue that cannot be written must not fail the write it was noting.
+  }
+}
+
+export async function pendingMirror(limit = 200) {
+  return withStore("mirror", "readonly", (store) => {
+    return new Promise((resolve, reject) => {
+      const rows = [];
+      const req = store.openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor || rows.length >= limit) {
+          resolve(rows);
+          return;
+        }
+        rows.push({ id: cursor.key, entry: cursor.value.entry });
+        cursor.continue();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function ackMirror(ids) {
+  await withStore("mirror", "readwrite", (store) => {
+    for (const id of ids) store.delete(id);
+  });
+}
+
+export async function mirrorPendingCount() {
+  return withStore("mirror", "readonly", (store) => reqOf(store.count()));
 }
 
 function reqOf(request) {
@@ -585,6 +686,21 @@ export async function getMarkup(pageId, contentHash) {
     return await withStore("markup", "readonly", (store) =>
       reqOf(store.get(markupKey(pageId, contentHash)))
     );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The most recent read of a page, whatever the content hash. The dashboard
+ * has no live page to hash, and the newest read is the one worth showing.
+ */
+export async function getLatestMarkup(pageId) {
+  try {
+    const db = await openDb();
+    const tx = db.transaction("markup", "readonly");
+    const rows = await reqOf(tx.objectStore("markup").index("pageId").getAll(pageId));
+    return rows.sort((a, b) => (b.at || 0) - (a.at || 0))[0] || null;
   } catch {
     return null;
   }
